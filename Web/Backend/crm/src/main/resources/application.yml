@@ -1,0 +1,45 @@
+spring:
+  config:
+    import: "optional:application-local.yml"
+  datasource:
+    url: jdbc:postgresql://localhost:5432/techcrm
+    username: postgres
+    password: ${DB_PASSWORD:changeme}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+  flyway:
+    enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+ai:
+  service:
+    base-url: http://localhost:8000
+app:
+  jwt:
+    # Override via JWT_ACCESS_SECRET env var outside local dev.
+    access-secret: ${JWT_ACCESS_SECRET:dev-only-access-secret-please-override-in-prod-0123456789}
+    access-ttl-minutes: 30
+  refresh-token:
+    ttl-days: 7
+  email-ingestion:
+    # Fill these in application-local.yml (gitignored, never commit real
+    # credentials) — leaving username/password blank keeps the poller
+    # disabled without crashing the app on startup.
+    enabled: false
+    host: imap.gmail.com
+    port: 993
+    username:
+    password:
+    poll-interval-ms: 120000
+    # Which org inbound emails become leads for — a single shared mailbox
+    # has no per-message tenant signal, so this is a fixed assumption for
+    # v1 (one mailbox = one org). Find your org id via GET /api/auth/me.
+    organization-id:

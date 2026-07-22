@@ -1,0 +1,861 @@
+{
+  "name": "TechCRM – RPA + GenAI Platform",
+  "description": "Enterprise CRM with RPA and Generative AI – TechExcellence RFQ CRM-AI-2026-01",
+  "version": "1.0.0",
+  "metadata": {
+    "author": "TechExcellence",
+    "rfq": "CRM-AI-2026-01",
+    "screens": 17,
+    "modules": 10
+  },
+  "colors": {
+    "primary":       "#185FA5",
+    "primary-light": "#E6F1FB",
+    "primary-dark":  "#0C447C",
+    "success":       "#3B6D11",
+    "success-light": "#EAF3DE",
+    "warning":       "#854F0B",
+    "warning-light": "#FAEEDA",
+    "danger":        "#A32D2D",
+    "danger-light":  "#FCEBEB",
+    "ai-purple":     "#534AB7",
+    "ai-light":      "#EEEDFE",
+    "rpa-green":     "#3B6D11",
+    "bg-primary":    "#FFFFFF",
+    "bg-secondary":  "#F5F6F8",
+    "text-primary":  "#141414",
+    "text-secondary":"#5C5C5C",
+    "text-tertiary": "#9A9A9A",
+    "border":        "#E2E3E5"
+  },
+  "typography": {
+    "fontFamily": "Inter",
+    "sizes": {
+      "xs":  10,
+      "sm":  11,
+      "base":12,
+      "md":  13,
+      "lg":  15,
+      "xl":  18,
+      "2xl": 22,
+      "3xl": 28
+    },
+    "weights": { "regular": 400, "medium": 500, "semibold": 600 }
+  },
+  "components": {
+    "Sidebar": {
+      "width": 200,
+      "background": "#F5F6F8",
+      "border": "right 0.5px #E2E3E5",
+      "children": [
+        {
+          "type": "Logo",
+          "text": "TechCRM",
+          "highlight": "Tech",
+          "highlightColor": "#185FA5",
+          "padding": "12 16"
+        },
+        {
+          "type": "NavSection", "label": "Core",
+          "items": [
+            { "icon": "layout-dashboard", "label": "Dashboard",      "screen": "dashboard" },
+            { "icon": "user-plus",        "label": "Lead management","screen": "leads" },
+            { "icon": "chart-bar",        "label": "Sales pipeline", "screen": "pipeline" },
+            { "icon": "building",         "label": "Accounts",       "screen": "accounts" }
+          ]
+        },
+        {
+          "type": "NavSection", "label": "Service",
+          "items": [
+            { "icon": "ticket",     "label": "Cases & tickets", "screen": "cases" },
+            { "icon": "git-branch", "label": "Workflow engine", "screen": "workflow" }
+          ]
+        },
+        {
+          "type": "NavSection", "label": "Automation",
+          "items": [
+            { "icon": "robot", "label": "RPA bots",   "screen": "rpa" },
+            { "icon": "brain", "label": "AI copilot", "screen": "copilot" }
+          ]
+        },
+        {
+          "type": "NavSection", "label": "Insights",
+          "items": [
+            { "icon": "chart-pie",   "label": "Analytics",      "screen": "analytics" },
+            { "icon": "shield",      "label": "Security & audit","screen": "security" }
+          ]
+        }
+      ]
+    },
+    "Topbar": {
+      "height": 48,
+      "background": "#FFFFFF",
+      "border": "bottom 0.5px #E2E3E5",
+      "children": [
+        { "type": "PageTitle", "fontSize": 15, "fontWeight": 500 },
+        { "type": "Badge",     "variant": "blue" },
+        { "type": "IconButton","icon": "bell" },
+        { "type": "IconButton","icon": "search" },
+        { "type": "Avatar",    "initials": "NR", "color": "#185FA5" }
+      ]
+    },
+    "MetricCard": {
+      "background": "#F5F6F8",
+      "borderRadius": 8,
+      "padding": 12,
+      "children": [
+        { "type": "Text", "role": "label",  "size": 11, "color": "#5C5C5C" },
+        { "type": "Text", "role": "value",  "size": 22, "weight": 500 },
+        { "type": "Text", "role": "subtext","size": 11, "color": "#9A9A9A" }
+      ]
+    },
+    "AIInsightBox": {
+      "background": "#EEEDFE",
+      "border": "0.5px #AFA9EC",
+      "borderRadius": 6,
+      "padding": "10 12",
+      "iconColor": "#534AB7",
+      "textColor": "#3C3489",
+      "fontSize": 12
+    },
+    "RPAInsightBox": {
+      "background": "#EAF3DE",
+      "border": "0.5px #97C459",
+      "borderRadius": 6,
+      "padding": "10 12",
+      "iconColor": "#3B6D11",
+      "textColor": "#27500A",
+      "fontSize": 12
+    },
+    "Badge": {
+      "variants": {
+        "blue":   { "bg": "#E6F1FB", "text": "#185FA5" },
+        "green":  { "bg": "#EAF3DE", "text": "#3B6D11" },
+        "amber":  { "bg": "#FAEEDA", "text": "#854F0B" },
+        "red":    { "bg": "#FCEBEB", "text": "#A32D2D" },
+        "purple": { "bg": "#EEEDFE", "text": "#534AB7" }
+      },
+      "borderRadius": 20,
+      "padding": "2 8",
+      "fontSize": 11,
+      "fontWeight": 500
+    },
+    "Button": {
+      "variants": {
+        "default": {
+          "background": "transparent",
+          "border": "0.5px #C4C5C8",
+          "color": "#141414"
+        },
+        "primary": {
+          "background": "#185FA5",
+          "border": "0.5px #185FA5",
+          "color": "#FFFFFF"
+        }
+      },
+      "borderRadius": 6,
+      "padding": "7 14",
+      "fontSize": 12
+    },
+    "TableRow": {
+      "padding": "7 0",
+      "border": "bottom 0.5px #E2E3E5",
+      "fontSize": 12,
+      "gap": 8
+    },
+    "StepIndicator": {
+      "circleSize": 22,
+      "states": {
+        "done":    { "bg": "#3B6D11", "color": "#FFFFFF", "icon": "check" },
+        "current": { "bg": "#185FA5", "color": "#FFFFFF" },
+        "todo":    { "bg": "#F5F6F8", "color": "#9A9A9A", "border": "0.5px #E2E3E5" }
+      },
+      "connectorWidth": 20,
+      "connectorColor": "#E2E3E5"
+    },
+    "ToggleRow": {
+      "layout": "horizontal-space-between",
+      "padding": "10 0",
+      "border": "bottom 0.5px #E2E3E5",
+      "fontSize": 12,
+      "Switch": {
+        "width": 34,
+        "height": 18,
+        "states": {
+          "on":  { "bg": "#185FA5", "thumbLeft": 17 },
+          "off": { "bg": "#F5F6F8", "thumbLeft": 1 }
+        },
+        "thumbSize": 14,
+        "thumbColor": "#FFFFFF",
+        "borderRadius": 20
+      }
+    },
+    "OptionCard": {
+      "border": "0.5px #E2E3E5",
+      "borderRadius": 6,
+      "padding": 12,
+      "textAlign": "center",
+      "states": {
+        "default":  { "bg": "#FFFFFF" },
+        "selected": { "border": "2px #185FA5", "bg": "#E6F1FB", "iconColor": "#185FA5" }
+      }
+    },
+    "FlowNode": {
+      "borderRadius": 6,
+      "padding": "10 14",
+      "minWidth": 100,
+      "textAlign": "center",
+      "types": {
+        "trigger":   { "bg": "#E6F1FB", "color": "#0C447C" },
+        "condition": { "bg": "#FAEEDA", "color": "#633806" },
+        "ai":        { "bg": "#EEEDFE", "color": "#3C3489" },
+        "rpa":       { "bg": "#EAF3DE", "color": "#27500A" },
+        "action":    { "bg": "#EAF3DE", "color": "#27500A" },
+        "log":       { "bg": "#FAECE7", "color": "#4A1B0C" }
+      }
+    },
+    "BotStatusRow": {
+      "padding": "8 10",
+      "border": "0.5px #E2E3E5",
+      "borderRadius": 6,
+      "gap": 6,
+      "fontSize": 12,
+      "StatusDot": {
+        "size": 7,
+        "borderRadius": "50%",
+        "colors": {
+          "running":   "#639922",
+          "scheduled": "#BA7517",
+          "error":     "#E24B4A"
+        }
+      }
+    }
+  },
+  "screens": [
+    {
+      "id": "S01",
+      "name": "Dashboard – Overview",
+      "module": "Overview",
+      "size": { "width": 1280, "height": 900 },
+      "layout": "sidebar-main",
+      "regions": {
+        "sidebar": { "ref": "Sidebar", "activeItem": "Dashboard" },
+        "topbar":  { "ref": "Topbar",  "title": "Dashboard", "badge": "Overview" },
+        "content": {
+          "sections": [
+            {
+              "type": "MetricGrid",
+              "columns": 4,
+              "items": [
+                { "label": "Total leads",    "value": "1,284", "subtext": "↑ 12% this month", "trend": "up" },
+                { "label": "Pipeline value", "value": "₹84L",  "subtext": "↑ 8% vs last month","trend": "up" },
+                { "label": "Open cases",     "value": "47",    "subtext": "3 escalated",        "trend": "down" },
+                { "label": "RPA bots active","value": "6/8",   "subtext": "2 scheduled" }
+              ]
+            },
+            {
+              "type": "TwoColumnGrid",
+              "left": {
+                "type": "Card", "title": "Recent leads",
+                "rows": [
+                  { "avatar": "AK", "name": "Amit Kumar",  "sub": "TechCorp · ₹2.4L", "badge": { "label": "Hot",  "variant": "green" } },
+                  { "avatar": "PR", "name": "Priya Rao",   "sub": "InfoSys · ₹1.8L",  "badge": { "label": "Warm", "variant": "blue" } },
+                  { "avatar": "SK", "name": "Suresh K",    "sub": "Wipro · ₹3.1L",    "badge": { "label": "New",  "variant": "amber" } },
+                  { "avatar": "MN", "name": "Meera Nair",  "sub": "HCL · ₹0.9L",      "badge": { "label": "Warm", "variant": "blue" } }
+                ]
+              },
+              "right": {
+                "type": "Card", "title": "Pipeline stages",
+                "pipelineBars": [
+                  { "label": "Prospecting",  "deals": 48, "value": "₹18L", "pct": 85, "color": "#185FA5" },
+                  { "label": "Qualification","deals": 32, "value": "₹24L", "pct": 65, "color": "#185FA5" },
+                  { "label": "Proposal",     "deals": 21, "value": "₹19L", "pct": 45, "color": "#BA7517" },
+                  { "label": "Negotiation",  "deals": 14, "value": "₹14L", "pct": 30, "color": "#BA7517" },
+                  { "label": "Closed won",   "deals":  9, "value": "₹9L",  "pct": 18, "color": "#3B6D11" }
+                ]
+              }
+            },
+            {
+              "type": "TwoColumnGrid",
+              "left": {
+                "type": "Card", "title": "AI copilot insights",
+                "aiBoxes": [
+                  "3 leads show high churn risk — follow up within 24 hours.",
+                  "Deal 'TechCorp Q2' has 87% close probability. Proposal auto-drafted.",
+                  "Revenue forecast for July: ₹28L (+14% vs June)."
+                ]
+              },
+              "right": {
+                "type": "Card", "title": "RPA bot activity",
+                "botRows": [
+                  { "name": "Lead scraper bot",  "sub": "Running · 14 leads imported",  "status": "running" },
+                  { "name": "Email ticket bot",   "sub": "Running · 8 tickets categorized","status": "running" },
+                  { "name": "Proposal generator", "sub": "Scheduled · starts at 18:00",  "status": "scheduled" },
+                  { "name": "ERP sync bot",       "sub": "Error · authentication failed", "status": "error" }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S02",
+      "name": "Lead Management",
+      "module": "Module 2",
+      "size": { "width": 1280, "height": 900 },
+      "layout": "sidebar-main",
+      "regions": {
+        "sidebar": { "ref": "Sidebar", "activeItem": "Lead management" },
+        "topbar":  { "ref": "Topbar",  "title": "Lead management", "badge": "Module 2" },
+        "content": {
+          "sections": [
+            {
+              "type": "ActionBar",
+              "left":  [{ "type": "Button", "label": "Filter", "icon": "filter" }, { "type": "Button", "label": "Search", "icon": "search" }],
+              "right": [{ "type": "Button", "label": "Add lead", "icon": "plus", "variant": "primary" }]
+            },
+            {
+              "type": "MetricGrid", "columns": 3,
+              "items": [
+                { "label": "Total leads",  "value": "1,284", "subtext": "↑ 12% this month" },
+                { "label": "AI scored",    "value": "947",   "subtext": "74% coverage" },
+                { "label": "Bot imported", "value": "312",   "subtext": "Today: 14 new" }
+              ]
+            },
+            { "type": "AIInsightBox",  "text": "AI suggestion: Amit Kumar (score 94) matches your ICP — assign to sales team immediately." },
+            { "type": "RPAInsightBox", "text": "RPA bot imported 14 new leads from portal at 09:30. ERP validation: 12 passed, 2 flagged." },
+            {
+              "type": "Card", "title": "Lead list",
+              "tableHeader": ["Name / Company","Source","AI Score","Status","Assigned"],
+              "tableRows": [
+                { "avatar": "AK", "name": "Amit Kumar",  "company": "TechCorp",  "source": "Bot portal",  "score": 94, "scoreVariant": "green",  "status": "Hot",  "statusVariant": "green",  "assigned": "Raj S" },
+                { "avatar": "PR", "name": "Priya Rao",   "company": "InfoSys",   "source": "Web form",    "score": 78, "scoreVariant": "blue",   "status": "Warm", "statusVariant": "blue",   "assigned": "Meera K" },
+                { "avatar": "SK", "name": "Suresh K",    "company": "Wipro",     "source": "Email parse", "score": 61, "scoreVariant": "amber",  "status": "New",  "statusVariant": "amber",  "assigned": "Unassigned" },
+                { "avatar": "MN", "name": "Meera Nair",  "company": "HCL",       "source": "API",         "score": 72, "scoreVariant": "blue",   "status": "Warm", "statusVariant": "blue",   "assigned": "Raj S" }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S03",
+      "name": "Sales Pipeline – Kanban",
+      "module": "Module 3",
+      "size": { "width": 1280, "height": 900 },
+      "layout": "sidebar-main",
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Sales pipeline", "badge": "Module 3" },
+        "content": {
+          "sections": [
+            { "type": "AIInsightBox", "text": "AI forecast: ₹28L likely to close this quarter. Bot auto-generated 3 proposals. Follow-up emails drafted for 5 deals." },
+            {
+              "type": "KanbanBoard",
+              "columns": [
+                { "title": "Prospecting",  "deals": 48, "value": "₹18L", "cards": [{ "name": "TechCorp CRM",  "value": "₹4.2L", "probability": "87%", "variant": "green" }, { "name": "InfoSys ERP",   "value": "₹2.8L", "probability": "61%", "variant": "blue" }] },
+                { "title": "Qualification","deals": 32, "value": "₹24L", "cards": [{ "name": "Wipro RPA",     "value": "₹6.1L", "probability": "74%", "variant": "green" }, { "name": "HCL Cloud",     "value": "₹3.4L", "probability": "52%", "variant": "amber" }] },
+                { "title": "Proposal",     "deals": 21, "value": "₹19L", "cards": [{ "name": "Tata Consult", "value": "₹5.5L", "probability": "81%", "variant": "green" }] },
+                { "title": "Negotiation",  "deals": 14, "value": "₹14L", "cards": [{ "name": "Mindtree AI",  "value": "₹3.9L", "probability": "66%", "variant": "amber" }] },
+                { "title": "Closed won",   "deals":  9, "value": "₹9L",  "cards": [{ "name": "L&T Infotech", "value": "₹2.1L", "probability": "Won",  "variant": "green" }] }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S04",
+      "name": "Accounts – 360° View",
+      "module": "Module 4",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Accounts & contacts", "badge": "Module 4" },
+        "content": {
+          "sections": [
+            {
+              "type": "Card", "title": "TechCorp Ltd — 360° customer view",
+              "infoGrid": [
+                { "label": "Industry",          "value": "IT Services" },
+                { "label": "Relationship value", "value": "₹18.4L" },
+                { "label": "AI sentiment",       "value": "Positive 82%", "valueColor": "#3B6D11" }
+              ]
+            },
+            { "type": "AIInsightBox", "text": "Customer showed strong interest in RPA modules in last 3 interactions. Personalized pitch recommended." },
+            {
+              "type": "Card", "title": "Key contacts",
+              "rows": [
+                { "avatar": "AK", "name": "Amit Kumar",  "sub": "CTO · Decision maker",  "badge": { "label": "Primary",   "variant": "green" } },
+                { "avatar": "SR", "name": "Sunita Reddy","sub": "IT Head · Influencer",   "badge": { "label": "Secondary", "variant": "blue" } }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S05",
+      "name": "Cases & Ticket Management",
+      "module": "Module 5 & 6",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Cases & tickets", "badge": "Module 5 & 6" },
+        "content": {
+          "sections": [
+            { "type": "RPAInsightBox", "text": "RPA bot read 8 incoming emails, auto-categorized 6 as 'billing', 2 as 'technical'. Tickets created automatically." },
+            { "type": "AIInsightBox",  "text": "AI suggested responses ready for 4 open tickets. Case #1042 predicted to resolve within 2 hours." },
+            {
+              "type": "Card", "title": "Case list",
+              "tableHeader": ["Case ID","Subject","Source","Priority","SLA","Status"],
+              "tableRows": [
+                { "id": "#1042", "subject": "Login issue — TechCorp",  "source": "Email bot", "priority": "High",     "priorityVariant": "red",   "sla": "2h left",  "slaColor": "#A32D2D", "status": "In progress", "statusVariant": "amber" },
+                { "id": "#1041", "subject": "Billing query — Wipro",   "source": "Email bot", "priority": "Medium",   "priorityVariant": "amber", "sla": "6h left",  "slaColor": "#3B6D11", "status": "Open",        "statusVariant": "blue" },
+                { "id": "#1039", "subject": "API error — InfoSys",     "source": "Web form",  "priority": "Critical", "priorityVariant": "red",   "sla": "Breached", "slaColor": "#A32D2D", "status": "Escalated",   "statusVariant": "red" }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S06",
+      "name": "Workflow Engine – Canvas",
+      "module": "Module 9",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Workflow engine", "badge": "Module 9" },
+        "content": {
+          "sections": [
+            {
+              "type": "Card", "title": "Lead auto-assignment workflow",
+              "flowCanvas": {
+                "nodes": [
+                  { "type": "trigger",   "title": "Trigger",    "label": "Lead captured" },
+                  { "type": "ai",        "title": "AI action",  "label": "Score & classify" },
+                  { "type": "rpa",       "title": "RPA bot",    "label": "ERP validation" },
+                  { "type": "condition", "title": "Condition",  "label": "Score > 70?" },
+                  { "type": "action",    "title": "Action",     "label": "Auto-assign" }
+                ],
+                "connectors": "arrow-right"
+              },
+              "paletteItems": ["Add trigger","Add AI step","Add RPA bot","Add condition","Add error handler"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S07",
+      "name": "RPA Bot Control Room",
+      "module": "Module 7",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "RPA bot control room", "badge": "Module 7" },
+        "content": {
+          "sections": [
+            {
+              "type": "MetricGrid", "columns": 4,
+              "items": [
+                { "label": "Total bots",  "value": "8" },
+                { "label": "Running",     "value": "6", "valueColor": "#3B6D11" },
+                { "label": "Scheduled",   "value": "2", "valueColor": "#BA7517" },
+                { "label": "Tasks today", "value": "284" }
+              ]
+            },
+            {
+              "type": "Card", "title": "Bot registry",
+              "tableHeader": ["Bot name","Platform","Last run","Tasks done","Status"],
+              "tableRows": [
+                { "name": "Lead scraper bot",  "sub": "Portal → CRM",   "platform": "UiPath",      "lastRun": "09:30", "tasks": 14, "status": "Running",   "statusVariant": "green" },
+                { "name": "Email ticket bot",  "sub": "Inbox → Cases",  "platform": "UiPath",      "lastRun": "10:15", "tasks":  8, "status": "Running",   "statusVariant": "green" },
+                { "name": "Proposal generator","sub": "Opp → PDF",      "platform": "AA",          "lastRun": "—",     "tasks":  0, "status": "Scheduled", "statusVariant": "amber" },
+                { "name": "ERP sync bot",      "sub": "CRM → ERP",      "platform": "Blue Prism",  "lastRun": "08:00", "tasks":  0, "status": "Error",     "statusVariant": "red" }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S08",
+      "name": "AI Copilot",
+      "module": "Module 10",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "AI copilot", "badge": "Module 10" },
+        "content": {
+          "layout": "two-column",
+          "left": {
+            "type": "ChatPanel",
+            "title": "AI copilot chat",
+            "badge": { "label": "RAG enabled", "variant": "blue" },
+            "messages": [
+              { "role": "user", "text": "What is the status of TechCorp deal?" },
+              { "role": "ai",   "text": "TechCorp deal is in Proposal stage with 87% close probability. Last interaction: demo call on June 15. Suggested next step: send revised proposal with RPA module pricing." },
+              { "role": "user", "text": "Draft a follow-up email for Amit Kumar" },
+              { "role": "ai",   "text": "Email drafted — Subject: 'Following up on TechCorp CRM Proposal'. Opening personalized to Amit's interest in RPA automation. Ready to send?" }
+            ],
+            "inputPlaceholder": "Ask AI about leads, deals, cases..."
+          },
+          "right": {
+            "sections": [
+              {
+                "type": "Card", "title": "AI capabilities",
+                "aiBoxes": [
+                  "Lead scoring & intent classification (NLP)",
+                  "Deal closure prediction & revenue forecast",
+                  "Auto email drafting & proposal generation",
+                  "Sentiment analysis on customer interactions",
+                  "Internal knowledge search via RAG"
+                ]
+              },
+              {
+                "type": "Card", "title": "AI model status",
+                "botRows": [
+                  { "name": "LLM (Claude / GPT-4)", "sub": "Connected · avg 1.2s response",  "status": "running" },
+                  { "name": "Vector DB (Pinecone)",  "sub": "Synced · 4,820 embeddings",      "status": "running" },
+                  { "name": "ML scoring model",      "sub": "Active · accuracy 91%",           "status": "running" }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "S09",
+      "name": "Analytics & Reporting",
+      "module": "Module 8",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Analytics & reporting", "badge": "Module 8" },
+        "content": {
+          "sections": [
+            {
+              "type": "MetricGrid", "columns": 4,
+              "items": [
+                { "label": "Revenue (MTD)",  "value": "₹24L",  "subtext": "↑ 14% vs last month", "trend": "up" },
+                { "label": "Win rate",       "value": "38%",   "subtext": "↑ 4%",                "trend": "up" },
+                { "label": "Avg deal size",  "value": "₹2.8L", "subtext": "Stable" },
+                { "label": "Churn risk",     "value": "3",     "subtext": "Accounts flagged",     "trend": "down" }
+              ]
+            },
+            {
+              "type": "TwoColumnGrid",
+              "left": {
+                "type": "Card", "title": "Revenue trend (monthly)",
+                "barChart": {
+                  "labels": ["Feb","Mar","Apr","May","Jun (proj)","Jul"],
+                  "values": [40, 55, 60, 70, 75, 100],
+                  "activeIndex": 5,
+                  "activeColor": "#185FA5",
+                  "defaultColor": "#B5D4F4"
+                }
+              },
+              "right": {
+                "type": "Card", "title": "AI predictions",
+                "aiBoxes": [
+                  "Predicted churn: Wipro account (confidence 78%). Schedule retention call.",
+                  "July revenue forecast: ₹28L based on current pipeline velocity.",
+                  "Top upsell opportunity: TechCorp — AI module add-on (score 91)."
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "S10",
+      "name": "Security & Audit",
+      "module": "Module 10",
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Security & audit", "badge": "Module 10" },
+        "content": {
+          "sections": [
+            {
+              "type": "MetricGrid", "columns": 4,
+              "items": [
+                { "label": "Audit events (24h)", "value": "4,821" },
+                { "label": "Failed logins",      "value": "12",    "valueColor": "#A32D2D" },
+                { "label": "MFA coverage",       "value": "94%",   "valueColor": "#3B6D11" },
+                { "label": "Compliance",         "value": "GDPR ✓","valueColor": "#3B6D11" }
+              ]
+            },
+            {
+              "type": "TwoColumnGrid",
+              "left": {
+                "type": "Card", "title": "Recent audit log",
+                "rows": [
+                  { "time": "10:21", "event": "Login success",           "sub": "Raj S · 192.168.1.10",    "badge": { "label": "OK",      "variant": "green" } },
+                  { "time": "10:18", "event": "Bot credential access",   "sub": "ERP sync bot · vault",    "badge": { "label": "Info",    "variant": "blue" } },
+                  { "time": "10:05", "event": "Failed login (×3)",       "sub": "Unknown · 45.23.11.4",    "badge": { "label": "Alert",   "variant": "red" } },
+                  { "time": "09:55", "event": "Data export",             "sub": "Meera K · leads.csv",     "badge": { "label": "Warning", "variant": "amber" } }
+                ]
+              },
+              "right": {
+                "type": "Card", "title": "Security posture",
+                "progressBars": [
+                  { "label": "Encryption (TLS 1.3 + AES-256)", "value": "Active", "pct": 100, "color": "#3B6D11" },
+                  { "label": "MFA adoption",                    "value": "94%",    "pct": 94,  "color": "#3B6D11" },
+                  { "label": "GDPR compliance",                 "value": "98%",    "pct": 98,  "color": "#3B6D11" },
+                  { "label": "Vulnerability scan",              "value": "2 medium","pct": 70, "color": "#BA7517" },
+                  { "label": "AI hallucination control",        "value": "Active", "pct": 100, "color": "#3B6D11" }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "F01",
+      "name": "Create – RPA Bot",
+      "type": "wizard",
+      "steps": ["Select trigger","Choose platform","Define actions","Set credentials","Review & save"],
+      "currentStep": 2,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "RPA bot creation", "badge": "Module 7" },
+        "content": {
+          "stepper": { "steps": ["Select trigger","Choose platform","Define actions","Set credentials","Review & save"], "current": 2 },
+          "card": {
+            "tip": { "type": "rpa", "text": "Step 3 of 5 — Define what the bot does once triggered. Actions run in sequence." },
+            "fields": [
+              { "label": "Bot name",       "type": "text",   "value": "Lead Portal Scraper Bot", "col": 1 },
+              { "label": "RPA platform",   "type": "select", "options": ["UiPath","Automation Anywhere","Blue Prism"], "col": 2 },
+              { "label": "Bot type",       "type": "select", "options": ["Unattended","Attended"], "col": 1 },
+              { "label": "Trigger source", "type": "select", "options": ["Webhook from workflow engine","Scheduled (cron)","Manual trigger"], "col": 2 }
+            ],
+            "flowCanvas": {
+              "nodes": [
+                { "type": "trigger",   "step": 1, "title": "Navigate",  "label": "Open lead portal" },
+                { "type": "trigger",   "step": 2, "title": "Extract",   "label": "Scrape lead table" },
+                { "type": "condition", "step": 3, "title": "Validate",  "label": "Check against ERP" },
+                { "type": "action",    "step": 4, "title": "Create",    "label": "Post lead to CRM API" },
+                { "type": "log",       "step": 5, "title": "Log",       "label": "Write execution log" }
+              ]
+            },
+            "paletteItems": ["Add navigate step","Add extract step","Add API call","Add condition","Add error handler"],
+            "toggles": [
+              { "label": "Retry on failure (max 3 attempts)",  "on": true },
+              { "label": "Send notification on exception",      "on": true },
+              { "label": "Run in sandbox mode first",           "on": false }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "F02",
+      "name": "Create – User",
+      "type": "wizard",
+      "steps": ["User details","Role & access","Identity provider","Review"],
+      "currentStep": 1,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "User creation", "badge": "Module 1" },
+        "content": {
+          "card": {
+            "fields": [
+              { "label": "Full name",         "type": "text",   "value": "Raj Sharma",                           "col": 1 },
+              { "label": "Work email",        "type": "text",   "value": "raj.sharma@techexcellence.com",        "col": 2 },
+              { "label": "Department",        "type": "select", "options": ["Sales","Support","Marketing","IT / Admin"], "col": 1 },
+              { "label": "Reporting manager", "type": "select", "options": ["Meera Kapoor","Amarjeet Kamble"],   "col": 2 }
+            ],
+            "roleOptions": [
+              { "icon": "user",         "label": "Sales rep",     "sub": "Leads, deals, accounts",   "selected": false },
+              { "icon": "headset",      "label": "Support agent", "sub": "Cases, knowledge base",    "selected": true },
+              { "icon": "shield-star",  "label": "Admin",         "sub": "Full system access",       "selected": false }
+            ],
+            "toggles": [
+              { "label": "Multi-factor authentication (MFA)", "on": true },
+              { "label": "SSO via Azure AD / Okta",           "on": true },
+              { "label": "LDAP / Active Directory sync",      "on": false }
+            ],
+            "fields2": [
+              { "label": "Identity provider", "type": "select", "options": ["Azure AD","Okta","Local (JWT)"], "col": 1 },
+              { "label": "Session timeout",   "type": "select", "options": ["30 minutes","1 hour","4 hours"], "col": 2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "F03",
+      "name": "Create – Lead",
+      "type": "wizard",
+      "steps": ["Capture method","Lead details","AI scoring","Assignment"],
+      "currentStep": 1,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Lead creation", "badge": "Module 2" },
+        "content": {
+          "card": {
+            "tip": { "type": "ai", "text": "AI will auto-score this lead and suggest qualification once saved." },
+            "captureOptions": [
+              { "icon": "forms",  "label": "Web form",     "selected": true },
+              { "icon": "mail",   "label": "Email parsing","selected": false },
+              { "icon": "robot",  "label": "RPA bot import","selected": false }
+            ],
+            "fields": [
+              { "label": "Full name",           "type": "text",   "value": "Suresh Kulkarni",     "col": 1 },
+              { "label": "Company",             "type": "text",   "value": "Wipro Technologies",  "col": 2 },
+              { "label": "Email",               "type": "text",   "value": "suresh.k@wipro.com",  "col": 1 },
+              { "label": "Phone",               "type": "text",   "value": "+91 98xxx xxx21",     "col": 2 },
+              { "label": "Estimated deal value","type": "text",   "value": "₹3,10,000",           "col": 1 },
+              { "label": "Source channel",      "type": "select", "options": ["Web form","Referral","Cold outreach","Event"], "col": 2 }
+            ],
+            "textarea": { "label": "Notes", "value": "Interested in CRM + RPA bundle, mentioned Q3 budget approval pending." },
+            "aiScorePreview": {
+              "score": 82,
+              "label": "Predicted: Hot lead",
+              "reason": "High intent signals from company size, budget mention, and engagement pattern",
+              "badge": { "label": "High priority", "variant": "green" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "F04",
+      "name": "Create – Account",
+      "type": "wizard",
+      "steps": ["Company info","Contacts","Integrations","Review"],
+      "currentStep": 0,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Account creation", "badge": "Module 4" },
+        "content": {
+          "card": {
+            "fields": [
+              { "label": "Account name",    "type": "text",   "value": "TechCorp Ltd", "col": 1 },
+              { "label": "Industry",        "type": "select", "options": ["IT Services","Manufacturing","Finance","Healthcare"], "col": 2 },
+              { "label": "Annual revenue",  "type": "text",   "placeholder": "₹0",    "col": 1 },
+              { "label": "Employee count",  "type": "select", "options": ["1-50","51-200","201-1000","1000+"], "col": 2 },
+              { "label": "Billing address", "type": "text",   "placeholder": "Street, city, state, PIN", "fullWidth": true }
+            ],
+            "hierarchyFields": [
+              { "label": "Parent account", "type": "select", "options": ["None (top-level)","TechCorp Holdings"], "col": 1 },
+              { "label": "Account owner",  "type": "select", "options": ["Raj Sharma","Meera Kapoor"], "col": 2 }
+            ],
+            "toggles": [
+              { "label": "Email integration (IMAP/SMTP/Graph)", "on": true },
+              { "label": "Telephony / CTI integration",          "on": false },
+              { "label": "Document repository sync",             "on": true }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "F05",
+      "name": "New Workflow",
+      "type": "wizard",
+      "steps": ["Name & trigger","Build flow","Test","Activate"],
+      "currentStep": 1,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "New workflow", "badge": "Module 9" },
+        "content": {
+          "card": {
+            "fields": [
+              { "label": "Workflow name",  "type": "text",   "value": "High-value lead escalation", "col": 1 },
+              { "label": "Trigger event",  "type": "select", "options": ["Lead score > 80","Case SLA breach","Deal stage change","Scheduled (daily)"], "col": 2 }
+            ],
+            "flowCanvas": {
+              "nodes": [
+                { "type": "trigger",   "title": "Trigger",   "label": "Score > 80" },
+                { "type": "condition", "title": "Condition", "label": "Region = APAC?" },
+                { "type": "ai",        "title": "AI action", "label": "Draft intro email" },
+                { "type": "action",    "title": "Notify",    "label": "Alert sales lead" }
+              ]
+            },
+            "paletteItems": [
+              { "icon": "bolt",       "label": "Trigger" },
+              { "icon": "git-fork",   "label": "Condition" },
+              { "icon": "brain",      "label": "AI step" },
+              { "icon": "robot",      "label": "RPA step" },
+              { "icon": "bell",       "label": "Notification" },
+              { "icon": "api",        "label": "Webhook / API call" }
+            ],
+            "toggles": [
+              { "label": "BPMN 2.0 compliant export", "on": true },
+              { "label": "Run asynchronously",         "on": true },
+              { "label": "Log every execution step",   "on": true }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "F06",
+      "name": "Deploy Bot",
+      "type": "wizard",
+      "steps": ["Select bot","Choose environment","Configure schedule","Confirm deploy"],
+      "currentStep": 3,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "Deploy bot", "badge": "Module 7" },
+        "content": {
+          "card": {
+            "tip": { "type": "rpa", "text": "Final step — review configuration before deploying 'Lead Portal Scraper Bot' to production." },
+            "reviewRows": [
+              { "label": "Bot name",       "value": "Lead Portal Scraper Bot" },
+              { "label": "Platform",       "value": "UiPath" },
+              { "label": "Environment",    "value": "Production" },
+              { "label": "Trigger type",   "value": "Webhook + scheduled (every 2 hrs)" },
+              { "label": "Bot type",       "value": "Unattended" },
+              { "label": "Credential vault","value": "Linked — portal_creds_01" }
+            ],
+            "infraOptions": [
+              { "icon": "cloud",           "label": "Virtual machine", "sub": "Auto-scaled",  "selected": true },
+              { "icon": "device-desktop",  "label": "Physical machine","sub": "Dedicated",    "selected": false },
+              { "icon": "container",       "label": "Container",       "sub": "Docker pool",  "selected": false }
+            ],
+            "preDeployChecks": [
+              { "status": "pass",    "label": "Credential vault access verified" },
+              { "status": "pass",    "label": "Sandbox test passed (14/14 leads processed)" },
+              { "status": "warning", "label": "ERP endpoint rate limit not yet confirmed" }
+            ],
+            "ctaButton": { "label": "Deploy to production", "icon": "rocket", "variant": "primary" }
+          }
+        }
+      }
+    },
+    {
+      "id": "F07",
+      "name": "New Deal",
+      "type": "wizard",
+      "steps": ["Deal info","Pipeline stage","AI forecast","Save"],
+      "currentStep": 0,
+      "size": { "width": 1280, "height": 900 },
+      "regions": {
+        "topbar": { "ref": "Topbar", "title": "New deal", "badge": "Module 3" },
+        "content": {
+          "card": {
+            "fields": [
+              { "label": "Deal name",          "type": "text",   "value": "TechCorp — CRM + RPA bundle", "col": 1 },
+              { "label": "Account",            "type": "select", "options": ["TechCorp Ltd","Wipro Technologies"], "col": 2 },
+              { "label": "Deal value",         "type": "text",   "value": "₹4,20,000", "col": 1 },
+              { "label": "Expected close date","type": "text",   "value": "30/09/2026", "col": 2 },
+              { "label": "Pipeline stage",     "type": "select", "options": ["Prospecting","Qualification","Proposal","Negotiation"], "col": 1 },
+              { "label": "Deal owner",         "type": "select", "options": ["Raj Sharma","Meera Kapoor"], "col": 2 }
+            ],
+            "aiScorePreview": {
+              "score": "87%",
+              "label": "Predicted close probability",
+              "reason": "Based on similar deal size, engagement frequency, and account history"
+            },
+            "tip": { "type": "ai", "text": "Proposal document and follow-up email will be auto-drafted once this deal reaches 'Proposal' stage." },
+            "toggles": [
+              { "label": "Auto-generate proposal via RPA bot", "on": true },
+              { "label": "Push to ERP on close-won",           "on": true }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
