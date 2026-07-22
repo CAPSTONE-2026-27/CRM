@@ -1,0 +1,11 @@
+# Eclipse workspace metadata (IDE-generated, not project source)
+Web/.metadata/
+Web/Backend/.metadata/
+
+# Claude Code local settings
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# OS files
+Thumbs.db
+.DS_Store

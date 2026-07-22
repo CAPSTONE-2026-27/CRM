@@ -1,0 +1,109 @@
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+
+let accessToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+  if (!res.ok) return null;
+  const data = await res.json();
+  accessToken = data.accessToken;
+  return accessToken;
+}
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...init?.headers,
+    },
+  });
+
+  if (res.status === 401 && !retried) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return request<T>(path, init, true);
+    onUnauthorized?.();
+    throw new Error("Unauthorized");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? `Request failed: ${res.status}`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+};
+
+export type CopilotMessage = { role: "user" | "assistant"; content: string };
+
+// Manual SSE parsing over fetch (not EventSource) since we need a Bearer
+// header, which EventSource cannot send.
+export async function streamCopilotChat(
+  messages: CopilotMessage[],
+  handlers: { onDelta: (text: string) => void; onError: (message: string) => void; onDone: () => void }
+) {
+  const res = await fetch(`${API_BASE_URL}/copilot/chat`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ messages }),
+  });
+
+  if (!res.body) {
+    handlers.onError("No response stream from server");
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const raw of events) {
+      const eventLine = raw.split("\n").find((l) => l.startsWith("event: "));
+      const dataLine = raw.split("\n").find((l) => l.startsWith("data: "));
+      if (!eventLine || !dataLine) continue;
+      const event = eventLine.slice("event: ".length);
+      const data = JSON.parse(dataLine.slice("data: ".length));
+
+      if (event === "delta") handlers.onDelta(data.text);
+      else if (event === "error") handlers.onError(data.message);
+      else if (event === "done") handlers.onDone();
+    }
+  }
+}
+
+export { API_BASE_URL, refreshAccessToken };
