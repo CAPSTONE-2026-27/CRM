@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { ZodSchema } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
@@ -27,6 +27,12 @@ export function crudRouter(
     // Fired after a successful create, e.g. to enqueue an RPA bot run.
     // Failures are logged, not surfaced — a bot trigger must never fail the request.
     onCreated?: (row: any, organizationId: string) => Promise<void>;
+    // Replaces the default GET "/" handler — e.g. to return a paginated/filtered
+    // response ({ content, page, size, ... }) instead of the full array.
+    list?: (req: Request, res: Response) => Promise<unknown>;
+    // Registers extra collection-level routes (e.g. GET "/stats") that must be
+    // matched *before* the "/:id" routes below, otherwise "/:id" would shadow them.
+    collectionRoutes?: (router: Router) => void;
   }
 ) {
   const router = Router();
@@ -36,16 +42,24 @@ export function crudRouter(
     router.use(requirePermission(opts.permission));
   }
 
+  // Must precede "/:id" so paths like "/stats" aren't captured as an id.
+  if (opts.collectionRoutes) {
+    opts.collectionRoutes(router);
+  }
+
   router.get(
     "/",
-    asyncHandler(async (req, res) => {
-      const organizationId = req.auth!.organizationId;
-      const rows = await delegate.findMany({
-        where: { organizationId },
-        orderBy: opts.orderBy ?? { createdAt: "desc" },
-      });
-      res.json(rows);
-    })
+    asyncHandler(
+      opts.list ??
+        (async (req, res) => {
+          const organizationId = req.auth!.organizationId;
+          const rows = await delegate.findMany({
+            where: { organizationId },
+            orderBy: opts.orderBy ?? { createdAt: "desc" },
+          });
+          res.json(rows);
+        })
+    )
   );
 
   router.get(
