@@ -71,9 +71,9 @@ export function useLeads(params: LeadSearchParams) {
     queryFn: () => api.get<PagedResponse<Lead>>(`/leads${toQueryString(params)}`),
     placeholderData: (previous) => previous,
     refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return false;
-      return data.content.some((l) => l.aiScore == null) ? 8000 : false;
+      const content = query.state.data?.content;
+      if (!content) return false;
+      return content.some((l) => l.aiScore == null) ? 8000 : false;
     },
   });
 }

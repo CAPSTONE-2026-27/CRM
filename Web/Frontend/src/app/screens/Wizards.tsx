@@ -310,7 +310,7 @@ function F01Review({ botName, trigger, platform }: { botName: string; trigger: n
 const F02_STEPS = ["User details", "Role & access", "Identity provider", "Review"];
 
 const F02_ROLES = [
-  { icon: User, label: "Sales rep", sub: "Leads, pipeline, accounts" },
+  { icon: User, label: "Sales representative", sub: "Leads, pipeline, accounts" },
   { icon: Headphones, label: "Support agent", sub: "Cases & tickets" },
   { icon: Megaphone, label: "Marketing", sub: "Marketing & analytics" },
   { icon: TrendingUp, label: "Manager", sub: "Team oversight" },
@@ -579,6 +579,18 @@ type F03Form = {
   notes: string;
 };
 
+// Everything on the lead form except Notes must be filled in. Order matches
+// the on-screen field order so the "Missing: …" list reads top-to-bottom.
+const F03_REQUIRED_FIELDS: { key: keyof F03Form; label: string }[] = [
+  { key: "fullName", label: "Full name" },
+  { key: "company", label: "Company" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+  { key: "product", label: "Product" },
+  { key: "estimatedDealValue", label: "Estimated deal value" },
+  { key: "sourceChannel", label: "Source channel" },
+];
+
 type EmailPasteForm = {
   from: string;
   subject: string;
@@ -668,16 +680,29 @@ function F03({ onCancel }: { onCancel: () => void }) {
         submitLead();
         return;
       }
-      if (!form.fullName.trim() || !form.company.trim()) {
-        toast.error("Full name and company are required");
+      // Every field except Notes is mandatory — report all gaps at once
+      // rather than making the user resubmit to discover the next one.
+      const missing = F03_REQUIRED_FIELDS.filter(({ key }) => !form[key].trim()).map(({ label }) => label);
+      if (missing.length > 0) {
+        toast.error(missing.length === 1 ? `${missing[0]} is required` : "Fill in all required fields", {
+          description: missing.length === 1 ? undefined : `Missing: ${missing.join(", ")}`,
+        });
         return;
       }
-      if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-        toast.error("Enter a valid email address, or leave it blank");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+        toast.error("Enter a valid email address");
+        return;
+      }
+      if ((form.phone.match(/\d/g) ?? []).length < 7) {
+        toast.error("Enter a valid phone number", { description: "It needs at least 7 digits." });
         return;
       }
       const dealValue = parseFloat(form.estimatedDealValue.replace(/[^0-9.]/g, ""));
-      if (Number.isFinite(dealValue) && dealValue > MAX_DEAL_VALUE) {
+      if (!Number.isFinite(dealValue) || dealValue <= 0) {
+        toast.error("Enter a valid estimated deal value", { description: "Use a number greater than 0, e.g. 31000." });
+        return;
+      }
+      if (dealValue > MAX_DEAL_VALUE) {
         toast.error("Estimated deal value is too large", { description: "Enter a value under 10 trillion." });
         return;
       }
@@ -739,16 +764,16 @@ function F03({ onCancel }: { onCancel: () => void }) {
           <Stack>
             <AIInsightBox text="AI will auto-score this lead and suggest qualification once saved." />
             <FieldGrid>
-              <Field label="Full name" value={form.fullName} onChange={set("fullName")} placeholder="e.g. David Kim" />
-              <Field label="Company" value={form.company} onChange={set("company")} placeholder="e.g. Initech" />
-              <Field label="Email" value={form.email} onChange={set("email")} placeholder="david.kim@initech.com" />
-              <Field label="Phone" value={form.phone} onChange={set("phone")} placeholder="+1 (555) 012-3456" />
-              <Field label="Product" type="select" value={form.product} onChange={set("product")} options={["Enterprise Plan", "Pro Plan", "Growth Plan", "Starter Plan"]} />
-              <Field label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
-              <Field label="Source channel" type="select" value={form.sourceChannel} onChange={set("sourceChannel")} options={["Web form", "Referral", "Cold outreach", "Event"]} />
+              <Field required label="Full name" value={form.fullName} onChange={set("fullName")} placeholder="e.g. David Kim" />
+              <Field required label="Company" value={form.company} onChange={set("company")} placeholder="e.g. Initech" />
+              <Field required label="Email" value={form.email} onChange={set("email")} placeholder="david.kim@initech.com" />
+              <Field required label="Phone" value={form.phone} onChange={set("phone")} placeholder="+1 (555) 012-3456" />
+              <Field required label="Product" type="select" value={form.product} onChange={set("product")} options={["Enterprise Plan", "Pro Plan", "Growth Plan", "Starter Plan"]} />
+              <Field required label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
+              <Field required label="Source channel" type="select" value={form.sourceChannel} onChange={set("sourceChannel")} options={["Web form", "Referral", "Cold outreach", "Event"]} />
             </FieldGrid>
             <div>
-              <label style={{ fontSize: 11, fontWeight: 500, color: colors.textSecondary, display: "block", marginBottom: 5 }}>Notes</label>
+              <label style={{ fontSize: 11, fontWeight: 500, color: colors.textSecondary, display: "block", marginBottom: 5 }}>Notes (optional)</label>
               <textarea
                 value={form.notes}
                 onChange={(e) => set("notes")(e.target.value)}
@@ -779,9 +804,13 @@ function F03({ onCancel }: { onCancel: () => void }) {
    showing them before submit would mean either faking them again or
    paying for a second, throwaway model call) ---- */
 export const MISSING_FIELD_LABELS: Record<string, string> = {
+  fullName: "Full name",
   company: "Company",
   email: "Email",
   phone: "Phone",
+  product: "Product",
+  estimatedDealValue: "Estimated deal value",
+  industry: "Industry",
   sourceChannel: "Source channel",
 };
 
@@ -820,7 +849,7 @@ function F03Result({ pending, lead, missingFields }: { pending: boolean; lead: L
         <div>
           <SubLabel>Assigned to</SubLabel>
           <div style={{ fontSize: 13, color: colors.textPrimary, fontWeight: 500 }}>
-            {assignee ? assignee.fullName : "Unassigned — no sales reps in your organization yet"}
+            {assignee ? assignee.fullName : "Unassigned — no sales representatives in your organization yet"}
           </div>
         </div>
         {missingFields.length > 0 && (

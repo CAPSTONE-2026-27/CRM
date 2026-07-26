@@ -29,7 +29,7 @@ const screenMeta: Record<ScreenId, { title: string; badge: string }> = {
   cases: { title: "Cases & tickets", badge: "Module 5 & 6" },
   workflow: { title: "Workflow engine", badge: "Module 9" },
   rpa: { title: "RPA bot control room", badge: "Module 7" },
-  copilot: { title: "AI copilot", badge: "Module 10" },
+  copilot: { title: "Deal coach", badge: "Module 10" },
   marketing: { title: "Marketing automation", badge: "Module 11" },
   analytics: { title: "Analytics & reporting", badge: "Module 8" },
   security: { title: "Security & audit", badge: "Module 10" },

@@ -57,6 +57,43 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
+// Downloads an authenticated endpoint's response as a file. A plain <a href>
+// or window.open can't do this — neither sends the Bearer token — so we fetch
+// the body and hand the browser a temporary blob URL instead.
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+  });
+
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) {
+      onUnauthorized?.();
+      throw new Error("Unauthorized");
+    }
+    return downloadFile(path, fallbackFilename);
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? `Download failed: ${res.status}`);
+  }
+
+  // Prefer the server's filename from Content-Disposition when present.
+  const filename =
+    res.headers.get("Content-Disposition")?.match(/filename="?([^"]+)"?/)?.[1] ?? fallbackFilename;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export type CopilotMessage = { role: "user" | "assistant"; content: string };
 
 // Manual SSE parsing over fetch (not EventSource) since we need a Bearer

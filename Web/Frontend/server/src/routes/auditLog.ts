@@ -18,6 +18,7 @@ auditLogRouter.get(
       orderBy: { occurredAt: "desc" },
       take: 200,
     });
-    res.json(rows);
+    // Frontend expects a Spring-Data-style page ({ content, ... }), not a bare array.
+    res.json({ content: rows, page: 0, size: rows.length, totalElements: rows.length, totalPages: 1 });
   })
 );
