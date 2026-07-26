@@ -362,6 +362,7 @@ export function Field({
   placeholder,
   options,
   onChange,
+  required,
 }: {
   label: string;
   type?: "text" | "select" | "number";
@@ -371,6 +372,9 @@ export function Field({
   // When provided, the field is a real controlled input and edits are kept.
   // Omit only for decorative/demo fields that are never sent to the backend.
   onChange?: (v: string) => void;
+  // Marks the label with a red asterisk. Validation itself lives with the
+  // form that owns the field, since only it knows what "valid" means.
+  required?: boolean;
 }) {
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -394,6 +398,11 @@ export function Field({
         }}
       >
         {label}
+        {required && (
+          <span aria-hidden="true" style={{ color: colors.danger, marginLeft: 3 }}>
+            *
+          </span>
+        )}
       </label>
       {type === "select" ? (
         onChange ? (

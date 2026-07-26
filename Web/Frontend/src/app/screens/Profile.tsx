@@ -43,7 +43,7 @@ function EditableField({
 }
 
 const providerLabel: Record<string, string> = { LOCAL: "Local password", GOOGLE: "Google", MICROSOFT: "Microsoft" };
-const roleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales rep", SUPPORT_AGENT: "Support agent" };
+const roleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales representative", SUPPORT_AGENT: "Support agent" };
 
 function ChangePasswordForm({ onDone }: { onDone: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");

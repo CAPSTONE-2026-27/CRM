@@ -64,7 +64,7 @@ export const PERMISSION_CATALOG: { key: string; label: string }[] = [
   { key: "marketing", label: "Marketing automation" },
   { key: "analytics", label: "Analytics & reporting" },
   { key: "security", label: "Security & audit" },
-  { key: "copilot", label: "AI copilot" },
+  { key: "copilot", label: "Deal coach" },
 ];
 
 // Frontend mirror of the backend's ROLE_DEFAULTS — used to pre-fill the
@@ -105,7 +105,7 @@ const sections: {
     label: "Automation",
     items: [
       { icon: Bot, label: "RPA bots", screen: "rpa" },
-      { icon: Brain, label: "AI copilot", screen: "copilot" },
+      { icon: Brain, label: "Deal coach", screen: "copilot" },
       { icon: Megaphone, label: "Marketing automation", screen: "marketing" },
     ],
   },

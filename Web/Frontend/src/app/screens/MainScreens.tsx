@@ -17,7 +17,7 @@ import {
 } from "../components/crm/ui";
 import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
-import { Filter, Search, Plus, Send, Brain, Zap, Upload, Trash2, X } from "lucide-react";
+import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
 import {
   useDashboardSummary,
@@ -47,7 +47,7 @@ import {
   useUpdateUser,
   type LeadImportResult,
 } from "../lib/queries";
-import { streamCopilotChat, type CopilotMessage } from "../lib/apiClient";
+import { streamCopilotChat, downloadFile, type CopilotMessage } from "../lib/apiClient";
 import type { Lead, RpaBotRun, UserRow } from "../lib/types";
 import { useAuth } from "../lib/auth";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS, type Role } from "../components/crm/Sidebar";
@@ -296,8 +296,8 @@ export function Dashboard() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Card title="AI copilot insights">
-          <EmptyState message="Ask the AI copilot for insights about leads, deals, and cases" />
+        <Card title="Deal coach insights">
+          <EmptyState message="Ask the deal coach for insights about leads, deals, and cases" />
         </Card>
         <Card title="RPA bot activity">
           {isLoading && <LoadingState />}
@@ -367,6 +367,25 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const importLeads = useImportLeads();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastImportResult, setLastImportResult] = useState<LeadImportResult | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Exports every field of every lead matching the current search/filter —
+  // so an unfiltered view (the default) downloads the whole lead database.
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (debouncedQuery) params.set("q", debouncedQuery);
+      if (statusParam) params.set("status", statusParam);
+      const qs = params.toString();
+      await downloadFile(`/leads/export${qs ? `?${qs}` : ""}`, "leads.csv");
+      toast.success("Leads exported to CSV");
+    } catch (err) {
+      toast.error("Export failed", { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleCsvFile = (file: File) => {
     const reader = new FileReader();
@@ -449,6 +468,11 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
             label={importLeads.isPending ? "Importing…" : "Import CSV"}
             icon={Upload}
             onClick={() => fileInputRef.current?.click()}
+          />
+          <Button
+            label={isExporting ? "Exporting…" : "Export CSV"}
+            icon={Download}
+            onClick={handleExportCsv}
           />
           <Button label="Add lead" icon={Plus} variant="primary" onClick={() => onNavigate("F03")} />
         </div>
@@ -945,7 +969,7 @@ export function RPA({ onNavigate }: { onNavigate: Nav }) {
   );
 }
 
-/* ============ S08 AI Copilot ============ */
+/* ============ S08 Deal Coach ============ */
 export function Copilot() {
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
   const [input, setInput] = useState("");
@@ -995,7 +1019,7 @@ export function Copilot() {
       <Card pad={0}>
         <div style={{ padding: 16, borderBottom: `0.5px solid ${colors.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <Brain size={16} color={colors.aiPurple} />
-          <span style={{ fontSize: 13, fontWeight: 600 }}>AI copilot chat</span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Deal coach chat</span>
           <Badge label="Tool-use enabled" variant="blue" />
           {unavailable && <Badge label="Model unreachable" variant="red" />}
         </div>
@@ -1020,7 +1044,7 @@ export function Copilot() {
           ))}
           {messages.length === 0 && (
             <div style={{ margin: "auto", textAlign: "center", fontSize: 12, color: colors.textTertiary }}>
-              Ask the AI copilot a question to get started
+              Ask the deal coach a question to get started
             </div>
           )}
           <div ref={bottomRef} />
@@ -1165,7 +1189,7 @@ export function Analytics() {
           )}
         </Card>
         <Card title="AI predictions">
-          <EmptyState message="Ask the AI copilot for forecasts and churn predictions" />
+          <EmptyState message="Ask the deal coach for forecasts and churn predictions" />
         </Card>
       </div>
     </Stack>
@@ -1180,7 +1204,7 @@ function auditActionVariant(action: string): BadgeVariant {
   return "blue";
 }
 const userRoleVariant: Record<string, BadgeVariant> = { ADMIN: "purple", MANAGER: "blue", SALES_REP: "green", SUPPORT_AGENT: "amber", MARKETING: "blue" };
-const userRoleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales rep", SUPPORT_AGENT: "Support agent", MARKETING: "Marketing" };
+const userRoleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales representative", SUPPORT_AGENT: "Support agent", MARKETING: "Marketing" };
 const userStatusVariant: Record<string, BadgeVariant> = { ACTIVE: "green", INACTIVE: "amber" };
 const EDITABLE_ROLES: Role[] = ["SALES_REP", "SUPPORT_AGENT", "MARKETING", "MANAGER", "ADMIN"];
 
