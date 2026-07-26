@@ -14,7 +14,7 @@ import {
 const roleLabel: Record<string, string> = {
   ADMIN: "Admin",
   MANAGER: "Manager",
-  SALES_REP: "Sales rep",
+  SALES_REP: "Sales representative",
   SUPPORT_AGENT: "Support agent",
 };
 
