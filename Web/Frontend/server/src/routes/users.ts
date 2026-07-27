@@ -18,6 +18,7 @@ const publicUser = {
   phone: true,
   department: true,
   role: true,
+  status: true,
   permissions: true,
   reportingManagerId: true,
   identityProvider: true,
@@ -119,6 +120,48 @@ usersRouter.patch(
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}) },
+      select: publicUser,
+    });
+    res.json(user);
+  })
+);
+
+// Activate/deactivate an account. A deactivated user keeps all their records
+// but is refused at login (see the status check in routes/auth.ts). Mirrors the
+// delete route's safety rails so an org can't lock itself out.
+usersRouter.patch(
+  "/:id/status",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const organizationId = req.auth!.organizationId;
+    const { status } = z.object({ status: z.enum(["ACTIVE", "INACTIVE"]) }).parse(req.body);
+
+    const target = await prisma.user
+      .findFirstOrThrow({ where: { id: req.params.id, organizationId } })
+      .catch(() => {
+        throw new HttpError(404, "Not found");
+      });
+
+    if (status === "INACTIVE") {
+      if (target.id === req.auth!.sub) {
+        throw new HttpError(400, "You can't deactivate your own account");
+      }
+      if (target.role === "ADMIN") {
+        const otherActiveAdmins = await prisma.user.count({
+          where: { organizationId, role: "ADMIN", status: "ACTIVE", id: { not: target.id } },
+        });
+        if (otherActiveAdmins === 0) {
+          throw new HttpError(400, "Can't deactivate the last active admin — promote another user to Admin first");
+        }
+      }
+      // Sessions outlive the change otherwise: access tokens stay valid for
+      // their TTL, so drop refresh tokens to end the session at renewal.
+      await prisma.refreshToken.deleteMany({ where: { userId: target.id } });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: { status },
       select: publicUser,
     });
     res.json(user);

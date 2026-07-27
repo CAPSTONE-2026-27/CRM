@@ -42,7 +42,9 @@ export const leadCreateSchema = z.object({
   captureMethod: z.enum(["WEB_FORM", "EMAIL_PARSING", "RPA_BOT_IMPORT"]).optional(),
   notes: z.string().optional(),
   status: z.enum(["NEW", "WARM", "HOT", "COLD"]).optional(),
-  assignedToId: z.string().optional(),
+  // Nullable so a manager/admin can explicitly unassign a lead. Who may set
+  // this at all is enforced by guardLeadAssignment, not by the schema.
+  assignedToId: z.string().nullable().optional(),
   salesTeam: z.string().optional(),
   territory: z.string().optional(),
   firstResponseSla: z.string().optional(),

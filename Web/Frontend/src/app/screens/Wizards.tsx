@@ -658,7 +658,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
       }
       setCreatedLead(created);
       toast.success("Lead created successfully", {
-        description: `${created.fullName} · ${created.company || "—"} has been scored and assigned.`,
+        description: `${created.fullName} · ${created.company || "—"} has been scored. A manager or admin can now assign it.`,
       });
     } catch (err) {
       toast.error("Failed to create lead", { description: err instanceof Error ? err.message : undefined });
@@ -725,7 +725,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
       {step === 0 && (
         <Card title="Capture method">
           <Stack>
-            <AIInsightBox text="Choose how this lead is entering the CRM. AI scoring and routing run automatically once details are saved." />
+            <AIInsightBox text="Choose how this lead is entering the CRM. AI scoring runs automatically once details are saved; a manager or admin assigns the owner afterwards." />
             <div>
               <SubLabel>How is this lead captured?</SubLabel>
               <div style={{ display: "flex", gap: 10 }}>
@@ -741,7 +741,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
       {step === 1 && isEmailCapture && (
         <Card title="Paste email">
           <Stack>
-            <AIInsightBox text="Paste the email as-is. The sender, subject, and body are parsed into a lead, then scored and assigned automatically — no manual fields to fill in." />
+            <AIInsightBox text="Paste the email as-is. The sender, subject, and body are parsed into a lead and scored automatically — no manual fields to fill in. A manager or admin assigns the owner afterwards." />
             <FieldGrid>
               <Field label="From (name or email)" value={emailForm.from} onChange={setEmailField("from")} placeholder="Priya Sharma <priya@medtech.com>" />
               <Field label="Subject" value={emailForm.subject} onChange={setEmailField("subject")} placeholder="Interested in your CRM Suite" />
@@ -822,7 +822,7 @@ function F03Result({ pending, lead, missingFields }: { pending: boolean; lead: L
     return (
       <Card title="Scoring & assignment">
         <Stack>
-          <AIInsightBox text="Running the fine-tuned model to score this lead and picking the best-fit owner. This calls a real model, not a preview — it can take up to a minute." />
+          <AIInsightBox text="Running the fine-tuned model to score this lead. This calls a real model, not a preview — it can take up to a minute." />
           <div style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: colors.textSecondary }}>
             Scoring in progress — please don't close this window…
           </div>
@@ -849,8 +849,13 @@ function F03Result({ pending, lead, missingFields }: { pending: boolean; lead: L
         <div>
           <SubLabel>Assigned to</SubLabel>
           <div style={{ fontSize: 13, color: colors.textPrimary, fontWeight: 500 }}>
-            {assignee ? assignee.fullName : "Unassigned — no sales representatives in your organization yet"}
+            {assignee ? assignee.fullName : "Unassigned"}
           </div>
+          {!assignee && (
+            <div style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+              Leads aren't assigned automatically — a manager or admin assigns an owner from Lead management.
+            </div>
+          )}
         </div>
         {missingFields.length > 0 && (
           <div style={{ background: "#FFF8E6", border: "0.5px solid #E8C468", borderRadius: 6, padding: 10, fontSize: 12, color: "#7A5B00" }}>

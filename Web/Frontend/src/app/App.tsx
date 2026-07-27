@@ -2,6 +2,7 @@ import { useState } from "react";
 import { colors } from "./tokens";
 import { Sidebar, ScreenId, screenAllowed } from "./components/crm/Sidebar";
 import { Topbar } from "./components/crm/Topbar";
+import { ErrorBoundary } from "./components/crm/ErrorBoundary";
 import {
   Dashboard,
   Leads,
@@ -146,7 +147,10 @@ export default function App() {
           onLogout={logout}
         />
         <main style={{ flex: 1, overflowY: "auto", padding: 20, background: colors.bgPrimary }}>
-          {wizard ? <Wizard id={wizard} onCancel={closeWizard} /> : renderScreen()}
+          {/* Scoped per screen/wizard so a crash is contained and navigating away clears it. */}
+          <ErrorBoundary resetKey={wizard ?? screen}>
+            {wizard ? <Wizard id={wizard} onCancel={closeWizard} /> : renderScreen()}
+          </ErrorBoundary>
         </main>
       </div>
       <Toaster position="top-right" richColors closeButton />

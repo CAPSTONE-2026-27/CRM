@@ -90,6 +90,11 @@ authRouter.post(
     if (!user || !user.passwordHash) throw new HttpError(401, "Invalid email or password");
     const valid = await bcrypt.compare(body.password, user.passwordHash);
     if (!valid) throw new HttpError(401, "Invalid email or password");
+    // Checked after the password so this can't be used to probe which
+    // accounts exist.
+    if (user.status === "INACTIVE") {
+      throw new HttpError(403, "This account has been deactivated. Contact your administrator.");
+    }
 
     const accessToken = await issueSession(res, user);
     res.json({ accessToken, user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role } });
@@ -120,7 +125,12 @@ authRouter.get(
     ? passport.authenticate("google", { session: false, failureRedirect: `${FRONTEND_URL}/?oauth_error=google` })
     : notConfigured("Google"),
   asyncHandler(async (req, res) => {
-    await issueSession(res, req.user as User);
+    const user = req.user as User;
+    // Deactivated accounts can't get back in via SSO either.
+    if (user.status === "INACTIVE") {
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=deactivated`);
+    }
+    await issueSession(res, user);
     res.redirect(FRONTEND_URL);
   })
 );
@@ -136,7 +146,12 @@ authRouter.get(
     ? passport.authenticate("microsoft", { session: false, failureRedirect: `${FRONTEND_URL}/?oauth_error=microsoft` })
     : notConfigured("Microsoft"),
   asyncHandler(async (req, res) => {
-    await issueSession(res, req.user as User);
+    const user = req.user as User;
+    // Deactivated accounts can't get back in via SSO either.
+    if (user.status === "INACTIVE") {
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=deactivated`);
+    }
+    await issueSession(res, user);
     res.redirect(FRONTEND_URL);
   })
 );
@@ -184,6 +199,9 @@ authRouter.post(
     if (!stored) throw new HttpError(401, "Refresh token not recognized");
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: payload.sub } });
+    if (user.status === "INACTIVE") {
+      throw new HttpError(403, "This account has been deactivated. Contact your administrator.");
+    }
 
     // Rotate: revoke the used refresh token and issue a new one.
     await prisma.refreshToken.update({ where: { id: stored.id }, data: { revoked: true } });

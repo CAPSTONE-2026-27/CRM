@@ -39,6 +39,37 @@ export const contactsRouter = crudRouter(prisma.contact, {
 
 const LEAD_STATUSES = new Set<LeadStatus>(["NEW", "WARM", "HOT", "COLD"]);
 
+// Lead ownership is assigned deliberately by a manager or admin — there is no
+// automatic routing. Anyone with the "leads" permission may edit a lead's
+// details, but only these roles may change who owns it.
+const ROLES_THAT_CAN_ASSIGN = new Set(["ADMIN", "MANAGER"]);
+
+async function guardLeadAssignment(req: import("express").Request, data: Record<string, unknown>) {
+  // Only enforce when the caller is actually touching ownership.
+  if (!("assignedToId" in data)) return;
+
+  if (!ROLES_THAT_CAN_ASSIGN.has(req.auth!.role)) {
+    throw new HttpError(403, "Only managers and admins can assign leads");
+  }
+
+  const assignedToId = data.assignedToId;
+  // Explicitly clearing the owner (unassigning) is always allowed for those roles.
+  if (assignedToId === null || assignedToId === undefined || assignedToId === "") {
+    data.assignedToId = null;
+    return;
+  }
+
+  const assignee = await prisma.user.findFirst({
+    where: { id: String(assignedToId), organizationId: req.auth!.organizationId },
+  });
+  if (!assignee) {
+    throw new HttpError(400, "That user isn't in your organization");
+  }
+  if (assignee.role !== "SALES_REP") {
+    throw new HttpError(400, "Leads can only be assigned to sales representatives");
+  }
+}
+
 // Shared by the paginated list and the CSV export so both agree on exactly
 // which leads match a given set of query params.
 function buildLeadWhere(req: import("express").Request): Prisma.LeadWhereInput {
@@ -104,6 +135,7 @@ export const leadsRouter = crudRouter(prisma.lead, {
   createSchema: leadCreateSchema,
   updateSchema: leadUpdateSchema,
   permission: "leads",
+  beforeWrite: guardLeadAssignment,
   list: listLeads,
   collectionRoutes: (router) => {
     router.get(
