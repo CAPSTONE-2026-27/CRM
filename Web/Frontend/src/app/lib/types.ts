@@ -1,16 +1,16 @@
 export type Role = "ADMIN" | "MANAGER" | "SALES_REP" | "SUPPORT_AGENT" | "MARKETING";
 
+// Mirrors the `publicUser` select in server/src/routes/users.ts. Fields not in
+// that select (and not columns on User) must not be added here — they read back
+// as undefined at runtime with no type error to warn you.
 export type UserRow = {
   id: string;
   fullName: string;
   email: string;
-  username?: string | null;
   jobTitle?: string | null;
   department?: string | null;
   role: Role;
   status: "ACTIVE" | "INACTIVE";
-  mustChangePassword: boolean;
-  lastLoginAt?: string | null;
   permissions: string[];
 };
 
@@ -122,14 +122,23 @@ export type WorkflowDefinition = {
   createdAt: string;
 };
 
+// Mirrors the AuditLog model as returned by GET /audit-log (which also
+// includes the actor's name). Field names are the server's — an earlier
+// version of this type invented `action`/`entityType`/`entityId`, which are
+// not columns and read back as undefined.
 export type AuditLogEntry = {
   id: string;
-  actorUserId?: string | null;
-  action: string;
-  entityType: string;
-  entityId?: string | null;
-  detail?: string | null;
   occurredAt: string;
+  actorType: "user" | "bot" | "system";
+  actorUserId?: string | null;
+  actorLabel?: string | null;
+  actorUser?: { fullName: string } | null;
+  event: string;
+  detail?: string | null;
+  severity: "ok" | "info" | "warning" | "alert";
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
+  aiModelVersion?: string | null;
 };
 
 export type PagedResponse<T> = {

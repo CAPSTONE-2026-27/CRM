@@ -14,6 +14,7 @@ import {
   ProgressBar,
   Stack,
   ToggleRow,
+  Field,
 } from "../components/crm/ui";
 import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
@@ -44,6 +45,7 @@ import {
   useBulkDeleteLeads,
   useDeleteRpaBot,
   useImportLeads,
+  useUpdateLead,
   useUpdateUser,
   type LeadImportResult,
 } from "../lib/queries";
@@ -361,6 +363,11 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const totalPages = leadsPage?.totalPages ?? 0;
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  // Mirrors the backend rule in guardLeadAssignment — only these roles may
+  // change lead ownership; everyone else can still edit the lead's details.
+  const { user: currentUser } = useAuth();
+  const canAssignLeads = currentUser?.role === "ADMIN" || currentUser?.role === "MANAGER";
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const deleteLead = useDeleteLead();
   const bulkDeleteLeads = useBulkDeleteLeads();
@@ -520,15 +527,26 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
               <Cell><Badge label={r.status} variant={leadStatusVariant[r.status] ?? "blue"} /></Cell>
               <Cell muted>{r.assignedToId ? (usersById.get(r.assignedToId)?.fullName ?? "Assigned") : "Unassigned"}</Cell>
               <Cell>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemove(r.id, r.fullName);
-                  }}
-                  style={{ border: "none", background: "transparent", color: colors.danger, fontSize: 12, cursor: "pointer", padding: 0 }}
-                >
-                  Remove
-                </button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingLead(r);
+                    }}
+                    style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemove(r.id, r.fullName);
+                    }}
+                    style={{ border: "none", background: "transparent", color: colors.danger, fontSize: 12, cursor: "pointer", padding: 0 }}
+                  >
+                    Remove
+                  </button>
+                </div>
               </Cell>
             </TableRow>
           ))}
@@ -551,7 +569,19 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
         <LeadDetailModal
           lead={selectedLead}
           assignee={selectedLead.assignedToId ? usersById.get(selectedLead.assignedToId) : undefined}
+          onEdit={() => {
+            setEditingLead(selectedLead);
+            setSelectedLead(null);
+          }}
           onClose={() => setSelectedLead(null)}
+        />
+      )}
+      {editingLead && (
+        <EditLeadModal
+          lead={editingLead}
+          users={users ?? []}
+          canAssign={canAssignLeads}
+          onClose={() => setEditingLead(null)}
         />
       )}
     </Stack>
@@ -608,7 +638,157 @@ function ImportResultsPanel({ result, onDismiss }: { result: LeadImportResult; o
   );
 }
 
-function LeadDetailModal({ lead, assignee, onClose }: { lead: Lead; assignee: UserRow | undefined; onClose: () => void }) {
+const LEAD_STATUS_OPTIONS = ["NEW", "WARM", "HOT", "COLD"];
+const UNASSIGNED = "— Unassigned —";
+
+// Lead ownership is set by hand here; nothing assigns leads automatically.
+// The assignment control only renders for managers/admins, and the backend
+// enforces the same rule (see guardLeadAssignment in server/src/routes/crm.ts).
+function EditLeadModal({
+  lead,
+  users,
+  canAssign,
+  onClose,
+}: {
+  lead: Lead;
+  users: UserRow[];
+  canAssign: boolean;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    fullName: lead.fullName ?? "",
+    company: lead.company ?? "",
+    email: lead.email ?? "",
+    phone: lead.phone ?? "",
+    industry: lead.industry ?? "",
+    product: lead.product ?? "",
+    estimatedDealValue: lead.estimatedDealValue != null ? String(lead.estimatedDealValue) : "",
+    sourceChannel: lead.sourceChannel ?? "",
+    status: lead.status ?? "NEW",
+    notes: lead.notes ?? "",
+  });
+  const set = (key: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
+
+  const salesReps = users.filter((u) => u.role === "SALES_REP");
+  const initialAssignee = salesReps.find((u) => u.id === lead.assignedToId)?.fullName ?? UNASSIGNED;
+  const [assigneeName, setAssigneeName] = useState(initialAssignee);
+
+  const updateLead = useUpdateLead();
+
+  const save = () => {
+    if (!form.fullName.trim() || !form.company.trim()) {
+      toast.error("Full name and company are required");
+      return;
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast.error("Enter a valid email address, or leave it blank");
+      return;
+    }
+    const dealValue = parseFloat(form.estimatedDealValue.replace(/[^0-9.]/g, ""));
+
+    const patch: Record<string, unknown> = {
+      fullName: form.fullName.trim(),
+      company: form.company.trim(),
+      email: form.email.trim() || undefined,
+      phone: form.phone.trim() || undefined,
+      industry: form.industry.trim() || undefined,
+      product: form.product.trim() || undefined,
+      estimatedDealValue: Number.isFinite(dealValue) ? dealValue : undefined,
+      sourceChannel: form.sourceChannel.trim() || undefined,
+      status: form.status,
+      notes: form.notes.trim() || undefined,
+    };
+
+    // Only send assignedToId when this user is allowed to change it — the
+    // backend rejects the field outright for other roles.
+    if (canAssign) {
+      patch.assignedToId = assigneeName === UNASSIGNED ? null : salesReps.find((u) => u.fullName === assigneeName)?.id ?? null;
+    }
+
+    updateLead.mutate(
+      { id: lead.id, ...patch },
+      {
+        onSuccess: () => {
+          toast.success(`${form.fullName} updated`);
+          onClose();
+        },
+        onError: (err) => toast.error("Failed to update lead", { description: err instanceof Error ? err.message : undefined }),
+      }
+    );
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 8, width: 560, maxHeight: "85vh", overflowY: "auto", padding: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>Edit lead</div>
+        <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 16 }}>
+          Created {new Date(lead.createdAt).toLocaleString()} · Last modified {new Date(lead.updatedAt).toLocaleString()}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field required label="Full name" value={form.fullName} onChange={set("fullName")} />
+          <Field required label="Company" value={form.company} onChange={set("company")} />
+          <Field label="Email" value={form.email} onChange={set("email")} placeholder="name@company.com" />
+          <Field label="Phone" value={form.phone} onChange={set("phone")} placeholder="+1 (555) 012-3456" />
+          <Field label="Industry" value={form.industry} onChange={set("industry")} />
+          <Field label="Product" value={form.product} onChange={set("product")} />
+          <Field label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
+          <Field label="Source channel" value={form.sourceChannel} onChange={set("sourceChannel")} />
+          <Field label="Status" type="select" value={form.status} onChange={set("status")} options={LEAD_STATUS_OPTIONS} />
+          {canAssign && (
+            <Field
+              label="Assigned to"
+              type="select"
+              value={assigneeName}
+              onChange={setAssigneeName}
+              options={[UNASSIGNED, ...salesReps.map((u) => u.fullName)]}
+            />
+          )}
+        </div>
+
+        {!canAssign && (
+          <div style={{ fontSize: 11, color: colors.textSecondary, marginTop: 10 }}>
+            Only managers and admins can change who a lead is assigned to.
+          </div>
+        )}
+        {canAssign && salesReps.length === 0 && (
+          <div style={{ fontSize: 11, color: colors.textSecondary, marginTop: 10 }}>
+            No sales representatives in your organization yet — add one from User management to assign this lead.
+          </div>
+        )}
+
+        <div style={{ marginTop: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 500, color: colors.textSecondary, display: "block", marginBottom: 5 }}>Notes</label>
+          <textarea
+            value={form.notes}
+            onChange={(e) => set("notes")(e.target.value)}
+            style={{ width: "100%", border: `0.5px solid ${colors.border}`, borderRadius: 6, padding: "8px 10px", fontSize: 12, minHeight: 64, resize: "vertical", outline: "none", fontFamily: "inherit" }}
+          />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <Button label="Cancel" onClick={onClose} />
+          <Button label={updateLead.isPending ? "Saving…" : "Save changes"} variant="primary" onClick={save} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadDetailModal({
+  lead,
+  assignee,
+  onEdit,
+  onClose,
+}: {
+  lead: Lead;
+  assignee: UserRow | undefined;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
   const fields: [string, string][] = [
     ["Email", lead.email ?? "—"],
     ["Phone", lead.phone ?? "—"],
@@ -618,7 +798,9 @@ function LeadDetailModal({ lead, assignee, onClose }: { lead: Lead; assignee: Us
     ["Estimated deal value", lead.estimatedDealValue != null ? formatCurrency(lead.estimatedDealValue) : "—"],
     ["Source channel", lead.sourceChannel ?? "—"],
     ["Capture method", lead.captureMethod ?? "—"],
+    ["Assigned to", assignee?.fullName ?? "Unassigned"],
     ["Created", new Date(lead.createdAt).toLocaleString()],
+    ["Last modified", new Date(lead.updatedAt).toLocaleString()],
   ];
 
   return (
@@ -680,8 +862,9 @@ function LeadDetailModal({ lead, assignee, onClose }: { lead: Lead; assignee: Us
           </>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button label="Close" onClick={onClose} />
+          <Button label="Edit lead" variant="primary" onClick={onEdit} />
         </div>
       </div>
     </div>
@@ -1197,12 +1380,14 @@ export function Analytics() {
 }
 
 /* ============ S10 Security & Audit ============ */
-function auditActionVariant(action: string): BadgeVariant {
-  if (action.includes("DELETED") || action.includes("DEACTIVATED")) return "red";
-  if (action.includes("CREATED") || action.includes("ACTIVATED")) return "green";
-  if (action.includes("RESET") || action.includes("CHANGED")) return "amber";
-  return "blue";
-}
+// The server records a controlled severity per entry, which is a more reliable
+// badge source than pattern-matching the free-text event name.
+const auditSeverityVariant: Record<string, BadgeVariant> = {
+  alert: "red",
+  warning: "amber",
+  ok: "green",
+  info: "blue",
+};
 const userRoleVariant: Record<string, BadgeVariant> = { ADMIN: "purple", MANAGER: "blue", SALES_REP: "green", SUPPORT_AGENT: "amber", MARKETING: "blue" };
 const userRoleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales representative", SUPPORT_AGENT: "Support agent", MARKETING: "Marketing" };
 const userStatusVariant: Record<string, BadgeVariant> = { ACTIVE: "green", INACTIVE: "amber" };
@@ -1440,15 +1625,21 @@ export function Security({ onNavigate }: { onNavigate: Nav }) {
         <Card title="Recent audit log">
           {auditLoading && <LoadingState />}
           {!auditLoading &&
-            rows.map((r) => (
-              <Row
-                key={r.id}
-                time={new Date(r.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                name={r.action.replace(/_/g, " ")}
-                sub={`${r.entityType}${r.entityId ? " #" + r.entityId : ""}${r.detail ? " · " + r.detail : ""}`}
-                badge={{ label: r.action.replace(/_/g, " "), variant: auditActionVariant(r.action) }}
-              />
-            ))}
+            rows.map((r) => {
+              const actor = r.actorUser?.fullName ?? r.actorLabel ?? r.actorType ?? "system";
+              const entity = r.relatedEntityType
+                ? `${r.relatedEntityType}${r.relatedEntityId ? " #" + r.relatedEntityId : ""}`
+                : "";
+              return (
+                <Row
+                  key={r.id}
+                  time={new Date(r.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  name={r.event ?? "Event"}
+                  sub={[actor, entity, r.detail].filter(Boolean).join(" · ")}
+                  badge={{ label: r.severity ?? "info", variant: auditSeverityVariant[r.severity] ?? "blue" }}
+                />
+              );
+            })}
           {!auditLoading && rows.length === 0 && <EmptyState message="No audit events yet" />}
         </Card>
         <Card title="Security posture">

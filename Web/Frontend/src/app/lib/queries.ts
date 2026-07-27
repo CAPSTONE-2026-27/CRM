@@ -84,6 +84,17 @@ export const useLeadStats = () =>
 export const useCreateLead = () => useCreate<Lead, Partial<Lead>>("leads", "/leads");
 export const useDeleteLead = () => useDelete("leads", "/leads");
 
+// Partial update of a single lead. Invalidating ["leads"] also refreshes the
+// stats tiles, whose key is ["leads", "stats"].
+export function useUpdateLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string } & Record<string, unknown>) =>
+      api.patch<Lead>(`/leads/${id}`, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
 export type PastedEmailInput = { from?: string; subject?: string; body: string };
 export type LeadCreationResult = { lead: Lead; missingFields: string[] };
 export function useCreateLeadFromEmail() {

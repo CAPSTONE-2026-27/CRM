@@ -16,6 +16,13 @@ enum Role {
   SUPPORT_AGENT
 }
 
+// Whether an account may sign in. Deactivated users keep their records
+// (leads they own, audit history) but are refused at login.
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum IdentityProvider {
   AZURE_AD
   OKTA
@@ -155,6 +162,7 @@ model User {
   phone                 String?
   department            String?
   role                  Role
+  status                UserStatus        @default(ACTIVE)
   reportingManagerId    String?
   reportingManager      User?             @relation("ManagerReports", fields: [reportingManagerId], references: [id])
   reports               User[]            @relation("ManagerReports")

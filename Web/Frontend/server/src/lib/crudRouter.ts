@@ -33,6 +33,10 @@ export function crudRouter(
     // Registers extra collection-level routes (e.g. GET "/stats") that must be
     // matched *before* the "/:id" routes below, otherwise "/:id" would shadow them.
     collectionRoutes?: (router: Router) => void;
+    // Runs after schema validation but before a create or update is persisted.
+    // Throw an HttpError to reject the write — used for field-level rules the
+    // zod schema can't express, e.g. "only some roles may set this column".
+    beforeWrite?: (req: Request, data: Record<string, unknown>) => Promise<void> | void;
   }
 ) {
   const router = Router();
@@ -80,6 +84,7 @@ export function crudRouter(
     asyncHandler(async (req, res) => {
       const organizationId = req.auth!.organizationId;
       const data = opts.createSchema.parse(req.body);
+      if (opts.beforeWrite) await opts.beforeWrite(req, data as Record<string, unknown>);
       const row = await delegate.create({ data: { ...data, organizationId } });
       if (opts.onCreated) {
         opts.onCreated(row, organizationId).catch((err) => console.error("onCreated hook failed:", err));
@@ -98,6 +103,7 @@ export function crudRouter(
           throw new HttpError(404, "Not found");
         });
       const data = opts.updateSchema.parse(req.body);
+      if (opts.beforeWrite) await opts.beforeWrite(req, data as Record<string, unknown>);
       const row = await delegate.update({ where: { id: req.params.id }, data });
       res.json(row);
     })
