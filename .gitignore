@@ -1,6 +1,9 @@
 # Eclipse workspace metadata (IDE-generated, not project source)
-Web/.metadata/
-Web/Backend/.metadata/
+.metadata/
+**/.metadata/
+
+# Java build output
+backend-java/target/
 
 # Claude Code local settings
 .claude/settings.local.json
@@ -9,3 +12,7 @@ Web/Backend/.metadata/
 # OS files
 Thumbs.db
 .DS_Store
+
+# IDE
+.vscode/
+.idea/
