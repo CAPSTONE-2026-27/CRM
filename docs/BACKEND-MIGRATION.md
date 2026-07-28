@@ -1,90 +1,81 @@
-# Backend migration: Node/Express → Spring Boot
+# Backend migration: Node/Express → Spring Boot (complete)
 
-Decision (2026-07-28): **Spring Boot becomes the backend.** `backend-java/` is the
-target; `backend/` (Node/Express + Prisma) is what currently serves the app and
-stays running until the port is complete.
+Completed 2026-07-28. The Node/Express + Prisma API has been removed; the Spring
+Boot backend in [`backend/`](../backend) now serves the application. This
+document is kept as a record of what changed and why, for anyone reading the
+history or reviving something from it.
 
-The live Neon database remains the source of truth — Spring is being adapted to
-the existing Prisma schema rather than the data being migrated to Flyway's.
+## Why there were two backends
 
-## Where things stand
+The React frontend was originally written against the Spring API — its
+Spring-Data pagination envelope (`content` / `totalElements` / `totalPages`) and
+audit fields named `action` / `entityType` / `entityId` are the giveaways. A
+Node/Express reimplementation was later built and became what actually ran,
+but it never matched those contracts, which caused two screens to crash on
+field names the API had never returned.
 
-`backend-java/` has **never been compiled**. There was no JDK on the dev machine,
-which is why this was never caught. Nothing in it is proven to run.
+Spring Boot was chosen as the single backend, and Node was retired once the
+Spring API reached parity.
 
-## What each backend implements
+## What had to be built on the Spring side
 
-| Module | Node (live) | Spring |
-|---|---|---|
-| Auth (local JWT) | ✅ | ✅ |
-| Google / Microsoft SSO | ✅ | ❌ |
-| Users | ✅ + activate/deactivate | ✅ |
-| Leads (paginated, stats, import, from-email, bulk-delete) | ✅ | ✅ |
-| Lead assignment rules (manager/admin only) | ✅ | ❌ |
-| Analytics | ✅ | ✅ |
-| Audit log | ✅ | ✅ |
-| AI lead scoring | ✅ direct OpenAI-compatible client | ✅ via external `ai.service.base-url` |
-| Accounts, Contacts, Deals, Cases, Campaigns | ✅ | ❌ |
-| Workflows | ✅ | ❌ |
-| RPA bots + runs (BullMQ/Redis) | ✅ 3 working bots | ❌ no queue at all |
-| Lead Output / meetings + AI re-scoring | ✅ | ❌ |
-| Assistant chat (streaming) | ✅ | ❌ |
-| Email ingestion (IMAP poller) | ❌ | ✅ |
+Spring already had auth, users, leads (including duplicate detection Node never
+had), analytics, audit, and IMAP email ingestion. Added during the migration:
 
-Spring covers auth, users, leads, analytics, and audit. Roughly **8 entities plus
-the bot queue** need building.
-
-## The two blocking incompatibilities
-
-### 1. Identifier types
-
-| | Spring (JPA) | Prisma (Neon) |
-|---|---|---|
-| Primary keys | `Long`, `@GeneratedValue(IDENTITY)` → `1, 2, 3` | `String` cuid → `cms46e48m0009u023db4vmbvd` |
-| Foreign keys | `Long assignedToId` | `String assignedToId` |
-
-All 6 Spring entities use bigint identity IDs. Adapting to Prisma means changing
-the ID type across **24 of 74 Java files** — entities, repositories, services,
-DTOs, and controller path variables.
-
-### 2. Table and column naming
-
-| Flyway (Spring) | Prisma (Neon) |
+| Added | Notes |
 |---|---|
-| `leads`, `users`, `organizations`, `audit_log`, `refresh_tokens`, `login_history` | `Lead`, `User`, `Organization`, `AuditLog`, `RefreshToken`, + 9 more |
-| snake_case, unquoted | PascalCase tables, camelCase columns, quoted |
+| Accounts, contacts, deals, cases, campaigns | V9 |
+| Workflows, Lead Output (meetings) | V10 |
+| RPA bots + runs | V11 |
+| Google / Microsoft SSO | V12 |
+| Groq / OpenAI-compatible AI client | replaced a bespoke `POST /score` service that nothing implemented |
 
-Postgres folds unquoted identifiers to lowercase, so Hibernate must be configured
-to quote them and preserve case — otherwise `Lead` resolves to `lead` and nothing
-binds. Plan: `PhysicalNamingStrategyStandardImpl` +
-`hibernate.globally_quoted_identifiers=true`, with explicit `@Table` / `@Column`
-names matching Prisma exactly.
+## Decisions worth remembering
 
-`login_history` has **no** Prisma equivalent — either add it to the Prisma schema
-via a migration or drop the entity.
+**A separate database, not a shared one.** Spring's Flyway schema
+(`snake_case`, bigint identity keys) and Prisma's (`PascalCase`, cuid string
+keys) were structurally incompatible — the same data could not be served by
+both. Spring was pointed at its own `crm_spring` database and Flyway builds it
+cleanly. This avoided rewriting identifier types across 24 Java files, which
+adapting Spring to Prisma's schema would have required.
 
-Flyway must **not** run against Neon; Prisma owns the schema. Disable it
-(`spring.flyway.enabled=false`) or baseline it.
+Consequence: **data created against the Node backend (in Neon) did not come
+across.** It still exists in that Neon database if it is ever needed.
 
-## Phases
+**The AI integration point is the OpenAI-compatible chat-completions API,** not
+a bespoke inference service. A hosted API and a self-hosted vLLM/Ollama server
+expose the same contract, so serving the fine-tuned model from [`ml/`](../ml)
+later is a configuration change — `AI_BASE_URL`, `AI_MODEL_NAME`, `AI_API_KEY`.
 
-1. **Toolchain** — install JDK 21, compile, fix whatever breaks. *(in progress)*
-2. **Persistence** — repoint at Neon, switch IDs to `String`, add the naming
-   strategy and explicit table/column mappings, disable Flyway, verify
-   `ddl-auto: validate` passes against the real schema.
-3. **Parity for existing screens** — frontend `VITE_API_URL` → Spring's `/api`
-   prefix; verify auth, users, leads, analytics, audit end-to-end.
-4. **Port the gap** — accounts, contacts, deals, cases, campaigns, workflows,
-   lead meetings; then the RPA bots (needs a queue/scheduler choice) and OAuth.
-5. **Retire Node** — once parity is proven.
+**RPA bots run on Spring's own primitives** — `@Async` for event and manual
+runs, `@Scheduled` for the hourly sweep — rather than a broker. Node used
+BullMQ on Redis. The trade-off is documented on `BotExecutionService`: queued
+work is in-process, so a restart drops anything mid-flight and there is no
+cross-instance coordination.
 
-## Notes
+**Sessions are `IF_REQUIRED`, not `STATELESS`.** The OAuth handshake has to hold
+the authorization request across the provider round-trip. The API itself stays
+token-based and the session goes unused afterwards.
 
-- Spring serves under `/api/*`; the Node API does not. The frontend's
-  `VITE_API_URL` must include the prefix.
-- Spring's `AiScoringClient` expects a separate inference service exposing
-  `POST /score`. Node calls an OpenAI-compatible endpoint directly. Either stand
-  up that service or rewrite the client to match the `AI_BASE_URL` contract in
-  [`backend/.env.example`](../backend/.env.example).
-- Spring's `application.yml` defaults to a **local** Postgres and `ddl-auto:
-  validate`, so it will fail fast against Neon until phase 2 is done.
+## Traps hit along the way
+
+- `backend/mvnw` was missing its executable bit, and no JDK was installed. That
+  is why the Spring module had never once been compiled.
+- Spring Boot 4 makes JSON binding pluggable, so `jackson-databind` is **not** a
+  compile-scope transitive of `spring-boot-starter-webmvc`. It has to be
+  declared explicitly.
+- Constructor-injecting the OAuth success handler into `SecurityConfig` created
+  a cycle (`SecurityConfig` → handler → `AuthService` → `PasswordEncoder`, which
+  `SecurityConfig` declares) and the application refused to start. It is taken
+  as a `@Bean` method parameter instead.
+- `@Transactional` on a method called from within the same bean is bypassed by
+  the proxy. Two such annotations were removed rather than left implying
+  behaviour that never happened.
+
+## Known difference from the Node behaviour
+
+Scoring a lead sets `aiScore` and `aiScoreLabel` but **not** `status`. The Node
+enrichment bot also wrote `status` (HOT/WARM/COLD) from the label, so the Leads
+table's Status column no longer tracks the AI label automatically. Deliberate
+difference to flag, not a bug — decide whether Status should be AI-driven or
+purely a human field.

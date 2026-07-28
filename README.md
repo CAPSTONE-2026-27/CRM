@@ -1,80 +1,89 @@
 # TechCRM
 
-An AI-assisted CRM: lead capture and scoring, sales pipeline, cases, marketing
-campaigns, workflow automation, and RPA bots — with lead scoring and post-meeting
-analysis driven by a fine-tuned LLM.
+An AI-assisted CRM: lead capture and scoring, sales pipeline, accounts and
+contacts, cases, marketing campaigns, workflow automation, and RPA bots — with
+lead scoring and post-meeting analysis driven by an LLM.
 
 ## Repository layout
 
 ```
 .
-├── frontend/        React 18 + Vite + TypeScript single-page app
-├── backend/         Node/Express + Prisma REST API   ← the API the app runs against
-├── backend-java/    Spring Boot API (original implementation, not currently running)
-├── ml/              Llama-3 fine-tuning for CRM lead scoring
-└── docs/            Setup and reference documentation
+├── frontend/   React 18 + Vite + TypeScript single-page app
+├── backend/    Spring Boot REST API (Java 21)
+├── ml/         Llama-3 fine-tuning for CRM lead scoring
+└── docs/       Setup and reference documentation
 ```
 
 | Directory | Stack | Runs on |
 |---|---|---|
 | [`frontend/`](frontend/) | React, Vite, TanStack Query | `http://localhost:5173` |
-| [`backend/`](backend/) | Express, Prisma, BullMQ, Passport | `http://localhost:4000` |
-| [`backend-java/`](backend-java/) | Spring Boot, Flyway | not started by default |
+| [`backend/`](backend/) | Spring Boot 4, JPA, Flyway, Spring Security | `http://localhost:8080` |
 | [`ml/`](ml/) | Python, PyTorch/PEFT | offline training |
 
-> **Which backend is live?** `backend/` (Node) is what the frontend talks to and
-> what the deployment uses. `backend-java/` is the earlier Spring Boot
-> implementation of the same API, kept for reference — see its README before
-> changing anything there.
+The API serves everything under `/api`, e.g. `http://localhost:8080/api/leads`.
 
 ## Getting started
 
-Prerequisites: **Node 20+**, a **PostgreSQL 14+** database (local or hosted, e.g. Neon),
-and **Redis** (for the RPA bot queue).
+Prerequisites: **JDK 21**, **Node 20+** (for the frontend toolchain), and
+**PostgreSQL 14+**.
 
 ```bash
-# 1. API
-cd backend
-npm install
-cp .env.example .env         # fill in DATABASE_URL, JWT secrets, AI + OAuth keys
-npx prisma migrate deploy    # creates the schema
-npm run dev                  # http://localhost:4000
+# 1. Database
+createdb crm_spring          # Flyway creates the schema on first start
 
-# 2. RPA worker (separate terminal — required for AI lead scoring)
+# 2. API
 cd backend
-npm run worker
+cp src/main/resources/application-local.yml.example \
+   src/main/resources/application-local.yml   # then fill in your values
+./mvnw spring-boot:run                        # http://localhost:8080
 
 # 3. Frontend (separate terminal)
 cd frontend
 npm install
-npm run dev                  # http://localhost:5173
+npm run dev                                   # http://localhost:5173
 ```
 
-Then open http://localhost:5173 and sign up — the first account creates the
-organization and becomes its admin.
+Open http://localhost:5173 and sign up — the first account creates the
+organization, becomes its admin, and registers the three built-in RPA bots.
 
-Full database instructions, including hosted and Docker options, are in
-[docs/DATABASE-SETUP.md](docs/DATABASE-SETUP.md).
+Full database instructions are in [docs/DATABASE-SETUP.md](docs/DATABASE-SETUP.md).
 
 ## Configuration
 
-All backend configuration is environment-based. `backend/.env` is gitignored;
-[`backend/.env.example`](backend/.env.example) documents every variable —
-database URL, JWT secrets, the OpenAI-compatible AI endpoint, Redis, and the
-Google / Microsoft OAuth credentials.
+Everything is environment-overridable; local developer values belong in
+`backend/src/main/resources/application-local.yml`, which is gitignored.
+
+| Variable | Purpose |
+|---|---|
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL connection |
+| `JWT_ACCESS_SECRET` | Signing key for access tokens |
+| `AI_BASE_URL`, `AI_MODEL_NAME`, `AI_API_KEY` | OpenAI-compatible model endpoint |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | Google sign-in |
+| `MICROSOFT_CLIENT_ID` / `_SECRET`, `MICROSOFT_TENANT_ID` | Microsoft sign-in |
+| `FRONTEND_URL` | Where OAuth returns the browser after sign-in |
+
+Leaving the OAuth or AI values unset does not prevent startup — those features
+degrade rather than fail.
 
 ## Architecture notes
 
-- **Auth** — JWT access tokens (15m) plus httpOnly refresh cookies, with optional
+- **Auth** — JWT access tokens plus httpOnly refresh cookies, with optional
   Google and Microsoft SSO. Per-user, per-screen permissions; admins bypass.
-- **AI** — any OpenAI-compatible endpoint (`AI_BASE_URL`), so the same code runs
-  against a hosted API during development and a self-hosted vLLM/Ollama server
-  serving the fine-tuned model from [`ml/`](ml/) in production.
-- **RPA bots** — BullMQ jobs on Redis. Lead enrichment and case routing fire on
-  record creation; follow-up sequencing runs hourly. Requires the worker process.
+  Every request is scoped to the caller's organization.
+- **AI** — any OpenAI-compatible chat-completions endpoint (`AI_BASE_URL`), so
+  the same code runs against a hosted API in development and a self-hosted
+  vLLM/Ollama server serving the fine-tuned model from [`ml/`](ml/) in
+  production. An unreachable model degrades gracefully; it never blocks a user
+  from saving their own work.
+- **RPA bots** — Spring `@Async` for event- and manually-triggered runs,
+  `@Scheduled` for the hourly follow-up sweep. No broker required; see
+  `BotExecutionService` for the trade-offs that choice implies.
+- **Schema** — owned by Flyway migrations in
+  [`backend/src/main/resources/db/migration`](backend/src/main/resources/db/migration).
 
 ## Documentation
 
 - [Database setup](docs/DATABASE-SETUP.md)
 - [Design guidelines](docs/DESIGN-GUIDELINES.md)
+- [Backend migration history](docs/BACKEND-MIGRATION.md)
 - [Attributions](docs/ATTRIBUTIONS.md)

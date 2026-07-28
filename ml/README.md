@@ -15,14 +15,16 @@ test_setup.py environment check — run this first
 ## Serving the model to the CRM
 
 The API talks to any **OpenAI-compatible** chat-completions endpoint, so a
-served fine-tune drops in without code changes. Point these variables in
-[`../backend/.env`](../backend/.env.example) at your inference server:
+served fine-tune drops in without code changes. Point these at your inference
+server, either as environment variables or in
+`backend/src/main/resources/application-local.yml`:
 
-```
-AI_BASE_URL="http://localhost:8000/v1"
-AI_MODEL_NAME="<your-served-model-name>"
-AI_API_KEY=""          # usually blank for self-hosted vLLM/Ollama
+```yaml
+ai:
+  base-url: http://localhost:8000/v1
+  model-name: <your-served-model-name>
+  api-key: ""          # usually blank for self-hosted vLLM/Ollama
 ```
 
-The same interface is used by lead scoring, post-meeting analysis, case routing,
-follow-up drafting, and the in-app assistant — so all of them switch over at once.
+The same interface is used by lead scoring and post-meeting analysis, so both
+switch over at once.

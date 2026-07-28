@@ -1392,14 +1392,12 @@ export function Analytics() {
 }
 
 /* ============ S10 Security & Audit ============ */
-// The server records a controlled severity per entry, which is a more reliable
-// badge source than pattern-matching the free-text event name.
-const auditSeverityVariant: Record<string, BadgeVariant> = {
-  alert: "red",
-  warning: "amber",
-  ok: "green",
-  info: "blue",
-};
+function auditActionVariant(action: string): BadgeVariant {
+  if (action.includes("DELETED") || action.includes("DEACTIVATED")) return "red";
+  if (action.includes("CREATED") || action.includes("ACTIVATED")) return "green";
+  if (action.includes("RESET") || action.includes("CHANGED")) return "amber";
+  return "blue";
+}
 const userRoleVariant: Record<string, BadgeVariant> = { ADMIN: "purple", MANAGER: "blue", SALES_REP: "green", SUPPORT_AGENT: "amber", MARKETING: "blue" };
 const userRoleLabel: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", SALES_REP: "Sales representative", SUPPORT_AGENT: "Support agent", MARKETING: "Marketing" };
 const userStatusVariant: Record<string, BadgeVariant> = { ACTIVE: "green", INACTIVE: "amber" };
@@ -1638,17 +1636,17 @@ export function Security({ onNavigate }: { onNavigate: Nav }) {
           {auditLoading && <LoadingState />}
           {!auditLoading &&
             rows.map((r) => {
-              const actor = r.actorUser?.fullName ?? r.actorLabel ?? r.actorType ?? "system";
-              const entity = r.relatedEntityType
-                ? `${r.relatedEntityType}${r.relatedEntityId ? " #" + r.relatedEntityId : ""}`
+              const action = r.action ?? "Event";
+              const entity = r.entityType
+                ? `${r.entityType}${r.entityId ? " #" + r.entityId : ""}`
                 : "";
               return (
                 <Row
                   key={r.id}
                   time={new Date(r.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  name={r.event ?? "Event"}
-                  sub={[actor, entity, r.detail].filter(Boolean).join(" · ")}
-                  badge={{ label: r.severity ?? "info", variant: auditSeverityVariant[r.severity] ?? "blue" }}
+                  name={action.replace(/_/g, " ")}
+                  sub={[entity, r.detail].filter(Boolean).join(" · ")}
+                  badge={{ label: action.replace(/_/g, " "), variant: auditActionVariant(action) }}
                 />
               );
             })}
