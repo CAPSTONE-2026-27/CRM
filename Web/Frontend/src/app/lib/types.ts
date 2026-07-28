@@ -141,6 +141,38 @@ export type AuditLogEntry = {
   aiModelVersion?: string | null;
 };
 
+// Lead Output module — one record per customer meeting, permanently linked to
+// its lead. History is append-only; a new meeting never replaces an older one.
+export type LeadMeeting = {
+  id: string;
+  leadId: string;
+  meetingDate: string;
+  meetingTime: string;
+  meetingOutput: string;
+  aiSummary: string;
+  previousScore?: number | null;
+  updatedScore?: number | null;
+  scoreChangeReason?: string | null;
+  aiModelVersion?: string | null;
+  recordedBy?: { fullName: string } | null;
+  createdAt: string;
+};
+
+// Result of the AI preview step — not persisted until the rep saves.
+export type MeetingAnalysis = {
+  leadId: string;
+  leadName: string;
+  meetingDate: string;
+  meetingTime: string;
+  meetingOutput: string;
+  aiSummary: string;
+  previousScore: number | null;
+  updatedScore: number;
+  scoreDifference: number;
+  scoreLabel: "Hot" | "Warm" | "Cold";
+  reasons: string[];
+};
+
 export type PagedResponse<T> = {
   content: T[];
   page: number;

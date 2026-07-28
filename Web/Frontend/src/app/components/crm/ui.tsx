@@ -44,18 +44,23 @@ export function Button({
   variant = "default",
   onClick,
   full,
+  disabled,
 }: {
   label: string;
   icon?: React.ComponentType<{ size?: number; color?: string }>;
   variant?: "default" | "primary";
   onClick?: () => void;
   full?: boolean;
+  // Blocks the click and dims the button — used for in-flight async actions.
+  disabled?: boolean;
 }) {
   const isPrimary = variant === "primary";
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
+        opacity: disabled ? 0.55 : 1,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
@@ -67,7 +72,7 @@ export function Button({
         padding: "7px 14px",
         fontSize: 12,
         fontWeight: 500,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         width: full ? "100%" : undefined,
       }}
     >
@@ -365,7 +370,7 @@ export function Field({
   required,
 }: {
   label: string;
-  type?: "text" | "select" | "number";
+  type?: "text" | "select" | "number" | "date" | "time";
   value?: string;
   placeholder?: string;
   options?: string[];
@@ -420,14 +425,14 @@ export function Field({
         )
       ) : onChange ? (
         <input
-          type={type === "number" ? "number" : "text"}
+          type={type === "select" ? "text" : type}
           style={inputStyle}
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
         />
       ) : (
-        <input type={type === "number" ? "number" : "text"} style={inputStyle} defaultValue={value} placeholder={placeholder} />
+        <input type={type === "select" ? "text" : type} style={inputStyle} defaultValue={value} placeholder={placeholder} />
       )}
     </div>
   );
