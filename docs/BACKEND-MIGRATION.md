@@ -72,10 +72,9 @@ token-based and the session goes unused afterwards.
   the proxy. Two such annotations were removed rather than left implying
   behaviour that never happened.
 
-## Known difference from the Node behaviour
+## Behaviour parity
 
-Scoring a lead sets `aiScore` and `aiScoreLabel` but **not** `status`. The Node
-enrichment bot also wrote `status` (HOT/WARM/COLD) from the label, so the Leads
-table's Status column no longer tracks the AI label automatically. Deliberate
-difference to flag, not a bug — decide whether Status should be AI-driven or
-purely a human field.
+Scoring drives the lead's `status` (HOT/WARM/COLD) from the AI label, matching
+the Node enrichment bot, so the Leads table's Status column and its filter track
+scoring rather than sitting at NEW. `aiScoreLabel` stays display text and
+`status` a fixed uppercase vocabulary; the two are compared case-insensitively.

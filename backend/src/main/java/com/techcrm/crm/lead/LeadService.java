@@ -301,10 +301,15 @@ public class LeadService {
 
             // Drive the lead's status from the AI's verdict so the "Status"
             // column/filter (Hot/Warm/Cold) actually reflects scoring instead
-            // of sitting at "NEW" forever. "UNSCORED" (scoring unavailable)
-            // deliberately leaves status untouched.
-            if (STATUS_LABELS.contains(result.label())) {
-                lead.setStatus(result.label());
+            // of sitting at "NEW" forever. Anything the model returns that
+            // isn't one of these (or no label at all) leaves status untouched.
+            // Compared case-insensitively: aiScoreLabel is display text, while
+            // status is a fixed uppercase vocabulary the frontend styles on.
+            if (result.label() != null) {
+                String status = result.label().trim().toUpperCase();
+                if (STATUS_LABELS.contains(status)) {
+                    lead.setStatus(status);
+                }
             }
         }
     }
