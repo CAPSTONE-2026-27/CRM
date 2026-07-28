@@ -31,7 +31,7 @@ public class LeadMeetingService {
     public LeadMeetingService(LeadMeetingRepository meetingRepository,
                               LeadRepository leadRepository,
                               MeetingAnalysisClient analysisClient,
-                              @Value("${ai.service.model-name:external}") String modelVersion) {
+                              @Value("${ai.model-name:unknown}") String modelVersion) {
         this.meetingRepository = meetingRepository;
         this.leadRepository = leadRepository;
         this.analysisClient = analysisClient;
