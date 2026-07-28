@@ -27,8 +27,23 @@ public class User {
     @Column(nullable = false)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
+    /** Null for OAuth-only accounts — see authProvider. */
+    @Column(name = "password_hash")
     private String passwordHash;
+
+    /** LOCAL | GOOGLE | MICROSOFT */
+    @Column(name = "auth_provider", nullable = false, length = 20)
+    private String authProvider = "LOCAL";
+
+    /** The provider's own user id, used to match a returning OAuth user. */
+    @Column(name = "provider_account_id")
+    private String providerAccountId;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
 
     @Column(name = "full_name", nullable = false)
     private String fullName;

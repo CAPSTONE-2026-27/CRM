@@ -12,6 +12,11 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 
     Optional<User> findByEmailAndDeletedAtIsNull(String email);
 
+    /** Matches a returning OAuth user on the provider's own identity, which is
+     *  stable even if they later change the email on their provider account. */
+    Optional<User> findByAuthProviderAndProviderAccountIdAndDeletedAtIsNull(
+            String authProvider, String providerAccountId);
+
     boolean existsByEmailAndDeletedAtIsNull(String email);
 
     List<User> findByOrganizationIdAndDeletedAtIsNull(Long organizationId);

@@ -218,6 +218,13 @@ public class AuthService {
         loginHistoryRepository.save(entry);
     }
 
+    /** Issues a session for an already-authenticated user. Used by the OAuth
+     *  callback, where the provider — not a password — established identity. */
+    @Transactional
+    public TokenPair issueTokensFor(User user) {
+        return issueTokenPair(user);
+    }
+
     private TokenPair issueTokenPair(User user) {
         AuthenticatedUser principal = new AuthenticatedUser(
                 user.getId(), user.getOrganizationId(), user.getRole(), user.getPermissions(), user.isMustChangePassword());
