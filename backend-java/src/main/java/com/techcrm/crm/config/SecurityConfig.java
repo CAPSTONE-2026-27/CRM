@@ -2,6 +2,8 @@ package com.techcrm.crm.config;
 
 import com.techcrm.crm.auth.JwtAuthenticationFilter;
 import com.techcrm.crm.auth.JwtService;
+import com.techcrm.crm.auth.OAuth2SuccessHandler;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -31,11 +33,17 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            OAuth2SuccessHandler oAuth2SuccessHandler,
+            @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // The API itself stays token-based; a session is created only to
+                // hold the OAuth authorization request across the provider
+                // round-trip, then goes unused.
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         // /error must be permitAll: sendError()-based handlers
                         // (Spring's default AccessDeniedHandler included)
@@ -49,7 +57,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/signup", "/api/auth/login",
                                 "/api/auth/refresh", "/api/auth/logout",
-                                "/actuator/health", "/error"
+                                "/actuator/health", "/error",
+                                // The OAuth handshake runs before any CRM token exists.
+                                "/oauth2/**", "/login/oauth2/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -69,6 +79,12 @@ public class SecurityConfig {
                 // Spring Boot never auto-registers it as a second, raw
                 // container-level filter outside this chain — see the class
                 // Javadoc on JwtAuthenticationFilter for why that matters.
+                .oauth2Login(oauth -> oauth
+                        .successHandler(oAuth2SuccessHandler)
+                        // A provider-side failure returns the user to the app with
+                        // a flag rather than dumping a Spring error page on them.
+                        .failureHandler((request, response, exception) ->
+                                response.sendRedirect(frontendUrl + "/?oauth_error=1")))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
