@@ -2,6 +2,11 @@
 // point at a deployed environment.
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080/api";
 
+// Spring Security mounts the OAuth handshake at the server root
+// (/oauth2/authorization/...), outside the /api prefix the REST controllers
+// use — so the sign-in buttons need the bare server origin, not API_BASE_URL.
+const SERVER_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 
@@ -145,4 +150,4 @@ export async function streamCopilotChat(
   }
 }
 
-export { API_BASE_URL, refreshAccessToken };
+export { API_BASE_URL, SERVER_ORIGIN, refreshAccessToken };

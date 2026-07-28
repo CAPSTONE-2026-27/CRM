@@ -2,7 +2,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { toast } from "sonner";
 import { colors } from "../tokens";
 import { useAuth } from "../lib/auth";
-import { API_BASE_URL } from "../lib/apiClient";
+import { SERVER_ORIGIN } from "../lib/apiClient";
 
 function GoogleIcon() {
   return (
@@ -26,12 +26,21 @@ function MicrosoftIcon() {
   );
 }
 
+// Microsoft is registered as "azure" server-side (the client registration id),
+// so the button's provider name can't be used in the URL directly.
+const OAUTH_REGISTRATION_ID: Record<"google" | "microsoft", string> = {
+  google: "google",
+  microsoft: "azure",
+};
+
 function OAuthButton({ provider, label }: { provider: "google" | "microsoft"; label: string }) {
   return (
     <button
       type="button"
       onClick={() => {
-        window.location.href = `${API_BASE_URL}/auth/${provider}`;
+        // Full navigation, not fetch: the provider redirects the browser back
+        // to the server, which sets the refresh cookie and returns to the app.
+        window.location.href = `${SERVER_ORIGIN}/oauth2/authorization/${OAUTH_REGISTRATION_ID[provider]}`;
       }}
       style={{
         display: "flex",
