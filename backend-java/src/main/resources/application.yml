@@ -21,9 +21,16 @@ management:
   endpoint:
     health:
       show-details: always
+# Any OpenAI-compatible chat-completions endpoint. Defaults target Groq for
+# development; point base-url/model-name at a self-hosted vLLM or Ollama server
+# (api-key blank) to serve the fine-tuned model from ml/ instead — no code
+# changes, this is the whole integration surface.
 ai:
-  service:
-    base-url: http://localhost:8000
+  base-url: ${AI_BASE_URL:https://api.groq.com/openai/v1}
+  model-name: ${AI_MODEL_NAME:llama-3.1-8b-instant}
+  # Never commit a real key — set AI_API_KEY, or put it in application-local.yml.
+  api-key: ${AI_API_KEY:}
+  request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:30000}
 app:
   jwt:
     # Override via JWT_ACCESS_SECRET env var outside local dev.
