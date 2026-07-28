@@ -26,7 +26,7 @@ spring:
     password: ""
 ```
 
-### Option B — Any remote/hosted PostgreSQL (RDS, Neon, Supabase, self-managed)
+### Option B — Neon or another hosted PostgreSQL (RDS, Supabase, self-managed)
 
 ```sql
 CREATE DATABASE crm_spring;
@@ -42,6 +42,27 @@ jdbc:postgresql://<host>:5432/crm_spring
 
 Hosted providers usually give you a URL in `postgresql://` form. JDBC needs the
 `jdbc:` prefix, and credentials go in their own fields rather than in the URL.
+
+**Neon specifically** — its roles have an empty `search_path`, so unqualified
+table names don't resolve and startup fails with *"Unable to determine current
+schema as search_path is empty"*. The JDBC `currentSchema` parameter is not
+enough on its own, because it doesn't survive Neon's connection pooler. Name the
+schema outright instead:
+
+```yaml
+spring:
+  flyway:
+    schemas: public
+    default-schema: public
+    connect-retries: 5     # free-tier compute suspends when idle
+  jpa:
+    properties:
+      hibernate:
+        default_schema: public
+```
+
+Expect slower startup and list queries than a local database — every statement
+is now a network round-trip.
 
 ### Option C — Docker
 
@@ -103,5 +124,9 @@ psql -d crm_spring -c 'SELECT version, description, success FROM flyway_schema_h
   continue. Fix the SQL, then
   `DELETE FROM flyway_schema_history WHERE success = false;` and restart. Only
   safe on a database you're willing to rebuild.
+- **`Unable to determine current schema as search_path is empty`** — a hosted
+  role with no default schema. See the Neon note in Option B above.
 - **Starting over** — `dropdb crm_spring && createdb crm_spring`, then restart.
-  **Destructive**: this deletes everything in that database.
+  On a hosted database you can't drop, the equivalent is
+  `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`.
+  **Destructive either way**: this deletes everything in that database.
