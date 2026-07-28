@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+// The Spring API serves everything under /api. Override with VITE_API_URL to
+// point at a deployed environment.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080/api";
 
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;

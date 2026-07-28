@@ -1,109 +1,107 @@
 # Database setup
 
-This app uses **PostgreSQL 14+** with Prisma as the ORM/migration tool. The full schema (14 tables) lives in [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma) and is applied via versioned migration files in `prisma/migrations/`.
+The API uses **PostgreSQL 14+**. The schema is owned by **Flyway** migrations in
+[`backend/src/main/resources/db/migration`](../backend/src/main/resources/db/migration)
+and is applied automatically on startup — there is no separate migrate step.
 
 ## 1. Create the database
 
 Pick whichever matches your setup.
 
-### Option A — Local Postgres via Homebrew (macOS)
-
-This is what's running in local dev right now.
+### Option A — Local PostgreSQL via Homebrew (macOS)
 
 ```bash
 brew install postgresql@16
 brew services start postgresql@16
 
-# creates a DB owned by your current OS user (Homebrew's default auth is "trust")
-createdb techcrm
+# Creates a database owned by your current OS user (Homebrew defaults to trust auth)
+createdb crm_spring
 ```
 
-Connection string:
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/crm_spring
+    username: <your-mac-username>   # run `whoami`
+    password: ""
 ```
-postgresql://<your-mac-username>@localhost:5432/techcrm?schema=public
-```
-(Run `whoami` to get `<your-mac-username>`. An explicit username is required — Prisma will fail with `P1010: User was denied access` if you omit it.)
 
-### Option B — Any remote/hosted PostgreSQL (RDS, Supabase, Neon, self-managed, etc.)
-
-Connect with `psql` (or your provider's SQL console) and run:
+### Option B — Any remote/hosted PostgreSQL (RDS, Neon, Supabase, self-managed)
 
 ```sql
-CREATE DATABASE techcrm;
+CREATE DATABASE crm_spring;
 
--- Optional: a dedicated app user instead of using an admin/root role
-CREATE USER techcrm_app WITH PASSWORD 'choose-a-strong-password';
-GRANT ALL PRIVILEGES ON DATABASE techcrm TO techcrm_app;
+-- Optional: a dedicated app user rather than an admin role
+CREATE USER crm_app WITH PASSWORD 'choose-a-strong-password';
+GRANT ALL PRIVILEGES ON DATABASE crm_spring TO crm_app;
 ```
 
-Connection string:
 ```
-postgresql://techcrm_app:choose-a-strong-password@<host>:5432/techcrm?schema=public
+jdbc:postgresql://<host>:5432/crm_spring
 ```
 
-Most hosted providers give you a full connection string directly in their dashboard — that works as-is, just make sure it ends with `?schema=public` (append it if missing).
+Hosted providers usually give you a URL in `postgresql://` form. JDBC needs the
+`jdbc:` prefix, and credentials go in their own fields rather than in the URL.
 
-### Option C — Docker (no local Postgres install needed)
+### Option C — Docker
 
 ```bash
-docker run --name techcrm-postgres \
-  -e POSTGRES_DB=techcrm \
-  -e POSTGRES_USER=techcrm_app \
+docker run --name crm-postgres \
+  -e POSTGRES_DB=crm_spring \
+  -e POSTGRES_USER=crm_app \
   -e POSTGRES_PASSWORD=choose-a-strong-password \
   -p 5432:5432 \
   -d postgres:16
 ```
 
-Connection string:
-```
-postgresql://techcrm_app:choose-a-strong-password@localhost:5432/techcrm?schema=public
-```
-
 ## 2. Configure the app
 
-Edit `backend/.env` and set:
+Either set environment variables:
 
+```bash
+export DB_URL="jdbc:postgresql://localhost:5432/crm_spring"
+export DB_USERNAME="crm_app"
+export DB_PASSWORD="choose-a-strong-password"
 ```
-DATABASE_URL="postgresql://<user>:<password>@<host>:5432/techcrm?schema=public"
-```
 
-(`backend/.env` is gitignored — never commit real credentials.)
+or copy `backend/src/main/resources/application-local.yml.example` to
+`application-local.yml` and fill it in. That file is gitignored — never commit
+real credentials.
 
-## 3. Apply the schema
-
-From the `backend/` directory:
+## 3. Start the API
 
 ```bash
 cd backend
-npm install          # if you haven't already
-npx prisma migrate deploy
+./mvnw spring-boot:run
 ```
 
-`migrate deploy` applies the existing migration files non-interactively — the right choice for a fresh database. Only use `npx prisma migrate dev` instead if this is a dev database you intend to keep evolving the schema against (it can prompt and generate new migration files).
-
-This creates all 14 tables: `Organization`, `User`, `RefreshToken`, `Account`, `Contact`, `Lead`, `LeadMeeting`, `Deal`, `Case`, `Campaign`, `WorkflowDefinition`, `RpaBot`, `RpaBotRun`, `AuditLog`. Full column-level detail is in `prisma/schema.prisma`.
+Flyway applies every pending migration on startup, then Hibernate validates the
+entity mappings against the resulting schema (`ddl-auto: validate`) and refuses
+to start if they disagree — a mismatch is a real bug, not something to work
+around.
 
 ## 4. Verify
 
 ```bash
-npx prisma studio          # opens a DB browser UI at localhost:5555
-```
+curl http://localhost:8080/actuator/health     # {"status":"UP"} with db UP
 
-or directly:
-
-```bash
-psql "$DATABASE_URL" -c '\dt'    # lists all tables
-```
-
-Then start the app and confirm the API can reach the DB:
-
-```bash
-npm run dev        # starts on :4000
-curl http://localhost:4000/health   # should return {"status":"ok"}
+psql -d crm_spring -c '\dt'                    # lists the tables
+psql -d crm_spring -c 'SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;'
 ```
 
 ## Troubleshooting
 
-- **`P1010: User was denied access on the database`** — your connection string is missing an explicit username. Add `<user>@` before the host.
-- **`P1001: Can't reach database server`** — Postgres isn't running, or the host/port is wrong. For Homebrew: `brew services list` should show `postgresql@16` as `started`.
-- **Migration already applied elsewhere and you need to reset**: `npx prisma migrate reset` — **destructive**, drops and recreates the database from migrations. Only run this against a database you're OK wiping.
+- **`FATAL: role "postgres" does not exist`** — Homebrew creates a role named
+  after your macOS user, not `postgres`. Set `DB_USERNAME` to the output of
+  `whoami`.
+- **`Connection refused`** — PostgreSQL isn't running. `brew services list`
+  should show `postgresql@16` as `started`.
+- **`Schema-validation: missing table/column`** — the entities and the database
+  disagree. Check that every migration applied (see `flyway_schema_history`)
+  rather than relaxing `ddl-auto`.
+- **A migration failed halfway** — Flyway records it as failed and refuses to
+  continue. Fix the SQL, then
+  `DELETE FROM flyway_schema_history WHERE success = false;` and restart. Only
+  safe on a database you're willing to rebuild.
+- **Starting over** — `dropdb crm_spring && createdb crm_spring`, then restart.
+  **Destructive**: this deletes everything in that database.
