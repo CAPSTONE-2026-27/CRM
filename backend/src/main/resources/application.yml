@@ -1,0 +1,82 @@
+spring:
+  config:
+    import: "optional:application-local.yml"
+  # Google / Microsoft sign-in. Credentials come from the environment; leaving
+  # them unset simply means those buttons fail at the provider rather than
+  # preventing the app from starting.
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope: openid, profile, email
+          azure:
+            client-id: ${MICROSOFT_CLIENT_ID:}
+            client-secret: ${MICROSOFT_CLIENT_SECRET:}
+            scope: openid, profile, email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            client-name: Microsoft
+        provider:
+          azure:
+            # "common" accepts any personal or work/school account; set
+            # MICROSOFT_TENANT_ID to a tenant GUID to restrict it.
+            authorization-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/oauth2/v2.0/authorize
+            token-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/oauth2/v2.0/token
+            user-info-uri: https://graph.microsoft.com/oidc/userinfo
+            user-name-attribute: sub
+  # Overridable per environment. Local developer values belong in
+  # application-local.yml (gitignored), not here.
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/crm_spring}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:changeme}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+  flyway:
+    enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+# Any OpenAI-compatible chat-completions endpoint. Defaults target Groq for
+# development; point base-url/model-name at a self-hosted vLLM or Ollama server
+# (api-key blank) to serve the fine-tuned model from ml/ instead — no code
+# changes, this is the whole integration surface.
+ai:
+  base-url: ${AI_BASE_URL:https://api.groq.com/openai/v1}
+  model-name: ${AI_MODEL_NAME:llama-3.1-8b-instant}
+  # Never commit a real key — set AI_API_KEY, or put it in application-local.yml.
+  api-key: ${AI_API_KEY:}
+  request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:30000}
+app:
+  # Where OAuth sends the browser back to once sign-in completes.
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  jwt:
+    # Override via JWT_ACCESS_SECRET env var outside local dev.
+    access-secret: ${JWT_ACCESS_SECRET:dev-only-access-secret-please-override-in-prod-0123456789}
+    access-ttl-minutes: 30
+  refresh-token:
+    ttl-days: 7
+  email-ingestion:
+    # Fill these in application-local.yml (gitignored, never commit real
+    # credentials) — leaving username/password blank keeps the poller
+    # disabled without crashing the app on startup.
+    enabled: false
+    host: imap.gmail.com
+    port: 993
+    username:
+    password:
+    poll-interval-ms: 120000
+    # Which org inbound emails become leads for — a single shared mailbox
+    # has no per-message tenant signal, so this is a fixed assumption for
+    # v1 (one mailbox = one org). Find your org id via GET /api/auth/me.
+    organization-id:

@@ -1,0 +1,46 @@
+# Copy to application-local.yml (gitignored) and fill in your own values.
+# application.yml imports it automatically when present, and every setting here
+# can equally be supplied as an environment variable.
+
+spring:
+  datasource:
+    # --- Local PostgreSQL ---
+    url: jdbc:postgresql://localhost:5432/crm_spring
+    # Homebrew PostgreSQL authenticates as your macOS user with trust auth,
+    # in which case the password stays empty.
+    username: your-postgres-user
+    password: ""
+
+    # --- Hosted PostgreSQL (Neon and similar) ---
+    # url: jdbc:postgresql://<endpoint>.neon.tech/<database>?sslmode=require
+    # username: <role>
+    # password: <password>
+
+  # Only needed on hosted databases whose role has an empty search_path — Neon
+  # is one. Without these, Flyway aborts with "Unable to determine current
+  # schema" and JPA can't resolve unqualified table names. The JDBC
+  # currentSchema parameter alone does not survive Neon's connection pooler.
+  #
+  # flyway:
+  #   schemas: public
+  #   default-schema: public
+  #   # Neon's free tier suspends compute when idle, so the first connection
+  #   # after a pause can fail before the instance is awake.
+  #   connect-retries: 5
+  # jpa:
+  #   properties:
+  #     hibernate:
+  #       default_schema: public
+
+# Any OpenAI-compatible chat-completions endpoint. Point base-url and
+# model-name at a self-hosted vLLM/Ollama server to serve the fine-tuned model
+# from ml/ instead — api-key is then usually blank.
+ai:
+  base-url: https://api.groq.com/openai/v1
+  model-name: llama-3.1-8b-instant
+  api-key: your-api-key
+
+app:
+  jwt:
+    # Generate with: openssl rand -hex 32
+    access-secret: replace-me-with-a-long-random-secret
