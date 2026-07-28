@@ -1,9 +1,11 @@
 spring:
   config:
     import: "optional:application-local.yml"
+  # Overridable per environment. Local developer values belong in
+  # application-local.yml (gitignored), not here.
   datasource:
-    url: jdbc:postgresql://localhost:5432/techcrm
-    username: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/crm_spring}
+    username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:changeme}
   jpa:
     hibernate:
