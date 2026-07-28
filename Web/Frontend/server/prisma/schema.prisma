@@ -145,6 +145,7 @@ model Organization {
   rpaBots            RpaBot[]
   rpaBotRuns         RpaBotRun[]
   auditLogs          AuditLog[]
+  leadMeetings       LeadMeeting[]
 }
 
 model User {
@@ -185,6 +186,7 @@ model User {
   campaignsOwned    Campaign[]            @relation("CampaignOwner")
   workflowsCreated  WorkflowDefinition[]
   auditLogsAsActor  AuditLog[]            @relation("AuditActor")
+  meetingsRecorded  LeadMeeting[]         @relation("MeetingRecorder")
 
   @@unique([organizationId, email])
   @@unique([authProvider, providerAccountId])
@@ -281,8 +283,38 @@ model Lead {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
+  meetings           LeadMeeting[]
+
   @@index([organizationId])
   @@index([assignedToId])
+}
+
+// One row per customer meeting logged by a sales rep against a lead. Records
+// are append-only history — a new meeting never overwrites an earlier one, and
+// each keeps the before/after score so the lead's scoring trail is auditable.
+model LeadMeeting {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  leadId            String
+  lead              Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recordedById      String?
+  recordedBy        User?        @relation("MeetingRecorder", fields: [recordedById], references: [id])
+
+  meetingDate       DateTime     @db.Date
+  meetingTime       String       // "HH:mm" as entered by the rep, kept as local wall-clock time
+  meetingOutput     String       @db.Text
+  aiSummary         String       @db.Text // AI-generated, reviewable/editable before save
+
+  previousScore     Int?         // lead's aiScore before this meeting (null if never scored)
+  updatedScore      Int?
+  scoreChangeReason String?      @db.Text
+  aiModelVersion    String?
+
+  createdAt         DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([leadId])
 }
 
 model Deal {

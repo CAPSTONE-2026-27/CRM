@@ -9,7 +9,9 @@ import type {
   DashboardSummary,
   Deal,
   Lead,
+  LeadMeeting,
   LeadStats,
+  MeetingAnalysis,
   PagedResponse,
   ReportingSummary,
   RpaBot,
@@ -124,6 +126,44 @@ export function useBulkDeleteLeads() {
   return useMutation({
     mutationFn: (ids: string[]) => api.post<BulkDeleteResult>("/leads/bulk-delete", { ids }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
+/* ---- Lead Output: post-meeting records ---- */
+
+export type MeetingFormInput = { meetingDate: string; meetingTime: string; meetingOutput: string };
+export type SaveMeetingInput = MeetingFormInput & {
+  aiSummary: string;
+  updatedScore: number;
+  scoreLabel?: "Hot" | "Warm" | "Cold";
+  scoreChangeReason?: string;
+};
+
+export const useLeadMeetings = (leadId: string | undefined) =>
+  useQuery({
+    queryKey: ["lead-meetings", leadId],
+    queryFn: () => api.get<LeadMeeting[]>(`/leads/${leadId}/meetings`),
+    enabled: Boolean(leadId),
+  });
+
+// Preview only — generates the summary and re-score without saving, so the rep
+// can edit the summary first.
+export function useAnalyzeMeeting(leadId: string) {
+  return useMutation({
+    mutationFn: (input: MeetingFormInput) => api.post<MeetingAnalysis>(`/leads/${leadId}/meetings/analyze`, input),
+  });
+}
+
+// Appends a meeting record and rolls the lead's score forward, so the lead
+// lists and stats need refreshing too.
+export function useSaveMeeting(leadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SaveMeetingInput) => api.post<LeadMeeting>(`/leads/${leadId}/meetings`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead-meetings", leadId] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
   });
 }
 

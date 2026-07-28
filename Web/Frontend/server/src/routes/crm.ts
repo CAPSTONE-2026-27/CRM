@@ -5,6 +5,7 @@ import { crudRouter } from "../lib/crudRouter.js";
 import { parseCsv, toCsv } from "../lib/csv.js";
 import { getScoringConversations } from "../lib/scoringLog.js";
 import { getAiProvider } from "../services/aiProvider.js";
+import { registerLeadMeetingRoutes } from "./leadMeetings.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { triggerBotByName } from "../queue/queues.js";
 import {
@@ -286,6 +287,10 @@ leadsRouter.post(
     res.status(201).json({ imported, failed });
   })
 );
+
+/* ---- Lead Output: post-meeting records (see routes/leadMeetings.ts) ---- */
+
+registerLeadMeetingRoutes(leadsRouter);
 
 /* ---- Bulk delete ---- */
 

@@ -17,6 +17,7 @@ import {
   Field,
 } from "../components/crm/ui";
 import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
+import { LeadOutputModal } from "../components/crm/LeadOutputModal";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
 import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
@@ -364,6 +365,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [outputLead, setOutputLead] = useState<Lead | null>(null);
   // Mirrors the backend rule in guardLeadAssignment — only these roles may
   // change lead ownership; everyone else can still edit the lead's details.
   const { user: currentUser } = useAuth();
@@ -499,7 +501,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
             <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} style={{ cursor: "pointer" }} />,
             "Name / Company", "Product", "Source", "AI Score", "Status", "Assigned", "",
           ]}
-          cols="0.4fr 2fr 1.3fr 1fr 0.8fr 0.8fr 1fr 0.7fr"
+          cols="0.4fr 2fr 1.3fr 1fr 0.8fr 0.8fr 1fr 1.5fr"
         >
           {rows.map((r) => (
             <TableRow key={r.id} onClick={() => setSelectedLead(r)}>
@@ -536,6 +538,15 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
                     style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
                   >
                     Edit
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOutputLead(r);
+                    }}
+                    style={{ border: "none", background: "transparent", color: colors.aiPurple, fontSize: 12, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+                  >
+                    Lead output
                   </button>
                   <button
                     onClick={(e) => {
@@ -584,6 +595,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
           onClose={() => setEditingLead(null)}
         />
       )}
+      {outputLead && <LeadOutputModal lead={outputLead} onClose={() => setOutputLead(null)} />}
     </Stack>
   );
 }
