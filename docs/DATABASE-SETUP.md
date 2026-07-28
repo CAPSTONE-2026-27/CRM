@@ -1,6 +1,6 @@
 # Database setup
 
-This app uses **PostgreSQL 14+** with Prisma as the ORM/migration tool. The full schema (13 tables) lives in [`prisma/schema.prisma`](prisma/schema.prisma) and is applied via versioned migration files in `prisma/migrations/`.
+This app uses **PostgreSQL 14+** with Prisma as the ORM/migration tool. The full schema (14 tables) lives in [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma) and is applied via versioned migration files in `prisma/migrations/`.
 
 ## 1. Create the database
 
@@ -61,27 +61,27 @@ postgresql://techcrm_app:choose-a-strong-password@localhost:5432/techcrm?schema=
 
 ## 2. Configure the app
 
-Edit `server/.env` and set:
+Edit `backend/.env` and set:
 
 ```
 DATABASE_URL="postgresql://<user>:<password>@<host>:5432/techcrm?schema=public"
 ```
 
-(`server/.env` is gitignored — never commit real credentials.)
+(`backend/.env` is gitignored — never commit real credentials.)
 
 ## 3. Apply the schema
 
-From the `server/` directory:
+From the `backend/` directory:
 
 ```bash
-cd server
+cd backend
 npm install          # if you haven't already
 npx prisma migrate deploy
 ```
 
 `migrate deploy` applies the existing migration files non-interactively — the right choice for a fresh database. Only use `npx prisma migrate dev` instead if this is a dev database you intend to keep evolving the schema against (it can prompt and generate new migration files).
 
-This creates all 13 tables: `Organization`, `User`, `RefreshToken`, `Account`, `Contact`, `Lead`, `Deal`, `Case`, `Campaign`, `WorkflowDefinition`, `RpaBot`, `RpaBotRun`, `AuditLog`. Full column-level detail is in `prisma/schema.prisma`.
+This creates all 14 tables: `Organization`, `User`, `RefreshToken`, `Account`, `Contact`, `Lead`, `LeadMeeting`, `Deal`, `Case`, `Campaign`, `WorkflowDefinition`, `RpaBot`, `RpaBotRun`, `AuditLog`. Full column-level detail is in `prisma/schema.prisma`.
 
 ## 4. Verify
 
