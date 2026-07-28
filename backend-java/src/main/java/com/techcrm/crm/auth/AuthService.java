@@ -8,6 +8,7 @@ import com.techcrm.crm.auth.dto.LoginRequest;
 import com.techcrm.crm.auth.dto.SignupRequest;
 import com.techcrm.crm.org.Organization;
 import com.techcrm.crm.org.OrganizationRepository;
+import com.techcrm.crm.rpa.RpaBotService;
 import com.techcrm.crm.user.LoginHistory;
 import com.techcrm.crm.user.LoginHistoryRepository;
 import com.techcrm.crm.user.PermissionDefaults;
@@ -38,6 +39,7 @@ public class AuthService {
     private final AuditLogService auditLogService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RpaBotService rpaBotService;
     private final long refreshTtlDays;
 
     public AuthService(
@@ -48,6 +50,7 @@ public class AuthService {
             AuditLogService auditLogService,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
+            RpaBotService rpaBotService,
             @Value("${app.refresh-token.ttl-days:7}") long refreshTtlDays
     ) {
         this.organizationRepository = organizationRepository;
@@ -57,6 +60,7 @@ public class AuthService {
         this.auditLogService = auditLogService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.rpaBotService = rpaBotService;
         this.refreshTtlDays = refreshTtlDays;
     }
 
@@ -82,6 +86,11 @@ public class AuthService {
         // no forced change needed (unlike admin-issued employee credentials).
         user.setMustChangePassword(false);
         userRepository.save(user);
+
+        // Every organization ships with the three built-in bots registered, so
+        // the control room and the lead/case triggers have something to run
+        // against from day one.
+        rpaBotService.registerBuiltInBots(org.getId());
 
         return issueTokenPair(user);
     }
