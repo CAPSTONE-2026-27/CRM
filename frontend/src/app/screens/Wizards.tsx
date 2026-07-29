@@ -1490,7 +1490,7 @@ function F07({ onCancel }: { onCancel: () => void }) {
   const [stage, setStage] = useState(2);
   const { data: accounts } = useAccounts();
   const accountNames = (accounts ?? []).map((a) => a.name);
-  const [form, setForm] = useState<F07Form>({ name: "", accountName: "", value: "", currency: "USD" });
+  const [form, setForm] = useState<F07Form>({ name: "", accountName: "", value: "", currency: "INR" });
   const set = <K extends keyof F07Form>(key: K) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
   const createDeal = useCreateDeal();
 
@@ -1555,7 +1555,7 @@ function F07({ onCancel }: { onCancel: () => void }) {
                 <Field label="Account" value="No accounts yet — add one first" onChange={() => {}} />
               )}
               <Field label="Deal value" value={form.value} onChange={set("value")} placeholder="42000" />
-              <Field label="Currency" type="select" value={form.currency} onChange={set("currency")} options={["USD", "EUR", "GBP"]} />
+              <Field label="Currency" type="select" value={form.currency} onChange={set("currency")} options={["INR", "USD", "EUR", "GBP"]} />
             </FieldGrid>
             <AIInsightBox text="Proposal document and follow-up email will be auto-drafted once this deal reaches the 'Proposal' stage." />
           </Stack>
@@ -1630,8 +1630,8 @@ function F07Forecast() {
     { label: "Timeline risk", detail: "Budget approval pending", pct: 65, color: "#BA7517" },
   ];
   const rows = [
-    { label: "Weighted forecast value", value: "$25,200" },
-    { label: "Best case", value: "$42,000" },
+    { label: "Weighted forecast value", value: "₹25,200" },
+    { label: "Best case", value: "₹42,000" },
     { label: "Predicted close date", value: "Sep 2026" },
     { label: "Forecast category", value: "Commit" },
   ];

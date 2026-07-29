@@ -21,14 +21,14 @@ export type Column = {
 };
 
 function parseValue(v: string): number {
-  // "$42K" -> 42 ; "$5K" -> 5 ; "Won" -> 0
+  // "₹42K" -> 42 ; "₹5K" -> 5 ; "Won" -> 0
   const m = v.match(/([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
 }
 
 function formatValue(total: number): string {
-  if (total === 0) return "$0";
-  return `$${Number.isInteger(total) ? total : total.toFixed(1)}K`;
+  if (total === 0) return "₹0";
+  return `₹${Number.isInteger(total) ? total : total.toFixed(1)}K`;
 }
 
 function Card({ card, columnId }: { card: DealCard; columnId: string }) {

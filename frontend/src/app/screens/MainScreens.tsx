@@ -230,7 +230,9 @@ function LoadingState() {
 
 function formatCurrency(value: string | number | null | undefined): string {
   const n = Number(value ?? 0);
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  // en-IN groups by lakh/crore (12,34,567) rather than thousands, which is what
+  // the ₹ symbol implies to anyone reading these figures.
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 function initialsFromName(name: string): string {

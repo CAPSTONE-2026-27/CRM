@@ -32,7 +32,7 @@ public class Deal {
     private BigDecimal value;
 
     @Column(nullable = false, length = 3)
-    private String currency = "USD";
+    private String currency = "INR";
 
     @Column(name = "expected_close_date")
     private OffsetDateTime expectedCloseDate;
