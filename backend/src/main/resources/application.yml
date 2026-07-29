@@ -27,6 +27,12 @@ spring:
             token-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/oauth2/v2.0/token
             user-info-uri: https://graph.microsoft.com/oidc/userinfo
             user-name-attribute: sub
+            # Required: the "openid" scope makes this an OIDC login, so Spring
+            # verifies the ID token's signature. Without a JWK set URI it fails
+            # with "missing_signature_verifier" *after* the user has already
+            # signed in successfully. Google needs no equivalent here because
+            # Spring ships a built-in provider definition for it.
+            jwk-set-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/discovery/v2.0/keys
   # Overridable per environment. Local developer values belong in
   # application-local.yml (gitignored), not here.
   datasource:
