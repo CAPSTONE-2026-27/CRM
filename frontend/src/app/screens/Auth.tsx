@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { colors } from "../tokens";
 import { useAuth } from "../lib/auth";
 import { SERVER_ORIGIN } from "../lib/apiClient";
+import { BrandLockup, BrandMark, Spinner } from "../components/crm/BrandLogo";
 
 function GoogleIcon() {
   return (
@@ -134,74 +135,216 @@ export function AuthScreen() {
     }
   };
 
+  const isLogin = mode === "login";
+
   return (
     <div
       style={{
-        height: "100vh",
+        minHeight: "100vh",
         width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: colors.bgSecondary,
+        display: "grid",
+        // Brand panel sits alongside the form on desktop and is dropped
+        // entirely below 900px, where it would only push the form off-screen.
+        gridTemplateColumns: "minmax(0, 1fr)",
+        background: colors.bgPrimary,
         fontFamily: "Inter, system-ui, sans-serif",
       }}
+      className="auth-shell"
     >
-      <form
-        onSubmit={handleSubmit}
+      <BrandPanel />
+
+      <div
         style={{
-          width: 360,
-          background: "#FFFFFF",
-          border: `0.5px solid ${colors.border}`,
-          borderRadius: 8,
-          padding: 24,
           display: "flex",
-          flexDirection: "column",
-          gap: 14,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "40px 24px",
+          minHeight: "100vh",
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
-          <span style={{ color: colors.primary }}>Tech</span>CRM
-        </div>
-        <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4 }}>
-          {mode === "login" ? "Sign in to your workspace" : "Create a new organization"}
-        </div>
-
-        <OAuthButton provider="google" label="Continue with Google" />
-        <OAuthButton provider="microsoft" label="Continue with Microsoft" />
-        <Divider label="or continue with email" />
-
-        {mode === "signup" && <TextInput label="Organization name" value={organizationName} onChange={setOrganizationName} />}
-        {mode === "signup" && <TextInput label="Full name" value={fullName} onChange={setFullName} />}
-        <TextInput label="Work email" type="email" value={email} onChange={setEmail} />
-        <TextInput label="Password" type="password" value={password} onChange={setPassword} />
-
-        <button
-          type="submit"
-          disabled={busy}
-          style={{
-            background: colors.primary,
-            border: "none",
-            borderRadius: 6,
-            color: "#FFFFFF",
-            fontSize: 12,
-            fontWeight: 500,
-            padding: "9px 14px",
-            cursor: busy ? "default" : "pointer",
-            opacity: busy ? 0.6 : 1,
-            marginTop: 4,
-          }}
+        <form
+          onSubmit={handleSubmit}
+          className="brand-anim-fade-up"
+          style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 16 }}
         >
-          {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create organization"}
-        </button>
+          {/* Shown here only on narrow screens, where the brand panel is hidden. */}
+          <div className="auth-compact-brand" style={{ marginBottom: 4 }}>
+            <BrandLockup size={34} />
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setMode(mode === "login" ? "signup" : "login")}
-          style={{ background: "transparent", border: "none", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 600, color: colors.textPrimary, margin: 0, letterSpacing: -0.4 }}>
+              {isLogin ? "Sign in" : "Create your organization"}
+            </h1>
+            <p style={{ fontSize: 13, color: colors.textSecondary, margin: "6px 0 0" }}>
+              {isLogin
+                ? "Welcome back. Sign in to your TechCRM workspace."
+                : "Set up a workspace and invite your team in minutes."}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <OAuthButton provider="google" label="Continue with Google" />
+            <OAuthButton provider="microsoft" label="Continue with Microsoft" />
+          </div>
+
+          <Divider label="or continue with email" />
+
+          {!isLogin && <TextInput label="Organization name" value={organizationName} onChange={setOrganizationName} />}
+          {!isLogin && <TextInput label="Full name" value={fullName} onChange={setFullName} />}
+          <TextInput label="Work email" type="email" value={email} onChange={setEmail} />
+          <TextInput label="Password" type="password" value={password} onChange={setPassword} />
+
+          <button
+            type="submit"
+            disabled={busy}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: colors.primary,
+              border: "none",
+              borderRadius: 6,
+              color: "#FFFFFF",
+              fontSize: 13,
+              fontWeight: 500,
+              padding: "11px 14px",
+              cursor: busy ? "default" : "pointer",
+              opacity: busy ? 0.7 : 1,
+              marginTop: 2,
+            }}
+          >
+            {busy && <Spinner />}
+            {busy ? "Please wait…" : isLogin ? "Sign in" : "Create organization"}
+          </button>
+
+          <div style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center" }}>
+            {isLogin ? "New to TechCRM? " : "Already have an account? "}
+            <button
+              type="button"
+              onClick={() => setMode(isLogin ? "signup" : "login")}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: colors.primary,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              {isLogin ? "Create an organization" : "Sign in"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** Left-hand brand panel: product framing next to the form, hidden on narrow
+ *  screens so the form keeps the full width. */
+function BrandPanel() {
+  const highlights = [
+    { title: "AI lead scoring", body: "Every lead scored and ranked the moment it lands." },
+    { title: "Automation that runs itself", body: "Bots enrich records, route cases and chase follow-ups." },
+    { title: "One view of the pipeline", body: "Accounts, deals, cases and campaigns in a single workspace." },
+  ];
+
+  return (
+    <div
+      className="auth-brand-panel"
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        background: `linear-gradient(150deg, ${colors.primaryDark} 0%, ${colors.primary} 55%, #2C7BC4 100%)`,
+        padding: "48px 44px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Decorative drifting orbs — aria-hidden, purely atmospheric. */}
+      <div
+        aria-hidden="true"
+        className="brand-anim-drift"
+        style={{
+          position: "absolute",
+          top: -90,
+          right: -70,
+          width: 320,
+          height: 320,
+          borderRadius: "50%",
+          background: "rgba(255,255,255,0.09)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="brand-anim-drift"
+        style={{
+          position: "absolute",
+          bottom: -120,
+          left: -60,
+          width: 280,
+          height: 280,
+          borderRadius: "50%",
+          background: "rgba(255,255,255,0.07)",
+          animationDelay: "3s",
+        }}
+      />
+
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
+        <BrandMark size={34} animated />
+        <span style={{ fontSize: 19, fontWeight: 600, color: "#FFFFFF", letterSpacing: -0.2 }}>TechCRM</span>
+      </div>
+
+      <div style={{ position: "relative", maxWidth: 420 }}>
+        <h2
+          className="brand-anim-fade-up"
+          style={{ fontSize: 30, lineHeight: 1.25, fontWeight: 600, color: "#FFFFFF", margin: "0 0 14px", letterSpacing: -0.6 }}
         >
-          {mode === "login" ? "New here? Create an organization" : "Already have an account? Sign in"}
-        </button>
-      </form>
+          The CRM that scores, routes and follows up for you.
+        </h2>
+        <p
+          className="brand-anim-fade-up"
+          style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.82)", margin: 0, animationDelay: "0.1s" }}
+        >
+          Capture leads from any channel, let the model rank them, and keep the
+          pipeline moving without the manual admin.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 32 }}>
+          {highlights.map((item, i) => (
+            <div
+              key={item.title}
+              className="brand-anim-fade-up"
+              style={{ display: "flex", gap: 12, animationDelay: `${0.2 + i * 0.1}s` }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  marginTop: 6,
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,0.9)",
+                  flexShrink: 0,
+                }}
+              />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#FFFFFF" }}>{item.title}</div>
+                <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>{item.body}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ position: "relative", fontSize: 11.5, color: "rgba(255,255,255,0.6)" }}>
+        © {new Date().getFullYear()} TechCRM
+      </div>
     </div>
   );
 }
