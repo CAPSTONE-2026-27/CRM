@@ -40,7 +40,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn  # noqa: E402
+from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn, reconcile_output  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"
@@ -159,6 +159,7 @@ def main():
     score_exact = 0
     score_within_5 = 0
     score_within_10 = 0
+    reconciled_count = 0
 
     for i, row in enumerate(rows, start=1):
         prompt = build_llama3_prompt(SYSTEM_PROMPT, build_user_turn(row["input"]))
@@ -181,6 +182,11 @@ def main():
         response = response.replace("<|eot_id|>", "").strip()
         if "<|start_header_id|>" in response:
             response = response.split("<|start_header_id|>")[0].strip()
+
+        reconciled = reconcile_output(response, row["input"])
+        if reconciled != response:
+            reconciled_count += 1
+        response = reconciled
 
         result = check_format(response)
         status = "PASS" if result["pass"] else "FAIL"
@@ -229,6 +235,7 @@ def main():
     print(f"Lead Score exact match:  {score_exact}/{n} ({100 * score_exact / n:.1f}%)")
     print(f"Lead Score within +/-5:  {score_within_5}/{n} ({100 * score_within_5 / n:.1f}%)")
     print(f"Lead Score within +/-10: {score_within_10}/{n} ({100 * score_within_10 / n:.1f}%)")
+    print(f"Self-inconsistent (header vs bullet-sum, corrected): {reconciled_count}/{n} ({100 * reconciled_count / n:.1f}%)")
     if failure_tally:
         print("\nFormat failure breakdown:")
         for k, v in sorted(failure_tally.items(), key=lambda x: -x[1]):

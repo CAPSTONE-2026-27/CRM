@@ -22,7 +22,7 @@ from transformers import (
 from peft import PeftModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn  # noqa: E402
+from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn, reconcile_output  # noqa: E402
 
 
 # ============================================================
@@ -208,6 +208,7 @@ while True:
         response = response.split("<|start_header_id|>")[0]
 
     response = response.strip()
+    response = reconcile_output(response, user_message)
 
     print("\n" + "=" * 60)
     print("AI Response")
