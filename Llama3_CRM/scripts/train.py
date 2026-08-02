@@ -219,6 +219,13 @@ def apply_memory_optimizations(model):
 
 def apply_lora(model):
     logger.info("Attaching LoRA adapters.")
+    # Doubling r to 32 (alpha 64) was tried and measured to be no better --
+    # slightly worse, in fact (88% vs 90% Qualification accuracy, 48% vs 58%
+    # exact Lead Score match at 8 epochs). The held-out misses are the same
+    # handful of boundary leads (score 35-40, immediately above Cold's
+    # ceiling of 30) regardless of rank or epoch count, which means capacity
+    # was never the bottleneck -- the Cold/Warm cutoff is thinner than the
+    # 5-point granularity of the underlying scoring factors. Reverted to r=16.
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
@@ -390,8 +397,14 @@ def main():
         )
 
         # --- Train ---
+        # Resuming from checkpoint-380: the previous run of this exact config
+        # (r=16 LoRA revert + grounded reasoning + 8 epochs) was killed
+        # mid-run at step 384/456 when the machine went offline over the
+        # weekend, with no error -- just an abrupt stop. checkpoint-380 has
+        # full optimizer/scheduler/rng state, so resuming continues the same
+        # trajectory instead of repeating ~50 minutes of already-done work.
         logger.info("Starting training...")
-        train_result = trainer.train()
+        train_result = trainer.train(resume_from_checkpoint=True)
         logger.info("Training complete. Metrics: %s", train_result.metrics)
 
         # --- Eval (best checkpoint, since load_best_model_at_end=True) ---
