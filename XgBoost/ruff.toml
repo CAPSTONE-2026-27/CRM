@@ -1,0 +1,22 @@
+# Lint configuration for the CRM deal-scoring pipeline.
+#
+# Run with:  python -m ruff check deal_score_pipeline.py
+#
+# `line-length = 115` accommodates the wide f-string report lines the pipeline
+# prints (aligned metric tables), which read better on one line than wrapped.
+
+line-length = 115
+target-version = "py310"
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes (undefined names, unused imports)
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "UP",   # pyupgrade (modern syntax)
+    "B",    # flake8-bugbear (late-binding closures, mutable defaults, ...)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific (includes RUF100 unused-noqa)
+    "BLE",  # blind except
+]

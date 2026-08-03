@@ -69,6 +69,33 @@ export type Deal = {
   stage: DealStage;
   probability?: number | null;
   createdAt: string;
+
+  // Deal-scoring model inputs, as assessed by the rep.
+  totalMeetings?: number | null;
+  leadScore?: number | null;
+  customerSentiment?: string | null;
+  buyingIntent?: string | null;
+  relationshipStrength?: number | null;
+  budgetStatus?: string | null;
+  decisionMakerInvolvement?: string | null;
+  customerUrgency?: string | null;
+  mainObjections?: string | null;
+  productInterestLevel?: string | null;
+  meetingOutcome?: string | null;
+  customerRequirements?: string | null;
+  riskFactors?: string | null;
+  competitorMention?: string | null;
+  engagementScore?: number | null;
+  implementationReadiness?: string | null;
+  upsellOpportunity?: string | null;
+
+  // Model output. Null when the deal has no scoring inputs yet, or the model
+  // was unreachable when it was last saved.
+  dealScore?: number | null;
+  dealScoreBand?: "HIGH" | "MEDIUM" | "LOW" | "VERY LOW" | null;
+  dealScoreAction?: string | null;
+  dealScoreModelVersion?: string | null;
+  dealScoredAt?: string | null;
 };
 
 export type CaseRow = {

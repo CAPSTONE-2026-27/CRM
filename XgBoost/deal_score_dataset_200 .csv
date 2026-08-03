@@ -1,0 +1,201 @@
+total_meetings,lead_Score,customer_sentiment,buying_intent,relationship_strength,budget_status,decision_maker_involvement,customer_urgency,main_objections,product_interest_level,meeting_outcome,customer_requirements,risk_factors,competitor_mention,engagement_score,implementation_readiness,upsell_opportunity,deal_Score
+1,19.9,Negative,Medium,2,Not Allocated,No,Medium,Unfavorable Contract Terms,Medium,Rescheduled,Standard Package,Technical Concerns,Yes,0,Not Ready,No,4
+10,88.8,Positive,Medium,8,Fully Approved,Indirect,Medium,No Objections,High,Proposal Sent,Enterprise-grade Security,Internal Politics,No,69.9,Fully Ready,Yes,75
+4,34.3,Neutral,Medium,2,Not Allocated,Indirect,Low,Price Too High; Budget Not Allocated; Missing Features; Security / Compliance Concerns,Low,Rescheduled,Customized Integration,Competitor Pressure,No,34.6,Partially Ready,No,1
+2,0,Negative,Low,2,Not Allocated,No,Low,Long Implementation Time; Security / Compliance Concerns,Low,No Show / Cancelled,Compliance-driven Requirements,Economic Uncertainty,Yes,38.6,Not Ready,Yes,1
+13,66.7,Positive,High,9,Partially Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,API / Technical Integration,Budget Constraints,Yes,76.1,Fully Ready,Yes,72
+15,92.7,Positive,High,8,Partially Approved,Yes,Critical,Budget Not Allocated; Long Implementation Time; Competitor Preference; No Urgent Business Need; Poor Past Experience / Support; Lack of Internal Buy-in,High,Verbal Agreement,Enterprise-grade Security,No Risk Identified,No,95.8,Fully Ready,Yes,56
+9,10.9,Negative,Low,3,Not Allocated,No,Low,Missing Features,Medium,Discussed Requirements,Enterprise-grade Security,Internal Politics,Yes,43.9,Not Ready,No,8
+9,34,Neutral,Medium,4,Not Allocated,No,High,No Objections,Medium,Rescheduled,API / Technical Integration,Technical Concerns,No,3.7,Not Ready,No,24
+11,100,Positive,High,8,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,Standard Package,No Risk Identified,Yes,80.1,Fully Ready,No,93
+4,17,Neutral,Medium,2,Not Allocated,No,Medium,No Objections,Low,No Show / Cancelled,Enterprise-grade Security,No Risk Identified,Yes,9,Partially Ready,No,23
+5,20.7,Negative,Low,3,Not Allocated,No,Medium,Price Too High; Unfavorable Contract Terms,Low,Discussed Requirements,Customized Integration,Economic Uncertainty,Yes,3.7,Not Ready,No,1
+3,4.9,Negative,Low,3,Not Allocated,No,Low,Poor Past Experience / Support; Lack of Internal Buy-in,Low,No Show / Cancelled,API / Technical Integration,Internal Politics,No,14.3,Not Ready,No,1
+3,11.9,Negative,Low,3,Under Review,No,Medium,Budget Not Allocated; Missing Features; Unfavorable Contract Terms; Competitor Preference,Low,No Show / Cancelled,Basic Feature Set,Economic Uncertainty,No,9.2,Not Ready,No,1
+6,9,Negative,Low,3,Not Allocated,No,High,Price Too High; Budget Not Allocated; Lack of Internal Buy-in,Low,No Show / Cancelled,Multi-department Rollout,No Risk Identified,Yes,0,Partially Ready,No,1
+2,3.2,Negative,Low,1,Not Allocated,No,Low,No Objections,Low,No Show / Cancelled,Customized Integration,Timeline Conflict,No,13.1,Not Ready,No,1
+1,5.9,Negative,Low,1,Not Allocated,No,Low,Long Implementation Time; Unfavorable Contract Terms; Competitor Preference,Low,Rescheduled,Enterprise-grade Security,Budget Constraints,No,0,Not Ready,No,1
+6,69,Positive,Medium,7,Fully Approved,Indirect,High,Lack of Internal Buy-in,High,Discussed Requirements,Scalable Infrastructure,No Risk Identified,No,78.2,Ready,Yes,71
+12,82.8,Positive,High,9,Partially Approved,Yes,Medium,No Objections,Very High,Discussed Requirements,Customized Integration,Economic Uncertainty,No,78.1,Fully Ready,No,96
+8,74.3,Neutral,Medium,9,Partially Approved,Yes,Medium,Long Implementation Time,Very High,Proposal Sent,Customized Integration,Internal Politics,No,58.5,Ready,Yes,76
+7,36.2,Negative,Medium,6,Partially Approved,No,High,Competitor Preference,Medium,Rescheduled,Standard Package,No Risk Identified,No,47.5,Partially Ready,No,39
+7,30.4,Negative,Medium,4,Under Review,Indirect,Low,No Objections,Medium,Discussed Requirements,Scalable Infrastructure,Economic Uncertainty,Yes,43.2,Partially Ready,No,30
+5,60.4,Neutral,Medium,4,Partially Approved,Indirect,Medium,Poor Past Experience / Support,High,Discussed Requirements,Standard Package,Budget Constraints,Yes,57.2,Ready,Yes,41
+12,63.6,Positive,High,8,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,API / Technical Integration,No Risk Identified,No,62.2,Ready,Yes,85
+11,69.6,Positive,High,9,Fully Approved,Yes,High,No Objections,High,Verbal Agreement,Compliance-driven Requirements,No Risk Identified,Yes,93.2,Ready,Yes,75
+1,0,Negative,Low,1,Not Allocated,No,Low,Price Too High; Competitor Preference,Low,No Show / Cancelled,Basic Feature Set,Budget Constraints,No,0,Not Ready,No,1
+7,0,Negative,Medium,1,Not Allocated,No,Medium,No Objections,Low,No Show / Cancelled,Multi-department Rollout,No Risk Identified,Yes,14,Partially Ready,No,10
+2,10,Negative,Low,3,Not Allocated,No,Medium,No Objections,Low,No Show / Cancelled,Customized Integration,Stakeholder Turnover,Yes,0,Not Ready,No,1
+4,87.6,Neutral,High,7,Fully Approved,Yes,High,No Objections,Medium,Proposal Sent,Standard Package,Economic Uncertainty,Yes,85.3,Fully Ready,Yes,70
+1,20.7,Negative,Medium,2,Not Allocated,No,Low,No Objections,Low,No Show / Cancelled,Customized Integration,No Risk Identified,Yes,12.1,Not Ready,No,7
+1,26,Negative,Low,4,Under Review,No,High,Budget Not Allocated,Low,No Show / Cancelled,Compliance-driven Requirements,No Risk Identified,Yes,4.4,Not Ready,Yes,5
+4,38,Negative,Medium,3,Partially Approved,Indirect,Medium,No Objections,Medium,Rescheduled,Customized Integration,Stakeholder Turnover,No,35.6,Not Ready,No,28
+6,73.1,Negative,High,6,Under Review,Yes,High,No Objections,Medium,Rescheduled,Standard Package,No Risk Identified,No,60.7,Ready,No,58
+5,40.8,Negative,Medium,5,Under Review,Indirect,Medium,Missing Features,Low,Rescheduled,Scalable Infrastructure,Timeline Conflict,Yes,32.4,Partially Ready,No,30
+4,21.2,Negative,Low,1,Not Allocated,No,Low,No Objections,Low,No Show / Cancelled,Multi-department Rollout,Competitor Pressure,Yes,26.7,Not Ready,No,4
+6,38.5,Neutral,Medium,4,Under Review,No,High,Budget Not Allocated; Competitor Preference; Lack of Internal Buy-in,High,Rescheduled,Enterprise-grade Security,No Risk Identified,No,30.8,Partially Ready,Yes,19
+4,4.9,Neutral,Low,4,Not Allocated,No,Medium,Missing Features,Low,No Show / Cancelled,Basic Feature Set,Budget Constraints,No,15.4,Not Ready,Yes,8
+10,68.2,Positive,High,6,Fully Approved,Yes,Critical,No Objections,High,Verbal Agreement,API / Technical Integration,Timeline Conflict,No,79.4,Fully Ready,No,82
+9,34.6,Neutral,High,3,Partially Approved,Indirect,Medium,Budget Not Allocated,High,Rescheduled,Compliance-driven Requirements,No Risk Identified,No,43.1,Ready,No,41
+1,12.7,Negative,Low,1,Under Review,No,Low,Unfavorable Contract Terms,Low,Discussed Requirements,Multi-department Rollout,Timeline Conflict,No,30.4,Partially Ready,Yes,12
+2,5.9,Negative,Low,2,Under Review,No,Medium,No Objections,Low,No Show / Cancelled,Basic Feature Set,No Risk Identified,No,2.2,Not Ready,No,20
+3,93,Positive,High,9,Under Review,Yes,High,No Objections,Very High,Discussed Requirements,Compliance-driven Requirements,No Risk Identified,No,77.2,Fully Ready,No,78
+3,25.8,Negative,Low,1,Under Review,No,Low,Price Too High; Budget Not Allocated; Long Implementation Time,Medium,Rescheduled,Multi-department Rollout,Technical Concerns,Yes,25.6,Not Ready,Yes,1
+10,75.9,Positive,High,10,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,Enterprise-grade Security,No Risk Identified,No,76.9,Fully Ready,Yes,97
+6,14.6,Negative,Low,1,Under Review,No,Low,Security / Compliance Concerns,Low,No Show / Cancelled,Compliance-driven Requirements,Internal Politics,Yes,0,Not Ready,No,1
+13,71.9,Positive,High,9,Partially Approved,Yes,High,No Objections,Very High,Proposal Sent,Customized Integration,No Risk Identified,No,100,Fully Ready,No,78
+11,96,Positive,High,10,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,Standard Package,No Risk Identified,Yes,100,Fully Ready,No,91
+9,96.4,Positive,High,8,Fully Approved,Yes,High,No Objections,Very High,Verbal Agreement,API / Technical Integration,No Risk Identified,No,91.9,Fully Ready,Yes,99
+5,0,Negative,Low,2,Not Allocated,No,High,No Objections,Low,No Show / Cancelled,Compliance-driven Requirements,No Risk Identified,No,0,Not Ready,No,15
+8,91.3,Positive,High,7,Fully Approved,Yes,Medium,No Objections,Very High,Proposal Sent,Standard Package,Economic Uncertainty,No,75.5,Fully Ready,No,97
+9,73.5,Neutral,High,7,Fully Approved,Yes,High,No Objections,High,Proposal Sent,Scalable Infrastructure,No Risk Identified,Yes,76.4,Ready,No,80
+6,5.3,Negative,Low,2,Not Allocated,No,Low,Competitor Preference,Medium,No Show / Cancelled,Scalable Infrastructure,Competitor Pressure,Yes,8.8,Partially Ready,No,1
+7,65.5,Positive,Medium,10,Fully Approved,Yes,High,No Urgent Business Need; Poor Past Experience / Support,High,Proposal Sent,Compliance-driven Requirements,No Risk Identified,Yes,61.6,Fully Ready,No,75
+11,70.1,Positive,Medium,10,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,Multi-department Rollout,No Risk Identified,No,86.6,Ready,No,90
+10,69.4,Positive,High,6,Partially Approved,Indirect,High,Competitor Preference,High,Proposal Sent,Enterprise-grade Security,No Risk Identified,Yes,72.1,Ready,No,59
+6,75.6,Positive,High,10,Partially Approved,Yes,Medium,No Objections,High,Verbal Agreement,API / Technical Integration,Stakeholder Turnover,No,55.5,Fully Ready,No,80
+6,17.4,Negative,Low,2,Not Allocated,No,Low,Security / Compliance Concerns; Unfavorable Contract Terms; Competitor Preference; No Urgent Business Need; Poor Past Experience / Support,Low,No Show / Cancelled,Customized Integration,Technical Concerns,No,23.9,Not Ready,No,1
+9,57.9,Positive,Low,8,Not Allocated,Yes,Medium,Long Implementation Time,High,Discussed Requirements,Scalable Infrastructure,Technical Concerns,No,84.4,Ready,No,54
+7,67.3,Neutral,High,6,Partially Approved,No,High,No Objections,High,Discussed Requirements,Basic Feature Set,Budget Constraints,No,54,Ready,No,51
+8,87.8,Positive,High,9,Partially Approved,Yes,High,No Objections,Very High,Proposal Sent,Multi-department Rollout,No Risk Identified,No,86.9,Fully Ready,No,91
+6,60.3,Positive,High,8,Fully Approved,Indirect,High,Price Too High; Poor Past Experience / Support,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,Yes,75.9,Fully Ready,No,56
+8,98.6,Positive,High,10,Fully Approved,Yes,Critical,Poor Past Experience / Support,Very High,Proposal Sent,Basic Feature Set,No Risk Identified,No,95,Fully Ready,Yes,90
+8,42.3,Negative,High,6,Partially Approved,No,Medium,No Objections,Medium,Rescheduled,API / Technical Integration,Internal Politics,Yes,20.3,Ready,No,35
+3,51.9,Neutral,Medium,4,Under Review,No,Medium,No Objections,Medium,No Show / Cancelled,Scalable Infrastructure,No Risk Identified,Yes,41,Partially Ready,No,30
+9,68.6,Neutral,Medium,8,Partially Approved,Yes,Critical,Missing Features,Very High,Proposal Sent,Compliance-driven Requirements,No Risk Identified,Yes,58.1,Ready,No,49
+1,25.1,Neutral,Low,3,Not Allocated,No,Low,Competitor Preference,High,No Show / Cancelled,Compliance-driven Requirements,Timeline Conflict,Yes,54.4,Not Ready,Yes,1
+3,18.2,Neutral,Low,2,Under Review,No,Low,No Objections,Low,Rescheduled,API / Technical Integration,No Risk Identified,Yes,11.4,Not Ready,No,5
+7,71.2,Neutral,Medium,6,Partially Approved,Indirect,Medium,Competitor Preference,Medium,Rescheduled,Basic Feature Set,No Risk Identified,No,72.8,Partially Ready,No,43
+13,66.6,Neutral,Medium,5,Under Review,Indirect,Medium,No Objections,High,Discussed Requirements,Enterprise-grade Security,No Risk Identified,No,25.1,Ready,No,58
+6,88.5,Positive,High,9,Fully Approved,Yes,High,Unfavorable Contract Terms,Very High,Verbal Agreement,Standard Package,Competitor Pressure,No,96.5,Fully Ready,No,83
+9,25.2,Negative,Low,3,Not Allocated,No,Medium,No Urgent Business Need,Low,No Show / Cancelled,Multi-department Rollout,No Risk Identified,No,28,Not Ready,No,20
+4,32.5,Neutral,Medium,3,Under Review,No,Low,Budget Not Allocated; Security / Compliance Concerns; Unfavorable Contract Terms; Competitor Preference,Low,No Show / Cancelled,Scalable Infrastructure,No Risk Identified,No,6.6,Partially Ready,No,3
+7,26.6,Neutral,Medium,5,Not Allocated,Indirect,High,No Objections,Medium,Discussed Requirements,Customized Integration,No Risk Identified,No,39.4,Ready,Yes,56
+6,40.6,Positive,Medium,2,Under Review,Indirect,Medium,Missing Features; Competitor Preference,Low,Rescheduled,API / Technical Integration,Economic Uncertainty,No,54.8,Partially Ready,No,30
+3,0.1,Negative,Low,2,Not Allocated,No,Medium,Price Too High,Low,No Show / Cancelled,Customized Integration,Timeline Conflict,Yes,0,Not Ready,No,1
+10,96.1,Positive,High,8,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,Multi-department Rollout,No Risk Identified,No,67,Fully Ready,Yes,99
+7,0,Negative,Low,1,Not Allocated,No,Medium,Price Too High; Budget Not Allocated; Long Implementation Time; No Urgent Business Need; Lack of Internal Buy-in,Low,No Show / Cancelled,Customized Integration,Internal Politics,Yes,2.5,Not Ready,No,1
+2,1.7,Neutral,Low,3,Not Allocated,Indirect,High,No Urgent Business Need,Low,No Show / Cancelled,Basic Feature Set,Stakeholder Turnover,Yes,7.2,Not Ready,No,1
+8,7.9,Negative,Medium,4,Partially Approved,Indirect,Medium,No Objections,Low,Rescheduled,Scalable Infrastructure,Competitor Pressure,Yes,27.6,Partially Ready,No,28
+3,24.5,Neutral,Medium,4,Partially Approved,Indirect,Medium,Price Too High,Low,Rescheduled,Scalable Infrastructure,Competitor Pressure,Yes,36.7,Not Ready,Yes,6
+8,63.1,Neutral,High,8,Partially Approved,Yes,Medium,No Objections,Medium,Discussed Requirements,Basic Feature Set,No Risk Identified,Yes,43,Partially Ready,No,54
+1,26.2,Negative,Low,2,Under Review,No,Medium,Security / Compliance Concerns,Low,No Show / Cancelled,Customized Integration,Internal Politics,No,5.5,Partially Ready,No,5
+12,100,Positive,High,9,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,No,100,Fully Ready,Yes,99
+15,100,Positive,High,8,Fully Approved,Yes,High,No Objections,High,Proposal Sent,Standard Package,Economic Uncertainty,No,83.8,Fully Ready,No,97
+4,8.4,Negative,Low,3,Not Allocated,No,Low,Budget Not Allocated,Low,No Show / Cancelled,Enterprise-grade Security,Budget Constraints,No,0,Not Ready,No,1
+9,93.7,Positive,High,9,Fully Approved,Yes,Critical,No Objections,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,No,100,Ready,No,99
+6,75.1,Positive,High,7,Partially Approved,Yes,High,No Objections,High,Discussed Requirements,Basic Feature Set,No Risk Identified,No,84.1,Fully Ready,Yes,77
+6,44.7,Neutral,Medium,6,Partially Approved,Indirect,Low,Budget Not Allocated; Missing Features,High,Rescheduled,Standard Package,Timeline Conflict,Yes,37.4,Ready,Yes,21
+1,35.1,Neutral,Low,4,Under Review,No,Low,Lack of Internal Buy-in,Medium,Rescheduled,Scalable Infrastructure,No Risk Identified,Yes,13.1,Partially Ready,Yes,17
+1,13.2,Negative,Low,1,Not Allocated,No,Low,Budget Not Allocated; Long Implementation Time,Low,No Show / Cancelled,Multi-department Rollout,Economic Uncertainty,No,18.4,Not Ready,No,1
+7,49.5,Neutral,Medium,3,Under Review,No,Medium,Budget Not Allocated; Unfavorable Contract Terms; No Urgent Business Need; Lack of Internal Buy-in,Medium,Discussed Requirements,Compliance-driven Requirements,No Risk Identified,No,58.8,Partially Ready,No,10
+7,26,Negative,Medium,2,Under Review,No,Low,No Objections,Low,Discussed Requirements,API / Technical Integration,Budget Constraints,No,49,Not Ready,No,28
+18,71.2,Positive,Medium,8,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,No,91.2,Ready,Yes,93
+6,65.3,Positive,Medium,7,Partially Approved,Yes,High,Price Too High,High,Proposal Sent,Basic Feature Set,Economic Uncertainty,No,71.1,Partially Ready,No,66
+14,100,Positive,High,8,Fully Approved,Indirect,High,No Objections,High,Proposal Sent,Scalable Infrastructure,Timeline Conflict,Yes,77.9,Fully Ready,Yes,76
+8,55.9,Positive,Medium,6,Under Review,Indirect,Low,No Objections,High,Discussed Requirements,Customized Integration,No Risk Identified,Yes,65.5,Not Ready,Yes,51
+7,80.5,Negative,High,8,Under Review,Yes,Medium,No Objections,Medium,Proposal Sent,API / Technical Integration,Economic Uncertainty,Yes,72.7,Partially Ready,No,54
+6,29.9,Negative,Low,2,Not Allocated,No,High,No Objections,Medium,Rescheduled,Standard Package,No Risk Identified,Yes,47.6,Not Ready,No,29
+11,100,Positive,High,8,Fully Approved,Yes,Medium,No Objections,Very High,Discussed Requirements,Multi-department Rollout,No Risk Identified,No,87.3,Fully Ready,No,73
+11,92.2,Positive,High,8,Fully Approved,Indirect,Low,No Urgent Business Need,Very High,Verbal Agreement,Scalable Infrastructure,No Risk Identified,No,86.4,Fully Ready,No,76
+7,71.4,Positive,Medium,8,Fully Approved,Yes,High,No Objections,Very High,Verbal Agreement,Scalable Infrastructure,No Risk Identified,No,66.3,Fully Ready,Yes,87
+1,10.9,Negative,Medium,4,Not Allocated,No,Medium,Price Too High; Unfavorable Contract Terms; Lack of Internal Buy-in,Low,No Show / Cancelled,Enterprise-grade Security,Technical Concerns,No,32.1,Partially Ready,Yes,1
+4,74.6,Positive,Medium,7,Partially Approved,Yes,Critical,No Objections,High,Proposal Sent,Multi-department Rollout,No Risk Identified,No,92,Fully Ready,Yes,82
+5,4.9,Neutral,Low,1,Not Allocated,No,High,Competitor Preference; Poor Past Experience / Support,Low,No Show / Cancelled,API / Technical Integration,Timeline Conflict,No,8.3,Partially Ready,No,1
+9,94.1,Positive,High,7,Fully Approved,Yes,High,No Objections,Very High,Discussed Requirements,Multi-department Rollout,No Risk Identified,No,79.7,Fully Ready,Yes,88
+1,26.2,Negative,Low,1,Not Allocated,No,Medium,Missing Features; Security / Compliance Concerns,Low,No Show / Cancelled,Customized Integration,Technical Concerns,Yes,17.9,Not Ready,No,1
+8,65.8,Neutral,Medium,6,Under Review,Indirect,High,No Objections,High,Rescheduled,Enterprise-grade Security,No Risk Identified,No,57.8,Ready,No,61
+5,6.1,Negative,Low,1,Not Allocated,No,High,Long Implementation Time; Competitor Preference; No Urgent Business Need,Low,No Show / Cancelled,Multi-department Rollout,Timeline Conflict,No,23.8,Not Ready,No,1
+4,27.1,Negative,Low,3,Not Allocated,No,High,Missing Features; No Urgent Business Need,Medium,Discussed Requirements,API / Technical Integration,No Risk Identified,No,0,Not Ready,No,8
+8,89.8,Positive,High,9,Partially Approved,Yes,High,No Objections,Very High,Discussed Requirements,Compliance-driven Requirements,No Risk Identified,Yes,81.1,Fully Ready,No,77
+12,83.8,Positive,Medium,9,Fully Approved,Indirect,Critical,No Objections,Very High,Discussed Requirements,API / Technical Integration,No Risk Identified,Yes,60.8,Ready,No,71
+7,0,Negative,Low,1,Not Allocated,No,Medium,Price Too High; Missing Features; Long Implementation Time,Low,No Show / Cancelled,Multi-department Rollout,Economic Uncertainty,No,0,Not Ready,No,1
+5,11.1,Negative,Low,1,Partially Approved,No,High,Price Too High; Unfavorable Contract Terms,Medium,No Show / Cancelled,Basic Feature Set,Stakeholder Turnover,No,0.6,Not Ready,No,5
+13,69.7,Positive,High,10,Partially Approved,Yes,Critical,No Objections,Very High,Proposal Sent,Scalable Infrastructure,No Risk Identified,No,79.9,Fully Ready,No,86
+7,0,Negative,Low,1,Not Allocated,No,Medium,Budget Not Allocated; Unfavorable Contract Terms,Medium,Discussed Requirements,Multi-department Rollout,Economic Uncertainty,Yes,10.7,Not Ready,No,1
+6,26.7,Negative,Low,2,Not Allocated,No,High,Price Too High; Budget Not Allocated,Medium,Rescheduled,Multi-department Rollout,Timeline Conflict,No,27,Not Ready,Yes,11
+12,100,Neutral,High,10,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,Customized Integration,No Risk Identified,Yes,92.2,Fully Ready,No,96
+11,71.5,Positive,High,8,Fully Approved,Yes,Critical,No Objections,Medium,Proposal Sent,Scalable Infrastructure,No Risk Identified,No,64.6,Fully Ready,No,77
+9,41.3,Positive,Medium,8,Not Allocated,Indirect,High,No Objections,High,Proposal Sent,Scalable Infrastructure,Timeline Conflict,Yes,58.5,Partially Ready,Yes,47
+6,42.7,Positive,High,7,Fully Approved,Yes,Medium,Lack of Internal Buy-in,Very High,Discussed Requirements,Customized Integration,Stakeholder Turnover,No,94,Fully Ready,No,59
+11,73,Neutral,High,10,Fully Approved,Indirect,High,No Objections,Very High,Verbal Agreement,Enterprise-grade Security,Stakeholder Turnover,No,64.9,Ready,No,71
+6,100,Positive,Medium,9,Fully Approved,Yes,Medium,No Objections,Very High,Discussed Requirements,Enterprise-grade Security,No Risk Identified,Yes,80.9,Ready,Yes,86
+2,30.6,Neutral,Low,2,Under Review,No,Low,Competitor Preference,Medium,Rescheduled,Compliance-driven Requirements,Economic Uncertainty,No,33.7,Partially Ready,No,25
+13,71.6,Negative,High,8,Fully Approved,Yes,High,No Objections,Very High,Verbal Agreement,Standard Package,No Risk Identified,No,75,Ready,No,76
+10,64.6,Neutral,Medium,5,Partially Approved,Indirect,High,Long Implementation Time; Unfavorable Contract Terms,Very High,Discussed Requirements,Customized Integration,No Risk Identified,No,68.7,Ready,No,55
+13,59.4,Neutral,High,7,Partially Approved,Indirect,Critical,No Objections,Very High,Proposal Sent,Enterprise-grade Security,No Risk Identified,No,77.9,Fully Ready,Yes,82
+2,5.9,Negative,Low,2,Not Allocated,No,Medium,No Objections,Medium,No Show / Cancelled,API / Technical Integration,Internal Politics,No,20,Partially Ready,No,15
+4,62.8,Neutral,High,7,Partially Approved,Yes,Medium,Competitor Preference,High,No Show / Cancelled,Customized Integration,No Risk Identified,No,46.1,Ready,No,42
+10,97.2,Positive,High,9,Fully Approved,Indirect,Critical,No Objections,Very High,Verbal Agreement,API / Technical Integration,Competitor Pressure,No,98,Fully Ready,Yes,82
+10,94.4,Positive,Medium,10,Partially Approved,Yes,Medium,Missing Features,Very High,Proposal Sent,Basic Feature Set,Stakeholder Turnover,No,81.8,Fully Ready,Yes,80
+4,21.3,Neutral,Low,4,Not Allocated,No,Medium,Price Too High; Missing Features,Low,No Show / Cancelled,Scalable Infrastructure,No Risk Identified,No,0,Not Ready,Yes,1
+6,17.4,Negative,Low,4,Not Allocated,No,Low,Missing Features; Competitor Preference,Medium,Rescheduled,Standard Package,Competitor Pressure,Yes,0,Partially Ready,Yes,1
+6,48.2,Neutral,High,7,Under Review,Yes,High,No Objections,High,Discussed Requirements,Customized Integration,No Risk Identified,No,66.8,Ready,No,67
+8,68,Negative,Medium,8,Partially Approved,Indirect,High,Unfavorable Contract Terms; No Urgent Business Need,High,Rescheduled,Standard Package,Budget Constraints,Yes,52,Not Ready,No,29
+3,66.1,Positive,Low,3,Under Review,No,High,Security / Compliance Concerns; Poor Past Experience / Support,Medium,Rescheduled,Compliance-driven Requirements,No Risk Identified,Yes,31.3,Ready,No,22
+8,40.6,Neutral,Low,5,Partially Approved,Indirect,Medium,Budget Not Allocated; Missing Features,Medium,Discussed Requirements,Basic Feature Set,No Risk Identified,Yes,50.8,Fully Ready,No,28
+9,71.9,Positive,Medium,7,Partially Approved,Yes,Critical,No Objections,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,No,99.4,Fully Ready,Yes,93
+7,92.4,Positive,High,8,Partially Approved,Indirect,High,No Objections,Very High,Proposal Sent,Scalable Infrastructure,No Risk Identified,No,42.2,Fully Ready,Yes,85
+8,77.6,Neutral,High,7,Fully Approved,Yes,Critical,No Objections,Very High,Verbal Agreement,API / Technical Integration,No Risk Identified,Yes,57.5,Ready,Yes,75
+6,66.1,Neutral,Medium,5,Partially Approved,Indirect,Medium,No Objections,Low,Rescheduled,Customized Integration,No Risk Identified,No,35.4,Ready,Yes,54
+9,81.9,Positive,High,10,Fully Approved,Yes,High,Long Implementation Time,Very High,Proposal Sent,API / Technical Integration,No Risk Identified,No,100,Fully Ready,Yes,96
+13,77.4,Neutral,High,6,Under Review,Indirect,High,No Objections,Very High,Verbal Agreement,Basic Feature Set,No Risk Identified,Yes,64.2,Ready,Yes,81
+10,94.7,Neutral,High,10,Fully Approved,Yes,Critical,Price Too High; Long Implementation Time; Security / Compliance Concerns,Very High,Discussed Requirements,Standard Package,No Risk Identified,Yes,100,Ready,Yes,74
+2,15.1,Negative,Low,2,Not Allocated,No,Low,Missing Features; Poor Past Experience / Support,Low,No Show / Cancelled,API / Technical Integration,Competitor Pressure,No,0,Not Ready,No,1
+1,30.5,Negative,Low,2,Not Allocated,No,Low,Unfavorable Contract Terms; Competitor Preference; No Urgent Business Need,Medium,No Show / Cancelled,Multi-department Rollout,Economic Uncertainty,No,0,Not Ready,No,1
+1,4.4,Negative,Low,2,Not Allocated,No,Medium,No Objections,Low,No Show / Cancelled,Standard Package,Stakeholder Turnover,Yes,15.5,Not Ready,No,1
+2,0,Negative,Low,3,Not Allocated,No,Low,Price Too High; Missing Features; Long Implementation Time; Lack of Internal Buy-in,Low,No Show / Cancelled,Enterprise-grade Security,Internal Politics,No,11.5,Not Ready,No,1
+6,60.4,Positive,High,8,Partially Approved,Indirect,Critical,Missing Features,High,Discussed Requirements,Multi-department Rollout,No Risk Identified,No,74,Ready,No,67
+10,47.3,Neutral,Low,7,Not Allocated,Indirect,Medium,Budget Not Allocated; Missing Features; No Urgent Business Need,High,Proposal Sent,Enterprise-grade Security,No Risk Identified,No,39,Not Ready,No,19
+8,58.6,Positive,High,8,Partially Approved,Indirect,Critical,Price Too High,High,Discussed Requirements,Enterprise-grade Security,No Risk Identified,No,81.6,Ready,Yes,79
+14,99.2,Positive,High,10,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,Basic Feature Set,No Risk Identified,No,93.9,Fully Ready,No,99
+8,60.7,Positive,High,6,Under Review,Indirect,High,Price Too High; Budget Not Allocated; Unfavorable Contract Terms; Poor Past Experience / Support,Very High,Rescheduled,Multi-department Rollout,Timeline Conflict,No,78.8,Fully Ready,Yes,40
+5,47.1,Neutral,Low,4,Under Review,No,High,Price Too High,Medium,Discussed Requirements,Multi-department Rollout,Technical Concerns,Yes,45.5,Ready,No,27
+11,70.2,Positive,High,10,Fully Approved,Yes,High,No Objections,Very High,Proposal Sent,Scalable Infrastructure,No Risk Identified,No,74.6,Fully Ready,Yes,95
+10,80.4,Positive,High,10,Fully Approved,Yes,High,Lack of Internal Buy-in,Very High,Proposal Sent,Standard Package,No Risk Identified,Yes,56.1,Fully Ready,Yes,82
+15,61.9,Positive,High,9,Fully Approved,Indirect,High,No Objections,Very High,Proposal Sent,Enterprise-grade Security,Technical Concerns,No,97.2,Partially Ready,Yes,75
+2,66.3,Positive,High,9,Fully Approved,Yes,Critical,No Objections,High,Discussed Requirements,Standard Package,No Risk Identified,Yes,94.1,Partially Ready,No,71
+1,19.3,Negative,Low,3,Not Allocated,No,Medium,Budget Not Allocated,Low,No Show / Cancelled,Compliance-driven Requirements,Timeline Conflict,Yes,1,Partially Ready,No,1
+3,24.9,Negative,Low,5,Not Allocated,No,Medium,Unfavorable Contract Terms,Medium,Proposal Sent,Customized Integration,Economic Uncertainty,Yes,0,Not Ready,No,12
+5,33.4,Negative,Medium,5,Under Review,No,High,Security / Compliance Concerns; Unfavorable Contract Terms; Lack of Internal Buy-in,Medium,Discussed Requirements,Scalable Infrastructure,No Risk Identified,Yes,37.9,Partially Ready,No,11
+7,29.5,Positive,Low,3,Not Allocated,No,Medium,Budget Not Allocated; Competitor Preference,Medium,No Show / Cancelled,Customized Integration,Stakeholder Turnover,Yes,45.4,Ready,No,1
+12,100,Positive,High,10,Fully Approved,Yes,High,No Objections,Very High,Verbal Agreement,Enterprise-grade Security,No Risk Identified,No,100,Fully Ready,Yes,97
+2,3.7,Negative,Low,1,Not Allocated,No,Low,Competitor Preference,Low,No Show / Cancelled,API / Technical Integration,No Risk Identified,No,23.5,Not Ready,No,1
+7,30.2,Neutral,Low,3,Not Allocated,No,Low,Missing Features; Long Implementation Time; Competitor Preference,Medium,No Show / Cancelled,Scalable Infrastructure,Budget Constraints,Yes,16.1,Not Ready,No,1
+12,83.6,Positive,High,3,Fully Approved,Yes,Critical,No Objections,High,Verbal Agreement,Customized Integration,No Risk Identified,No,62.2,Ready,Yes,98
+4,19.4,Negative,Low,1,Not Allocated,No,Medium,Price Too High; Missing Features; Long Implementation Time; No Urgent Business Need; Lack of Internal Buy-in,Low,Rescheduled,Customized Integration,Timeline Conflict,No,15,Not Ready,No,1
+13,100,Positive,High,10,Fully Approved,Yes,Medium,Price Too High; Security / Compliance Concerns,Very High,Verbal Agreement,Compliance-driven Requirements,No Risk Identified,No,89.1,Fully Ready,No,84
+7,47.3,Negative,Medium,6,Under Review,No,Medium,Price Too High; Security / Compliance Concerns,High,Rescheduled,Enterprise-grade Security,Timeline Conflict,No,28.6,Ready,No,25
+4,62.8,Neutral,Low,3,Under Review,No,High,No Objections,Low,Rescheduled,Customized Integration,Timeline Conflict,Yes,69.1,Partially Ready,No,34
+11,71.9,Positive,Medium,7,Fully Approved,Yes,Critical,No Objections,Very High,Proposal Sent,Basic Feature Set,No Risk Identified,Yes,99.7,Fully Ready,Yes,80
+7,51.6,Neutral,Medium,8,Partially Approved,Indirect,Medium,No Objections,Medium,Discussed Requirements,Standard Package,Timeline Conflict,No,72.3,Partially Ready,Yes,56
+3,2.3,Negative,Low,1,Under Review,No,High,Security / Compliance Concerns; Competitor Preference,Low,No Show / Cancelled,Scalable Infrastructure,Budget Constraints,Yes,0,Not Ready,No,1
+15,81.2,Positive,High,10,Fully Approved,Yes,Critical,No Objections,Very High,Proposal Sent,Compliance-driven Requirements,No Risk Identified,No,100,Fully Ready,Yes,99
+1,0,Negative,Low,2,Not Allocated,No,Low,No Objections,Low,No Show / Cancelled,Scalable Infrastructure,Timeline Conflict,No,15.8,Not Ready,No,7
+5,67.4,Positive,High,9,Fully Approved,Yes,Medium,No Objections,Very High,Proposal Sent,Enterprise-grade Security,Internal Politics,No,84.7,Partially Ready,No,72
+1,5.1,Negative,Low,4,Not Allocated,No,Low,Security / Compliance Concerns,Low,No Show / Cancelled,Standard Package,Internal Politics,No,24.7,Not Ready,Yes,4
+9,92.9,Positive,High,9,Fully Approved,Yes,Critical,No Objections,High,Verbal Agreement,Multi-department Rollout,No Risk Identified,Yes,98.4,Fully Ready,No,90
+6,48.6,Negative,Medium,4,Under Review,Indirect,Medium,Unfavorable Contract Terms; Poor Past Experience / Support,High,Discussed Requirements,Enterprise-grade Security,Competitor Pressure,No,59,Partially Ready,Yes,34
+1,28.4,Neutral,Low,4,Not Allocated,Indirect,Medium,No Objections,High,Rescheduled,Compliance-driven Requirements,Internal Politics,No,47.2,Partially Ready,No,26
+8,100,Positive,High,10,Fully Approved,Yes,High,Long Implementation Time,Very High,Verbal Agreement,Basic Feature Set,No Risk Identified,Yes,100,Fully Ready,No,82
+6,80.6,Positive,Medium,6,Partially Approved,Yes,Critical,No Objections,Very High,Discussed Requirements,Compliance-driven Requirements,No Risk Identified,No,45,Ready,No,74
+18,93.2,Positive,High,9,Fully Approved,Yes,High,Competitor Preference,Very High,Proposal Sent,Scalable Infrastructure,No Risk Identified,No,96.4,Fully Ready,Yes,88
+8,4,Neutral,Low,1,Not Allocated,No,Medium,Price Too High,Medium,No Show / Cancelled,Basic Feature Set,Timeline Conflict,Yes,3.5,Not Ready,No,1
+8,91.6,Positive,High,10,Partially Approved,Yes,High,No Objections,Very High,Verbal Agreement,Standard Package,No Risk Identified,Yes,65.9,Ready,Yes,75
+7,66,Positive,Medium,7,Fully Approved,Yes,Critical,No Objections,Very High,Discussed Requirements,Standard Package,No Risk Identified,No,88.9,Ready,No,80
+1,0,Negative,Low,2,Not Allocated,No,Medium,Budget Not Allocated,Low,No Show / Cancelled,Standard Package,Competitor Pressure,Yes,38.1,Not Ready,No,1
+2,58,Positive,Medium,6,Partially Approved,Indirect,Medium,Competitor Preference,High,No Show / Cancelled,API / Technical Integration,Timeline Conflict,Yes,79.2,Fully Ready,Yes,41
+8,71.8,Positive,High,7,Under Review,Yes,Critical,No Objections,Very High,Verbal Agreement,Customized Integration,Stakeholder Turnover,Yes,72.4,Ready,Yes,71
+7,80.1,Neutral,High,10,Fully Approved,Yes,Critical,Competitor Preference,High,Verbal Agreement,Compliance-driven Requirements,No Risk Identified,No,100,Fully Ready,Yes,90
+2,3.5,Negative,Low,1,Not Allocated,No,Medium,Competitor Preference; Poor Past Experience / Support,Low,No Show / Cancelled,Customized Integration,Stakeholder Turnover,No,1.4,Not Ready,No,1
+1,1.2,Negative,Low,1,Not Allocated,No,Low,Missing Features; Long Implementation Time; Unfavorable Contract Terms,High,Rescheduled,Compliance-driven Requirements,Economic Uncertainty,Yes,21.7,Partially Ready,No,1
+4,61.5,Neutral,Medium,7,Under Review,No,Medium,Long Implementation Time; Poor Past Experience / Support,High,Discussed Requirements,Basic Feature Set,Technical Concerns,No,29,Partially Ready,Yes,36
+4,35.4,Negative,Medium,2,Not Allocated,No,Medium,Price Too High; Budget Not Allocated; Security / Compliance Concerns; Competitor Preference; No Urgent Business Need,Medium,No Show / Cancelled,Standard Package,Competitor Pressure,No,26.4,Not Ready,No,1
+10,74.6,Positive,Medium,6,Partially Approved,Yes,High,No Urgent Business Need,Very High,Proposal Sent,Standard Package,No Risk Identified,No,78.6,Ready,Yes,69
+11,86.9,Positive,High,9,Fully Approved,Yes,Critical,No Objections,Very High,Proposal Sent,Multi-department Rollout,No Risk Identified,No,63,Fully Ready,No,87
+1,0,Negative,Low,2,Not Allocated,No,Low,Long Implementation Time,Low,Discussed Requirements,Enterprise-grade Security,No Risk Identified,No,1.9,Not Ready,No,8
+5,0,Negative,Low,1,Not Allocated,No,Medium,No Objections,Low,No Show / Cancelled,Enterprise-grade Security,Economic Uncertainty,Yes,0.5,Not Ready,No,1
+2,26,Negative,Medium,4,Not Allocated,No,Low,No Urgent Business Need,Low,No Show / Cancelled,API / Technical Integration,No Risk Identified,Yes,56.5,Partially Ready,Yes,16
+8,33,Neutral,Medium,6,Under Review,Indirect,Medium,No Objections,High,Discussed Requirements,Customized Integration,Economic Uncertainty,Yes,59.3,Partially Ready,No,34
+3,23.4,Negative,Low,3,Under Review,No,Medium,Budget Not Allocated; Missing Features; Security / Compliance Concerns; Competitor Preference; Lack of Internal Buy-in,Medium,No Show / Cancelled,Customized Integration,Stakeholder Turnover,No,15,Partially Ready,Yes,1
+2,68.2,Neutral,Low,6,Partially Approved,Indirect,Medium,Price Too High,Medium,Discussed Requirements,Basic Feature Set,No Risk Identified,No,48,Partially Ready,No,48

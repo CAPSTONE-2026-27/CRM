@@ -1,0 +1,29 @@
+# Pinned to the exact versions the current model was trained and validated on.
+#
+# These are exact pins (==), not ranges, on purpose: the saved model is a joblib
+# pickle of an XGBoost booster. Loading it under a different XGBoost or
+# scikit-learn build can fail outright or - worse - load and behave differently.
+# The bundle records the training versions under `provenance.library_versions`;
+# compare them against this file when debugging a serving discrepancy.
+#
+# Install:  python -m pip install -r requirements.txt
+
+# --- serving (minimum needed to load a model and score) --------------------
+pandas==3.0.5
+numpy==2.4.6
+scikit-learn==1.9.0
+xgboost==3.3.0
+joblib==1.5.3
+
+# --- training only (not required by deal_score_service) --------------------
+matplotlib==3.11.1
+shap==0.52.0
+
+# --- development -----------------------------------------------------------
+pytest==9.1.1
+ruff==0.16.1
+
+# Verified on Python 3.14.6 / Windows.
+# NOTE: on this stack XGBoost crashes natively when a booster is built inside a
+# joblib worker process, so the pipeline runs cross-validation sequentially
+# (SEARCH_N_JOBS = 1). See the note beside those constants before changing it.

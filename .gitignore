@@ -16,3 +16,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Python venv for the deal-scoring model service
+XgBoost/.venv/
+XgBoost/.pytest_cache/
+XgBoost/.ruff_cache/
+**/__pycache__/
