@@ -38,6 +38,9 @@ from peft import (
 )
 from trl import SFTTrainer, SFTConfig
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prompt_format import SYSTEM_PROMPT, build_llama3_prompt  # noqa: E402
+
 
 # --------------------------------------------------------------------------
 # 1. PATHS
@@ -49,7 +52,6 @@ OUTPUT_DIR = PROJECT_ROOT / "outputs" / "lead_management_llama3_lora"
 LOG_DIR = PROJECT_ROOT / "outputs" / "logs"
 
 SEED = 42
-SYSTEM_PROMPT = "You are an AI CRM Lead Management Assistant."
 
 
 # --------------------------------------------------------------------------
@@ -87,25 +89,8 @@ def set_seed(seed: int = SEED) -> None:
 # --------------------------------------------------------------------------
 # 4. CHAT TEMPLATE FORMATTING
 # --------------------------------------------------------------------------
-def build_llama3_prompt(system: str, user: str, assistant: str) -> str:
-    """
-    Build a single training example in raw Llama 3.1 Instruct chat format.
-    The tokenizer's own chat template is intentionally NOT used here because
-    the business requirement specifies an exact literal format; this keeps
-    training and inference formatting perfectly aligned.
-    """
-    return (
-        "<|begin_of_text|>"
-        "<|start_header_id|>system<|end_header_id|>\n\n"
-        f"{system}"
-        "<|eot_id|>"
-        "<|start_header_id|>user<|end_header_id|>\n\n"
-        f"{user}"
-        "<|eot_id|>"
-        "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        f"{assistant}"
-        "<|eot_id|>"
-    )
+# build_llama3_prompt and SYSTEM_PROMPT now live in prompt_format.py, imported
+# above, so train.py and inference.py can never drift onto different prompts.
 
 
 def formatting_func(example: dict) -> str:
@@ -234,6 +219,13 @@ def apply_memory_optimizations(model):
 
 def apply_lora(model):
     logger.info("Attaching LoRA adapters.")
+    # Doubling r to 32 (alpha 64) was tried and measured to be no better --
+    # slightly worse, in fact (88% vs 90% Qualification accuracy, 48% vs 58%
+    # exact Lead Score match at 8 epochs). The held-out misses are the same
+    # handful of boundary leads (score 35-40, immediately above Cold's
+    # ceiling of 30) regardless of rank or epoch count, which means capacity
+    # was never the bottleneck -- the Cold/Warm cutoff is thinner than the
+    # 5-point granularity of the underlying scoring factors. Reverted to r=16.
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
@@ -258,7 +250,19 @@ def apply_lora(model):
 # --------------------------------------------------------------------------
 # 7. DATASET
 # --------------------------------------------------------------------------
+EVAL_FRACTION = 0.10
+
+
 def load_and_prepare_dataset():
+    """Load train.jsonl and split off a held-out eval slice.
+
+    Every run before this one trained with no eval_dataset at all, so there
+    was no signal distinguishing "learned the scoring policy" from
+    "memorized the training rows" — the single highest-priority fix for
+    training quality. The split is seeded and shuffled before splitting so
+    it's reproducible and not just the last N rows (which, if the generator
+    ever writes examples in a non-random order, would bias the split).
+    """
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Training data not found at: {DATA_PATH}")
 
@@ -276,7 +280,15 @@ def load_and_prepare_dataset():
 
     logger.info("Clean dataset size: %d rows", len(dataset))
 
-    return dataset
+    split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
+    train_dataset, eval_dataset = split["train"], split["test"]
+
+    logger.info(
+        "Train/eval split: %d train rows, %d eval rows (%.0f%% held out)",
+        len(train_dataset), len(eval_dataset), EVAL_FRACTION * 100,
+    )
+
+    return train_dataset, eval_dataset
 
 
 # --------------------------------------------------------------------------
@@ -293,15 +305,35 @@ def build_training_config() -> SFTConfig:
     config = SFTConfig(
         output_dir=str(OUTPUT_DIR),
         per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
         gradient_accumulation_steps=8,
-        learning_rate=2e-4,
-        num_train_epochs=3,
+        learning_rate=1e-4,
+        # A 3-epoch run was tried here and measured to be wrong: aggregate
+        # eval_loss looked converged by epoch ~2, but eval_loss is dominated
+        # by the long, easy-to-predict boilerplate reasoning text (longer
+        # after grounding each bullet in the lead's actual numbers). The
+        # decision-critical tokens -- Qualification, Priority, exact score --
+        # are a small fraction of that text and measurably needed more
+        # passes: held-out Qualification accuracy dropped from 96% (8
+        # epochs, shorter reasoning) to 90% (3 epochs, grounded reasoning),
+        # and exact Lead Score match dropped from 72% to 44%. Back to 8.
+        num_train_epochs=8,
         optim="paged_adamw_8bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
-        logging_steps=10,
-        save_steps=100,
+        logging_steps=5,
+        eval_strategy="steps",    # was previously unset: training ran with zero eval signal
+        # eval_steps=10 meant a full 50-example eval pass (~13s) every 10
+        # training steps -- ~45 extra evals over a full run, on the order of
+        # 10 minutes of pure overhead. 20 halves that while still giving
+        # frequent enough eval_loss signal for load_best_model_at_end.
+        eval_steps=20,
+        save_steps=20,           # must stay a round multiple of eval_steps for load_best_model_at_end
+        save_strategy="steps",
         save_total_limit=2,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         bf16=bf16_ok,
         fp16=not bf16_ok,
         max_length=2048,          # sequence length cap (formerly max_seq_length)
@@ -343,7 +375,7 @@ def main():
         tokenizer = load_tokenizer()
 
         # --- Dataset ---
-        dataset = load_and_prepare_dataset()
+        train_dataset, eval_dataset = load_and_prepare_dataset()
 
         # --- Model ---
         model = load_model()
@@ -356,17 +388,29 @@ def main():
         # --- Trainer ---
         logger.info("Initializing SFTTrainer.")
         trainer = SFTTrainer(
-        model=model,
-        args=sft_config,
-        train_dataset=dataset,
-        processing_class=tokenizer,
-        formatting_func=formatting_func,
-    )
+            model=model,
+            args=sft_config,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            formatting_func=formatting_func,
+        )
 
         # --- Train ---
+        # Resuming from checkpoint-380: the previous run of this exact config
+        # (r=16 LoRA revert + grounded reasoning + 8 epochs) was killed
+        # mid-run at step 384/456 when the machine went offline over the
+        # weekend, with no error -- just an abrupt stop. checkpoint-380 has
+        # full optimizer/scheduler/rng state, so resuming continues the same
+        # trajectory instead of repeating ~50 minutes of already-done work.
         logger.info("Starting training...")
-        train_result = trainer.train()
+        train_result = trainer.train(resume_from_checkpoint=True)
         logger.info("Training complete. Metrics: %s", train_result.metrics)
+
+        # --- Eval (best checkpoint, since load_best_model_at_end=True) ---
+        logger.info("Evaluating best checkpoint on held-out eval split...")
+        eval_metrics = trainer.evaluate()
+        logger.info("Eval metrics: %s", eval_metrics)
 
         # --- Save ---
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -374,9 +418,11 @@ def main():
         trainer.model.save_pretrained(str(OUTPUT_DIR))
         tokenizer.save_pretrained(str(OUTPUT_DIR))
 
-        # Persist training metrics for later reference.
+        # Persist training + eval metrics for later reference.
         with open(OUTPUT_DIR / "train_metrics.json", "w", encoding="utf-8") as f:
             json.dump(train_result.metrics, f, indent=2)
+        with open(OUTPUT_DIR / "eval_metrics.json", "w", encoding="utf-8") as f:
+            json.dump(eval_metrics, f, indent=2)
 
         elapsed = time.time() - start_time
         logger.info("Total training time: %.2f minutes", elapsed / 60)
