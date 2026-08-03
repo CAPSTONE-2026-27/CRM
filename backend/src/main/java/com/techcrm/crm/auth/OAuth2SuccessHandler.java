@@ -72,7 +72,10 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                     .maxAge(Duration.ofDays(refreshTtlDays))
                     .build()
                     .toString());
-            response.sendRedirect(frontendUrl);
+            // The cookie is set during a redirect the app never observes, so
+            // tell it a session now exists — otherwise it skips the silent
+            // refresh and shows the login screen despite a valid cookie.
+            response.sendRedirect(frontendUrl + "/?signed_in=1");
         } catch (Exception e) {
             log.warn("{} sign-in failed: {}", provider, e.getMessage());
             response.sendRedirect(frontendUrl + "/?oauth_error=" + provider.toLowerCase());

@@ -113,6 +113,10 @@ export function AuthScreen() {
     const oauthError = params.get("oauth_error");
     if (oauthError) {
       toast.error("Sign-in failed", { description: `Could not complete sign-in with ${oauthError === "google" ? "Google" : "Microsoft"}.` });
+    }
+    // Clear both markers so a reload doesn't re-show the error or re-trigger
+    // the post-OAuth session pickup.
+    if (oauthError || params.has("signed_in")) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
