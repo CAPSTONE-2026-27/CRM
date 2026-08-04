@@ -130,3 +130,19 @@ def score(features: DealFeatures) -> dict[str, Any]:
     except Exception as exc:  # pragma: no cover - unexpected serving fault
         log.exception("Scoring failed")
         raise HTTPException(status_code=500, detail="Scoring failed") from exc
+
+
+if __name__ == "__main__":
+    # Lets the service be started with `python serve_api.py`, not only via a
+    # uvicorn command line — the model is loaded in-process either way, so an
+    # external launcher buys nothing and is one more thing to remember.
+    import os
+
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.environ.get("DEAL_SCORER_HOST", "127.0.0.1"),
+        port=int(os.environ.get("DEAL_SCORER_PORT", "8000")),
+        log_level="info",
+    )
