@@ -1,0 +1,76 @@
+==============================
+CRM AI Functional Test Cases
+==============================
+
+Test Case 1: High Quality Lead
+--------------------------------
+Company: ABC Technologies
+Industry: Healthcare
+Employees: 250
+Budget: 15 Lakhs
+Decision Maker: Yes
+Interested Product: CRM Software
+
+Expected:
+Positive lead
+High conversion chance
+
+
+Test Case 2: Startup Lead
+--------------------------------
+Company: BrightAI
+Industry: AI
+Employees: 18
+Budget: 2 Lakhs
+Decision Maker: Founder
+Interested Product: CRM Basic
+
+Expected:
+Medium quality lead
+
+
+Test Case 3: Low Budget Lead
+--------------------------------
+Company: XYZ Traders
+Industry: Retail
+Employees: 8
+Budget: 30,000
+Decision Maker: No
+Interested Product: Enterprise CRM
+
+Expected:
+Low quality lead
+
+
+Test Case 4: No Interest
+--------------------------------
+Company: Demo Company
+Industry: Manufacturing
+Employees: 400
+Budget: Unknown
+Decision Maker: No
+Interested Product: None
+
+Expected:
+Poor lead
+
+
+Test Case 5: Enterprise Lead
+--------------------------------
+Company: Infosys
+Industry: IT
+Employees: 300000
+Budget: 3 Crores
+Decision Maker: CIO
+Interested Product: CRM Enterprise
+
+Expected:
+Very High Priority
+
+
+Test Case 6: Missing Information
+--------------------------------
+Company: Unknown
+
+Expected:
+Ask for more information

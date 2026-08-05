@@ -19,9 +19,22 @@ public class AiScoringClient {
 
     private static final String SYSTEM_PROMPT =
             "You are a CRM lead-scoring assistant. Score the lead from 0-100 based on fit and intent signals "
-                    + "(deal value, industry, company size, source channel, and buying signals in the notes). "
+                    + "(deal value, industry, company size, source channel, and buying signals in the notes), "
+                    + "then decide whether the lead is worth a sales executive's time. "
+                    + "A lead is QUALIFIED when there is a plausible fit and some intent signal; UNQUALIFIED when "
+                    + "the fit is wrong, the notes show no interest, or there is too little information to act on. "
+                    + "qualificationProbability is your confidence from 0-100 that pursuing this lead is worthwhile; "
+                    + "it is not a copy of the score. "
                     + "Respond with ONLY strict JSON, no prose, no markdown fences: "
-                    + "{\"score\": <0-100>, \"label\": \"Hot\"|\"Warm\"|\"Cold\", \"reason\": \"<one sentence>\"}";
+                    + "{\"score\": <0-100>, \"label\": \"Hot\"|\"Warm\"|\"Cold\", \"reason\": \"<one sentence>\", "
+                    + "\"qualificationStatus\": \"QUALIFIED\"|\"UNQUALIFIED\", "
+                    + "\"qualificationProbability\": <0-100>, "
+                    + "\"qualificationReasoning\": \"<1-2 sentences explaining the qualification decision>\"}";
+
+    /** Score at or above which a lead is qualified when the model omits or
+     *  garbles the field. Matches the "Warm" boundary used elsewhere, so the
+     *  fallback agrees with the temperature label rather than contradicting it. */
+    private static final int QUALIFICATION_FALLBACK_THRESHOLD = 45;
 
     private final AiChatClient chatClient;
 
@@ -40,7 +53,32 @@ public class AiScoringClient {
         Integer score = AiJson.clampedScore(json, "score");
         if (score == null) return null;
 
-        return new AiScoreResult(score, normaliseLabel(AiJson.text(json, "label"), score), AiJson.text(json, "reason"));
+        return new AiScoreResult(
+                score,
+                normaliseLabel(AiJson.text(json, "label"), score),
+                AiJson.text(json, "reason"),
+                normaliseQualification(AiJson.text(json, "qualificationStatus"), score),
+                qualificationProbability(json, score),
+                AiJson.text(json, "qualificationReasoning"));
+    }
+
+    /** Anything other than an explicit UNQUALIFIED/QUALIFIED falls back to the
+     *  score, so a model that drops the field still produces a usable verdict
+     *  rather than leaving every lead stuck in PENDING. */
+    private String normaliseQualification(String status, int score) {
+        if (status != null) {
+            String value = status.trim().toUpperCase();
+            if (value.startsWith("UNQUALIFIED") || value.startsWith("NOT")) return "UNQUALIFIED";
+            if (value.startsWith("QUALIFIED")) return "QUALIFIED";
+        }
+        return score >= QUALIFICATION_FALLBACK_THRESHOLD ? "QUALIFIED" : "UNQUALIFIED";
+    }
+
+    private Double qualificationProbability(JsonNode json, int score) {
+        Integer probability = AiJson.clampedScore(json, "qualificationProbability");
+        // Falling back to the score is a deliberate approximation, not a claim
+        // of equivalence — better than a null the dashboard would render as "—".
+        return probability == null ? (double) score : probability.doubleValue();
     }
 
     /** Only the fields the sales rep actually filled in — absent values are

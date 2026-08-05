@@ -3,6 +3,7 @@ import { colors } from "./tokens";
 import { Sidebar, ScreenId, screenAllowed } from "./components/crm/Sidebar";
 import { Topbar } from "./components/crm/Topbar";
 import { ErrorBoundary } from "./components/crm/ErrorBoundary";
+import { BrandLoader } from "./components/crm/BrandLogo";
 import {
   Dashboard,
   Leads,
@@ -48,11 +49,7 @@ export default function App() {
   const [wizard, setWizard] = useState<WizardId | null>(null);
 
   if (status === "loading") {
-    return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: colors.textSecondary, fontFamily: "Inter, system-ui, sans-serif", fontSize: 13 }}>
-        Loading…
-      </div>
-    );
+    return <BrandLoader />;
   }
 
   if (status === "unauthenticated" || !user) {

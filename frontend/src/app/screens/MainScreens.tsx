@@ -18,6 +18,8 @@ import {
 } from "../components/crm/ui";
 import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
 import { LeadOutputModal } from "../components/crm/LeadOutputModal";
+import { DealWorkspace } from "../components/crm/DealWorkspace";
+import { LeadFlowPanel } from "../components/crm/LeadFlowPanel";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
 import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
@@ -51,7 +53,7 @@ import {
   type LeadImportResult,
 } from "../lib/queries";
 import { streamCopilotChat, downloadFile, type CopilotMessage } from "../lib/apiClient";
-import type { Lead, RpaBotRun, UserRow } from "../lib/types";
+import { CONTACT_STATUS_LABELS, DEAL_STAGE_LABELS, type Lead, type RpaBotRun, type UserRow } from "../lib/types";
 import { useAuth } from "../lib/auth";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS, type Role } from "../components/crm/Sidebar";
 
@@ -230,7 +232,9 @@ function LoadingState() {
 
 function formatCurrency(value: string | number | null | undefined): string {
   const n = Number(value ?? 0);
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  // en-IN groups by lakh/crore (12,34,567) rather than thousands, which is what
+  // the ₹ symbol implies to anyone reading these figures.
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 function initialsFromName(name: string): string {
@@ -329,6 +333,20 @@ export const scoreVariant = (score: number | null | undefined): BadgeVariant => 
   if (score >= 50) return "blue";
   return "amber";
 };
+
+// Qualification is the model's "is this worth working" verdict — deliberately
+// separate from `status`, which is the Hot/Warm/Cold temperature.
+const qualificationLabel = (lead: Lead): string =>
+  lead.qualificationStatus === "QUALIFIED"
+    ? lead.qualificationProbability != null
+      ? `Qualified ${lead.qualificationProbability.toFixed(0)}%`
+      : "Qualified"
+    : lead.qualificationStatus === "UNQUALIFIED"
+      ? "Unqualified"
+      : "Pending";
+
+const qualificationVariant = (lead: Lead): BadgeVariant =>
+  lead.qualificationStatus === "QUALIFIED" ? "green" : lead.qualificationStatus === "UNQUALIFIED" ? "red" : "amber";
 
 const LEADS_PAGE_SIZE = 20;
 
@@ -499,9 +517,9 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
         <Table
           headers={[
             <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} style={{ cursor: "pointer" }} />,
-            "Name / Company", "Product", "Source", "AI Score", "Status", "Assigned", "",
+            "Name / Company", "Product", "AI Score", "Status", "Qualification", "Contact", "Assigned", "",
           ]}
-          cols="0.4fr 2fr 1.3fr 1fr 0.8fr 0.8fr 1fr 1.5fr"
+          cols="0.4fr 1.8fr 1.1fr 0.7fr 0.7fr 1fr 1.1fr 1fr 1.5fr"
         >
           {rows.map((r) => (
             <TableRow key={r.id} onClick={() => setSelectedLead(r)}>
@@ -524,9 +542,16 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
                 </div>
               </Cell>
               <Cell>{r.product ?? "—"}</Cell>
-              <Cell muted>{r.sourceChannel ?? "—"}</Cell>
               <Cell>{r.aiScore != null ? <Badge label={String(r.aiScore)} variant={scoreVariant(r.aiScore)} /> : "—"}</Cell>
               <Cell><Badge label={r.status} variant={leadStatusVariant[r.status] ?? "blue"} /></Cell>
+              <Cell>
+                <Badge label={qualificationLabel(r)} variant={qualificationVariant(r)} />
+              </Cell>
+              <Cell muted>
+                {r.convertedDealId
+                  ? "Converted"
+                  : (CONTACT_STATUS_LABELS[r.contactStatus] ?? r.contactStatus)}
+              </Cell>
               <Cell muted>{r.assignedToId ? (usersById.get(r.assignedToId)?.fullName ?? "Assigned") : "Unassigned"}</Cell>
               <Cell>
                 <div style={{ display: "flex", gap: 10 }}>
@@ -578,8 +603,11 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
       </Card>
       {selectedLead && (
         <LeadDetailModal
-          lead={selectedLead}
+          // Re-read from the current page so the workflow panel reflects the
+          // latest save; the captured row goes stale the moment a step runs.
+          lead={rows.find((r) => r.id === selectedLead.id) ?? selectedLead}
           assignee={selectedLead.assignedToId ? usersById.get(selectedLead.assignedToId) : undefined}
+          users={users ?? []}
           onEdit={() => {
             setEditingLead(selectedLead);
             setSelectedLead(null);
@@ -793,11 +821,13 @@ function EditLeadModal({
 function LeadDetailModal({
   lead,
   assignee,
+  users,
   onEdit,
   onClose,
 }: {
   lead: Lead;
   assignee: UserRow | undefined;
+  users: UserRow[];
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -820,7 +850,7 @@ function LeadDetailModal({
       onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 8, width: 520, maxHeight: "85vh", overflowY: "auto", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 8, width: "min(620px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <Avatar initials={initialsFromName(lead.fullName)} />
           <div>
@@ -829,8 +859,9 @@ function LeadDetailModal({
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
+        <div style={{ display: "flex", gap: 8, margin: "14px 0", flexWrap: "wrap" }}>
           <Badge label={lead.status} variant={leadStatusVariant[lead.status] ?? "blue"} />
+          <Badge label={qualificationLabel(lead)} variant={qualificationVariant(lead)} />
           {assignee && <Badge label={`Assigned to ${assignee.fullName}`} variant="blue" />}
         </div>
 
@@ -874,6 +905,13 @@ function LeadDetailModal({
           </>
         )}
 
+        <div style={{ fontSize: 11, fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>
+          Lead workflow
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <LeadFlowPanel lead={lead} users={users} />
+        </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button label="Close" onClick={onClose} />
           <Button label="Edit lead" variant="primary" onClick={onEdit} />
@@ -884,7 +922,12 @@ function LeadDetailModal({
 }
 
 /* ============ S03 Sales Pipeline Kanban ============ */
+// Opportunity and Meeting sit ahead of the original stages rather than
+// replacing them: existing deals are on Prospecting/Qualification and renaming
+// those columns would relabel history to match a workflow they never ran.
 const stageToColumnId: Record<string, string> = {
+  OPPORTUNITY_CREATED: "opportunity",
+  MEETING_SCHEDULED: "meeting",
   PROSPECTING: "prospecting",
   QUALIFICATION: "qualification",
   PROPOSAL: "proposal",
@@ -894,6 +937,8 @@ const stageToColumnId: Record<string, string> = {
 };
 
 const columnIdToStage: Record<string, string> = {
+  opportunity: "OPPORTUNITY_CREATED",
+  meeting: "MEETING_SCHEDULED",
   prospecting: "PROSPECTING",
   qualification: "QUALIFICATION",
   proposal: "PROPOSAL",
@@ -902,11 +947,17 @@ const columnIdToStage: Record<string, string> = {
   lost: "CLOSED_LOST",
 };
 
+const riskVariantFor = (risk: string | null | undefined): BadgeVariant =>
+  risk === "LOW" ? "green" : risk === "MEDIUM" ? "amber" : "red";
+
 export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
   const { data: deals, isLoading } = useDeals();
   const updateDealStage = useUpdateDealStage();
+  const [workspaceDealId, setWorkspaceDealId] = useState<string | null>(null);
 
   const columns: Column[] = [
+    { id: "opportunity", title: "Opportunity", cards: [] },
+    { id: "meeting", title: "Meeting", cards: [] },
     { id: "prospecting", title: "Prospecting", cards: [] },
     { id: "qualification", title: "Qualification", cards: [] },
     { id: "proposal", title: "Proposal", cards: [] },
@@ -920,16 +971,39 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
     const column = columns.find((c) => c.id === columnId);
     if (!column) continue;
     const isClosed = deal.stage === "CLOSED_WON" || deal.stage === "CLOSED_LOST";
+    // Prefer the model's deal score over the manually-entered probability —
+    // when a deal has been analysed, that is the number worth reading.
+    const score = deal.dealScore;
     column.cards.push({
       id: deal.id,
       name: deal.name,
       value: formatCurrency(deal.value),
-      probability: isClosed ? (deal.stage === "CLOSED_WON" ? "Won" : "Lost") : `${deal.probability ?? 0}%`,
-      variant: (deal.probability ?? 0) >= 70 ? "green" : (deal.probability ?? 0) >= 40 ? "blue" : "amber",
+      probability: isClosed
+        ? deal.stage === "CLOSED_WON"
+          ? "Won"
+          : "Lost"
+        : score != null
+          ? `Score ${score.toFixed(0)}`
+          : `${deal.probability ?? 0}%`,
+      variant:
+        score != null
+          ? score >= 75
+            ? "green"
+            : score >= 50
+              ? "blue"
+              : score >= 25
+                ? "amber"
+                : "red"
+          : (deal.probability ?? 0) >= 70
+            ? "green"
+            : (deal.probability ?? 0) >= 40
+              ? "blue"
+              : "amber",
     });
   }
 
   const pool: Column = { id: "unassigned", title: "Unassigned deals", cards: [] };
+  const rows = deals ?? [];
 
   return (
     <Stack>
@@ -946,6 +1020,52 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
           }}
         />
       )}
+
+      {/* The board is for moving deals; this is for working them. Opening a row
+          gives the meeting output form, the AI analysis and the manager review. */}
+      <Card title={`Opportunities (${rows.length})`}>
+        <Table
+          headers={["Opportunity", "Stage", "Value", "Deal score", "Win probability", "Risk", "Next action", ""]}
+          cols="1.8fr 1fr 1fr 0.9fr 0.9fr 0.7fr 1.6fr 1fr"
+        >
+          {rows.map((d) => (
+            <TableRow key={d.id} onClick={() => setWorkspaceDealId(d.id)}>
+              <Cell>
+                <div style={{ fontWeight: 500 }}>{d.name}</div>
+                <div style={{ fontSize: 11, color: colors.textSecondary, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                  {d.opportunityId ?? `Deal ${d.id}`}
+                </div>
+              </Cell>
+              <Cell>
+                <Badge label={DEAL_STAGE_LABELS[d.stage] ?? d.stage} variant={d.stage === "CLOSED_WON" ? "green" : d.stage === "CLOSED_LOST" ? "red" : "blue"} />
+              </Cell>
+              <Cell muted>{formatCurrency(d.value)}</Cell>
+              <Cell>
+                {d.dealScore != null ? <Badge label={d.dealScore.toFixed(0)} variant={scoreVariant(d.dealScore)} /> : "—"}
+              </Cell>
+              <Cell muted>{d.winProbability != null ? `${d.winProbability.toFixed(0)}%` : "—"}</Cell>
+              <Cell>{d.riskLevel ? <Badge label={d.riskLevel} variant={riskVariantFor(d.riskLevel)} /> : "—"}</Cell>
+              <Cell muted>{d.dealScoreAction ?? "—"}</Cell>
+              <Cell>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setWorkspaceDealId(d.id);
+                  }}
+                  style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+                >
+                  Open workspace
+                </button>
+              </Cell>
+            </TableRow>
+          ))}
+          {!isLoading && rows.length === 0 && (
+            <EmptyState message="No opportunities yet. Convert a qualified lead, or add a deal." />
+          )}
+        </Table>
+      </Card>
+
+      {workspaceDealId && <DealWorkspace dealId={workspaceDealId} onClose={() => setWorkspaceDealId(null)} />}
     </Stack>
   );
 }

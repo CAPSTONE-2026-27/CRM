@@ -21,14 +21,14 @@ export type Column = {
 };
 
 function parseValue(v: string): number {
-  // "$42K" -> 42 ; "$5K" -> 5 ; "Won" -> 0
+  // "₹42K" -> 42 ; "₹5K" -> 5 ; "Won" -> 0
   const m = v.match(/([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
 }
 
 function formatValue(total: number): string {
-  if (total === 0) return "$0";
-  return `$${Number.isInteger(total) ? total : total.toFixed(1)}K`;
+  if (total === 0) return "₹0";
+  return `₹${Number.isInteger(total) ? total : total.toFixed(1)}K`;
 }
 
 function Card({ card, columnId }: { card: DealCard; columnId: string }) {
@@ -213,17 +213,22 @@ export function KanbanBoard({
     <DndProvider backend={HTML5Backend}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {pool && <Pool column={pool} onDropCard={handleDrop} />}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${stageColumns.length}, minmax(0,1fr))`,
-            gap: 12,
-            alignItems: "start",
-          }}
-        >
-          {stageColumns.map((col) => (
-            <ColumnView key={col.id} column={col} onDropCard={handleDrop} />
-          ))}
+        {/* Columns share the width until they would get too narrow to read a
+            deal name, then the board scrolls sideways instead of squeezing. */}
+        <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${stageColumns.length}, minmax(150px, 1fr))`,
+              gap: 12,
+              alignItems: "start",
+              minWidth: "min-content",
+            }}
+          >
+            {stageColumns.map((col) => (
+              <ColumnView key={col.id} column={col} onDropCard={handleDrop} />
+            ))}
+          </div>
         </div>
       </div>
     </DndProvider>

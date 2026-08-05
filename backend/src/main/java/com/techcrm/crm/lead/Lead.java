@@ -56,8 +56,53 @@ public class Lead {
     @Column(nullable = false, length = 30)
     private String status = "NEW";
 
+    /* ---- Qualification (flow step 3) --------------------------------------
+     * Separate from `status`, which is the Hot/Warm/Cold temperature. These two
+     * answer different questions: whether to work the lead at all, and how
+     * urgently. PENDING | QUALIFIED | UNQUALIFIED. */
+
+    @Column(name = "qualification_status", nullable = false, length = 20)
+    private String qualificationStatus = "PENDING";
+
+    @Column(name = "qualification_probability")
+    private Double qualificationProbability;
+
+    @Column(name = "qualification_reasoning", columnDefinition = "text")
+    private String qualificationReasoning;
+
     @Column(name = "assigned_to_id")
     private Long assignedToId;
+
+    /* ---- Assignment (flow step 4) ---- */
+
+    @Column(name = "assigned_at")
+    private OffsetDateTime assignedAt;
+
+    /** UNASSIGNED | ASSIGNED */
+    @Column(name = "assignment_status", nullable = false, length = 20)
+    private String assignmentStatus = "UNASSIGNED";
+
+    /* ---- First contact (flow step 5) ----
+     * NOT_CONTACTED | MEETING_SCHEDULED | NO_RESPONSE | INTERESTED | NOT_INTERESTED */
+
+    @Column(name = "contact_status", nullable = false, length = 30)
+    private String contactStatus = "NOT_CONTACTED";
+
+    @Column(name = "contact_status_updated_at")
+    private OffsetDateTime contactStatusUpdatedAt;
+
+    @Column(name = "contact_notes", columnDefinition = "text")
+    private String contactNotes;
+
+    /* ---- Conversion (flow step 6) ----
+     * Set once and never cleared: a converted lead keeps pointing at the deal
+     * it produced, which is what makes the opportunity traceable to its origin. */
+
+    @Column(name = "converted_deal_id")
+    private Long convertedDealId;
+
+    @Column(name = "converted_at")
+    private OffsetDateTime convertedAt;
 
     @Column(name = "organization_id")
     private Long organizationId;

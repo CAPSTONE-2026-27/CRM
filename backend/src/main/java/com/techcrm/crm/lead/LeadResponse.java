@@ -21,5 +21,21 @@ public record LeadResponse(
         String aiScoreReason,
         String status,
         String assignedToId,
-        OffsetDateTime createdAt
+
+        String qualificationStatus,
+        Double qualificationProbability,
+        String qualificationReasoning,
+
+        OffsetDateTime assignedAt,
+        String assignmentStatus,
+
+        String contactStatus,
+        OffsetDateTime contactStatusUpdatedAt,
+        String contactNotes,
+
+        String convertedDealId,
+        OffsetDateTime convertedAt,
+
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
 ) {}

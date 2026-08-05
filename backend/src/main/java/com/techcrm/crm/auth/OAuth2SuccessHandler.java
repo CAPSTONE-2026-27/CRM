@@ -30,7 +30,6 @@ import java.time.Duration;
 public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
     private static final Logger log = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
-    private static final String REFRESH_COOKIE_NAME = "refreshToken";
 
     private final OAuthLoginService oAuthLoginService;
     private final AuthService authService;
@@ -65,14 +64,20 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                     attribute(principal, "picture", "avatar_url"));
 
             TokenPair tokens = authService.issueTokensFor(user);
-            response.addHeader(HttpHeaders.SET_COOKIE, ResponseCookie.from(REFRESH_COOKIE_NAME, tokens.rawRefreshToken())
+            response.addHeader(HttpHeaders.SET_COOKIE, ResponseCookie.from(AuthController.REFRESH_COOKIE_NAME, tokens.rawRefreshToken())
                     .httpOnly(true)
                     .sameSite("Lax")
-                    .path("/")
+                    // Must match the path AuthController uses. A cookie set at
+                    // "/" would not replace that one — the browser would hold
+                    // both, and /api/auth/refresh could read the wrong one.
+                    .path(AuthController.REFRESH_COOKIE_PATH)
                     .maxAge(Duration.ofDays(refreshTtlDays))
                     .build()
                     .toString());
-            response.sendRedirect(frontendUrl);
+            // The cookie is set during a redirect the app never observes, so
+            // tell it a session now exists — otherwise it skips the silent
+            // refresh and shows the login screen despite a valid cookie.
+            response.sendRedirect(frontendUrl + "/?signed_in=1");
         } catch (Exception e) {
             log.warn("{} sign-in failed: {}", provider, e.getMessage());
             response.sendRedirect(frontendUrl + "/?oauth_error=" + provider.toLowerCase());

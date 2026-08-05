@@ -23,8 +23,10 @@ import java.time.Duration;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private static final String REFRESH_COOKIE_NAME = "refreshToken";
-    private static final String REFRESH_COOKIE_PATH = "/api/auth";
+    static final String REFRESH_COOKIE_NAME = "refreshToken";
+    // Scoped to the auth endpoints: the cookie is only ever needed by
+    // refresh/logout, so it is not sent with every other API call.
+    static final String REFRESH_COOKIE_PATH = "/api/auth";
 
     private final AuthService authService;
 
