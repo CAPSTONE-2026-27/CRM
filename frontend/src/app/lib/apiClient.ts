@@ -137,14 +137,28 @@ export async function streamCopilotChat(
     buffer = events.pop() ?? "";
 
     for (const raw of events) {
-      const eventLine = raw.split("\n").find((l) => l.startsWith("event: "));
-      const dataLine = raw.split("\n").find((l) => l.startsWith("data: "));
-      if (!eventLine || !dataLine) continue;
-      const event = eventLine.slice("event: ".length);
-      const data = JSON.parse(dataLine.slice("data: ".length));
+      const lines = raw.split("\n");
+      // The space after the field name is optional in the SSE spec and servers
+      // differ — Spring's SseEmitter omits it. Match the field, then strip one
+      // optional leading space from the value.
+      const field = (name: string): string | undefined => {
+        const line = lines.find((l) => l.startsWith(`${name}:`));
+        return line === undefined ? undefined : line.slice(name.length + 1).replace(/^ /, "");
+      };
 
-      if (event === "delta") handlers.onDelta(data.text);
-      else if (event === "error") handlers.onError(data.message);
+      const event = field("event");
+      const rawData = field("data");
+      if (!event || rawData === undefined) continue;
+
+      let data: { text?: string; message?: string };
+      try {
+        data = JSON.parse(rawData);
+      } catch {
+        continue; // a partial or malformed frame — wait for the next one
+      }
+
+      if (event === "delta") handlers.onDelta(data.text ?? "");
+      else if (event === "error") handlers.onError(data.message ?? "The assistant failed.");
       else if (event === "done") handlers.onDone();
     }
   }

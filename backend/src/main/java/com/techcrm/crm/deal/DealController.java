@@ -50,7 +50,24 @@ public class DealController {
     public DealResponse updateStage(@AuthenticationPrincipal AuthenticatedUser caller,
                                     @PathVariable Long id,
                                     @Valid @RequestBody DealStageRequest request) {
-        return dealService.updateStage(caller, id, request.stage());
+        return dealService.updateStage(caller, id, request.stage(), request.closingReason());
+    }
+
+    /** Deal flow step 2 — schedule the customer meeting. */
+    @PostMapping("/{id}/schedule-meeting")
+    public DealResponse scheduleMeeting(@AuthenticationPrincipal AuthenticatedUser caller,
+                                        @PathVariable Long id,
+                                        @Valid @RequestBody DealDtos.ScheduleMeetingRequest request) {
+        return dealService.scheduleMeeting(caller, id, request.meetingScheduledAt(),
+                request.meetingMode(), request.meetingParticipants());
+    }
+
+    /** Deal flow step 13 — record the customer's final decision with its reason. */
+    @PostMapping("/{id}/close")
+    public DealResponse close(@AuthenticationPrincipal AuthenticatedUser caller,
+                              @PathVariable Long id,
+                              @Valid @RequestBody DealDtos.CloseDealRequest request) {
+        return dealService.updateStage(caller, id, request.stage(), request.closingReason());
     }
 
     @DeleteMapping("/{id}")

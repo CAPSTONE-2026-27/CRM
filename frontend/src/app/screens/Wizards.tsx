@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { colors, type BadgeVariant } from "../tokens";
+import { DealScoringForm } from "../components/crm/DealScoringForm";
+import {
+  emptyDealScoringInput,
+  toDealScoringPayload,
+  scoreBandVariant,
+  type DealScoringInput,
+} from "../lib/dealScoring";
 import {
   Card,
   Stepper,
@@ -34,7 +41,7 @@ import {
 } from "../lib/queries";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS } from "../components/crm/Sidebar";
 import { scoreVariant } from "./MainScreens";
-import type { Lead } from "../lib/types";
+import type { Deal, Lead } from "../lib/types";
 import {
   User,
   Headphones,
@@ -372,8 +379,12 @@ function F02({ onCancel }: { onCancel: () => void }) {
       toast.error("Full name and work email are required");
       return;
     }
-    if (step < 3) {
+    if (step < 2) {
       setStep((s) => s + 1);
+      return;
+    }
+    if (step === 3) {
+      onCancel();
       return;
     }
     try {
@@ -1472,7 +1483,7 @@ function F06Confirm({ bot, infra, mode }: { bot: number; infra: number; mode: nu
 }
 
 /* ============ F07 New Deal ============ */
-const F07_STEPS = ["Deal info", "Pipeline stage", "AI forecast", "Save"];
+const F07_STEPS = ["Deal info", "Pipeline stage", "Deal scoring", "Result"];
 
 const F07_STAGES = [
   { icon: Sparkles, label: "Prospecting", sub: "10% · early interest", pct: 10 },
@@ -1490,11 +1501,16 @@ function F07({ onCancel }: { onCancel: () => void }) {
   const [stage, setStage] = useState(2);
   const { data: accounts } = useAccounts();
   const accountNames = (accounts ?? []).map((a) => a.name);
-  const [form, setForm] = useState<F07Form>({ name: "", accountName: "", value: "", currency: "USD" });
+  const [form, setForm] = useState<F07Form>({ name: "", accountName: "", value: "", currency: "INR" });
   const set = <K extends keyof F07Form>(key: K) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
+  const [scoring, setScoring] = useState<DealScoringInput>(emptyDealScoringInput());
+  const [createdDeal, setCreatedDeal] = useState<Deal | null>(null);
   const createDeal = useCreateDeal();
 
-  const primaryLabel = step < 3 ? `Next: ${F07_STEPS[step + 1]}` : "Create deal";
+  const primaryLabel =
+    step < 2 ? `Next: ${F07_STEPS[step + 1]}`
+    : step === 2 ? (createDeal.isPending ? "Scoring…" : "Create & score deal")
+    : "Done";
   const primaryIcon = step === 3 ? Check : undefined;
 
   const handlePrimary = async () => {
@@ -1515,7 +1531,7 @@ function F07({ onCancel }: { onCancel: () => void }) {
     }
     try {
       const value = parseFloat(form.value.replace(/[^0-9.]/g, ""));
-      await createDeal.mutateAsync({
+      const created = await createDeal.mutateAsync({
         name: form.name,
         accountId: account.id,
         value: Number.isFinite(value) ? value : 0,
@@ -1524,11 +1540,16 @@ function F07({ onCancel }: { onCancel: () => void }) {
         probability: F07_STAGES[stage].pct,
         autoGenerateProposal: true,
         pushToErpOnClose: true,
+        ...toDealScoringPayload(scoring),
       });
+      setCreatedDeal(created);
+      setStep(3);
       toast.success("Deal created successfully", {
-        description: `${form.name} added to the ${F07_STAGES[stage].label} stage.`,
+        description:
+          created.dealScore != null
+            ? `${form.name} scored ${created.dealScore} (${created.dealScoreBand}).`
+            : `${form.name} added to the ${F07_STAGES[stage].label} stage.`,
       });
-      onCancel();
     } catch (err) {
       toast.error("Failed to create deal", { description: err instanceof Error ? err.message : undefined });
     }
@@ -1555,7 +1576,7 @@ function F07({ onCancel }: { onCancel: () => void }) {
                 <Field label="Account" value="No accounts yet — add one first" onChange={() => {}} />
               )}
               <Field label="Deal value" value={form.value} onChange={set("value")} placeholder="42000" />
-              <Field label="Currency" type="select" value={form.currency} onChange={set("currency")} options={["USD", "EUR", "GBP"]} />
+              <Field label="Currency" type="select" value={form.currency} onChange={set("currency")} options={["INR", "USD", "EUR", "GBP"]} />
             </FieldGrid>
             <AIInsightBox text="Proposal document and follow-up email will be auto-drafted once this deal reaches the 'Proposal' stage." />
           </Stack>
@@ -1563,8 +1584,12 @@ function F07({ onCancel }: { onCancel: () => void }) {
       )}
 
       {step === 1 && <F07Stage stage={stage} setStage={setStage} />}
-      {step === 2 && <F07Forecast />}
-      {step === 3 && <F07Save name={form.name} stage={stage} />}
+      {step === 2 && (
+        <Card title="Deal scoring">
+          <DealScoringForm value={scoring} onChange={setScoring} />
+        </Card>
+      )}
+      {step === 3 && <F07Result deal={createdDeal} pending={createDeal.isPending} stage={stage} />}
 
       <F03Footer
         onCancel={onCancel}
@@ -1575,6 +1600,78 @@ function F07({ onCancel }: { onCancel: () => void }) {
         primaryIcon={primaryIcon}
       />
     </Stack>
+  );
+}
+
+/* ---- F07 step 4: the model's actual verdict ---- */
+function F07Result({ deal, pending, stage }: { deal: Deal | null; pending: boolean; stage: number }) {
+  if (pending || !deal) {
+    return (
+      <Card title="Scoring this deal">
+        <div style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: colors.textSecondary }}>
+          Running the deal-scoring model…
+        </div>
+      </Card>
+    );
+  }
+
+  const scored = deal.dealScore != null;
+  return (
+    <Card title="Deal created">
+      <Stack>
+        {scored ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              background: colors.aiLight,
+              border: "0.5px solid #AFA9EC",
+              borderRadius: 8,
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                width: 62,
+                height: 62,
+                borderRadius: "50%",
+                background: "#FFFFFF",
+                border: `2px solid ${colors.aiPurple}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 19,
+                fontWeight: 600,
+                color: colors.aiPurple,
+                flexShrink: 0,
+              }}
+            >
+              {Math.round(deal.dealScore as number)}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#3C3489" }}>Deal score</span>
+                <Badge label={deal.dealScoreBand ?? ""} variant={scoreBandVariant(deal.dealScoreBand)} />
+              </div>
+              <div style={{ fontSize: 12, color: "#3C3489" }}>{deal.dealScoreAction}</div>
+              {deal.dealScoreModelVersion && (
+                <div style={{ fontSize: 11, color: colors.textSecondary, marginTop: 6 }}>
+                  Model {deal.dealScoreModelVersion}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: colors.textSecondary, padding: "8px 0" }}>
+            The scoring model was unavailable, so this deal was saved without a score. Editing it later will score it.
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: colors.textSecondary }}>
+          {deal.name} added to the {F07_STAGES[stage].label} stage.
+        </div>
+      </Stack>
+    </Card>
   );
 }
 
@@ -1630,8 +1727,8 @@ function F07Forecast() {
     { label: "Timeline risk", detail: "Budget approval pending", pct: 65, color: "#BA7517" },
   ];
   const rows = [
-    { label: "Weighted forecast value", value: "$25,200" },
-    { label: "Best case", value: "$42,000" },
+    { label: "Weighted forecast value", value: "₹25,200" },
+    { label: "Best case", value: "₹42,000" },
     { label: "Predicted close date", value: "Sep 2026" },
     { label: "Forecast category", value: "Commit" },
   ];

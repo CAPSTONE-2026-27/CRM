@@ -6,12 +6,18 @@ import type {
   Campaign,
   CaseRow,
   Contact,
+  ContactStatus,
+  CustomerOnboarding,
   DashboardSummary,
   Deal,
+  DealWorkspace,
   Lead,
   LeadMeeting,
   LeadStats,
+  ManagerDecision,
+  ManagerReview,
   MeetingAnalysis,
+  MeetingOutputDetail,
   PagedResponse,
   ReportingSummary,
   RpaBot,
@@ -178,8 +184,155 @@ export const useCreateDeal = () => useCreate<Deal, Record<string, unknown>>("dea
 export function useUpdateDealStage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, stage }: { id: string; stage: string }) => api.patch<Deal>(`/deals/${id}`, { stage }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["deals"] }),
+    mutationFn: ({ id, stage, closingReason }: { id: string; stage: string; closingReason?: string }) =>
+      api.patch<Deal>(`/deals/${id}`, { stage, closingReason }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["deal-workspace", variables.id] });
+      // Closing a deal as won opens an onboarding record server-side.
+      qc.invalidateQueries({ queryKey: ["deal-onboarding", variables.id] });
+    },
+  });
+}
+
+/* ---- Lead flow steps 4-6 ---- */
+
+// Invalidating ["leads"] also refreshes the stats tiles, whose key is
+// ["leads", "stats"].
+function useLeadFlowMutation<TInput>(path: (leadId: string) => string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, ...body }: { leadId: string } & TInput) => api.post<Lead>(path(leadId), body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
+export const useAssignLead = () =>
+  useLeadFlowMutation<{ assignedToId: string }>((id) => `/leads/${id}/assign`);
+
+export const useUpdateContactStatus = () =>
+  useLeadFlowMutation<{ contactStatus: ContactStatus; contactNotes?: string }>(
+    (id) => `/leads/${id}/contact-status`
+  );
+
+export type ConversionResult = {
+  leadId: string;
+  dealId: string;
+  opportunityId: string;
+  accountId: string;
+  accountCreated: boolean;
+};
+
+export type ConvertLeadInput = {
+  leadId: string;
+  meetingScheduledAt?: string;
+  meetingMode?: string;
+  meetingParticipants?: string;
+};
+
+/** Flow step 6. Creates a deal and an account, so those lists go stale too. */
+export function useConvertLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, ...body }: ConvertLeadInput) =>
+      api.post<ConversionResult>(`/leads/${leadId}/convert`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+/* ---- Deal analysis pipeline (deal flow steps 2-14) ---- */
+
+export const useDealWorkspace = (dealId: string | undefined) =>
+  useQuery({
+    queryKey: ["deal-workspace", dealId],
+    queryFn: () => api.get<DealWorkspace>(`/deals/${dealId}/workspace`),
+    enabled: Boolean(dealId),
+  });
+
+export type MeetingOutputInput = {
+  meetingDate: string;
+  meetingTime: string;
+  meetingType?: string;
+  participants?: string;
+  meetingSummary: string;
+  customerRequirements?: string;
+  keyDiscussionPoints?: string;
+  customerQuestions?: string;
+  competitorMentioned?: string;
+  objections?: string;
+  budgetDiscussion?: string;
+  timeline?: string;
+  nextSteps?: string;
+  executiveRemarks?: string;
+};
+
+/**
+ * Submits a meeting write-up and runs the whole chain — LLM extraction, feature
+ * engineering, XGBoost scoring — in one request. Takes several seconds; the
+ * form shows the stages progressing rather than a bare spinner.
+ */
+export function useSubmitMeetingOutput(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MeetingOutputInput) =>
+      api.post<MeetingOutputDetail>(`/deals/${dealId}/meeting-outputs`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal-workspace", dealId] });
+      // The new prediction is denormalised onto the deal, so the board's
+      // score badges are stale too.
+      qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+}
+
+export type ManagerReviewInput = {
+  decision: ManagerDecision;
+  overriddenAction?: string;
+  comments?: string;
+};
+
+export function useReviewDeal(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ManagerReviewInput) => api.post<ManagerReview>(`/deals/${dealId}/review`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal-workspace", dealId] });
+      qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+}
+
+export function useScheduleDealMeeting(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { meetingScheduledAt: string; meetingMode?: string; meetingParticipants?: string }) =>
+      api.post<Deal>(`/deals/${dealId}/schedule-meeting`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal-workspace", dealId] });
+      qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+}
+
+// Returns null until the deal is Closed Won — the absence is the answer, not
+// an error, so a 200 with a null body is expected here.
+export const useDealOnboarding = (dealId: string | undefined) =>
+  useQuery({
+    queryKey: ["deal-onboarding", dealId],
+    queryFn: () => api.get<CustomerOnboarding | null>(`/deals/${dealId}/onboarding`),
+    enabled: Boolean(dealId),
+  });
+
+export function useUpdateOnboarding(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { status: string; notes?: string }) =>
+      api.patch<CustomerOnboarding>(`/deals/${dealId}/onboarding`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deal-onboarding", dealId] }),
   });
 }
 

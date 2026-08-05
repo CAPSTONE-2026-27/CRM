@@ -20,6 +20,18 @@ public final class AiJson {
     private AiJson() {
     }
 
+    /** Parses a payload known to be exactly one JSON document, such as a
+     *  streamed chunk. Unlike {@link #extractObject}, it does not go hunting
+     *  for braces inside prose. */
+    public static JsonNode parse(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return MAPPER.readTree(raw);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Returns the parsed object, or null if the reply held no usable JSON. */
     public static JsonNode extractObject(String raw) {
         if (raw == null) return null;

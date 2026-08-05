@@ -1,9 +1,13 @@
 spring:
   config:
     import: "optional:application-local.yml"
-  # Google / Microsoft sign-in. Credentials come from the environment; leaving
-  # them unset simply means those buttons fail at the provider rather than
-  # preventing the app from starting.
+  # Google / Microsoft sign-in. Credentials come from the environment and are
+  # REQUIRED to start: Spring Boot 4 validates every declared registration and
+  # refuses to boot on an empty client-id ("Client id of registration 'google'
+  # must not be empty"). Export GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+  # MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET before running the backend.
+  # To run without SSO at all, delete the registrations below rather than
+  # blanking them — a blank one fails at startup, not at the button.
   security:
     oauth2:
       client:
@@ -27,6 +31,12 @@ spring:
             token-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/oauth2/v2.0/token
             user-info-uri: https://graph.microsoft.com/oidc/userinfo
             user-name-attribute: sub
+            # Required: the "openid" scope makes this an OIDC login, so Spring
+            # verifies the ID token's signature. Without a JWK set URI it fails
+            # with "missing_signature_verifier" *after* the user has already
+            # signed in successfully. Google needs no equivalent here because
+            # Spring ships a built-in provider definition for it.
+            jwk-set-uri: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID:common}/discovery/v2.0/keys
   # Overridable per environment. Local developer values belong in
   # application-local.yml (gitignored), not here.
   datasource:

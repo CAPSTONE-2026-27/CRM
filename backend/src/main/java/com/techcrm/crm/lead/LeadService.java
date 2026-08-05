@@ -8,6 +8,7 @@ import com.techcrm.crm.user.UserRepository;
 import com.techcrm.crm.user.UserStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
@@ -15,8 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class LeadService {
@@ -35,6 +38,10 @@ public class LeadService {
     public LeadResponse create(AuthenticatedUser caller, LeadRequest request) {
         Lead lead = buildLead(caller.organizationId(), request, caller.userId());
         applyAiScore(lead);
+        // Assignment follows qualification, not creation: an unqualified lead
+        // landing in a rep's queue is exactly the noise the qualification step
+        // exists to remove.
+        autoAssignIfQualified(lead, caller.organizationId());
         return toResponse(leadRepository.save(lead));
     }
 
@@ -62,6 +69,7 @@ public class LeadService {
     public void scoreAsync(Long leadId, Long organizationId) {
         leadRepository.findByIdAndOrganizationId(leadId, organizationId).ifPresent(lead -> {
             applyAiScore(lead);
+            autoAssignIfQualified(lead, organizationId);
             leadRepository.save(lead);
         });
     }
@@ -75,10 +83,10 @@ public class LeadService {
         lead.setOrganizationId(organizationId);
         lead.setCreatedBy(createdBy);
 
+        // An explicit assignee is honoured regardless of qualification — whoever
+        // named a rep has already made that call themselves.
         if (request.assignedToId() != null && !request.assignedToId().isBlank()) {
-            lead.setAssignedToId(resolveAssignee(organizationId, request.assignedToId()));
-        } else {
-            autoAssign(lead, organizationId);
+            setAssignee(lead, resolveAssignee(organizationId, request.assignedToId()));
         }
 
         return lead;
@@ -101,6 +109,11 @@ public class LeadService {
      *  satisfiable. */
     @Transactional(readOnly = true)
     public PagedResponse<LeadResponse> search(AuthenticatedUser caller, LeadSearchCriteria criteria, Pageable pageable) {
+        Page<Lead> page = leadRepository.findAll(buildSpecification(caller, criteria), pageable);
+        return PagedResponse.from(page.map(this::toResponse));
+    }
+
+    private Specification<Lead> buildSpecification(AuthenticatedUser caller, LeadSearchCriteria criteria) {
         Specification<Lead> spec = Specification.where(LeadSpecifications.organizationId(caller.organizationId()));
 
         if (isScopedToOwnLeads(caller)) {
@@ -123,8 +136,20 @@ public class LeadService {
         // someone else's id simply narrows to zero results instead of erroring.
         if (criteria.assignedToId() != null) spec = spec.and(LeadSpecifications.assignedToId(criteria.assignedToId()));
 
-        Page<Lead> page = leadRepository.findAll(spec, pageable);
-        return PagedResponse.from(page.map(this::toResponse));
+        return spec;
+    }
+
+    /**
+     * Every lead matching the filters, for CSV export — the same visibility
+     * rules as {@link #search}, deliberately reusing its Specification so an
+     * export can never widen what a scoped-down caller is allowed to see.
+     *
+     * Unpaged: an export of "page 1 of 40" is not an export.
+     */
+    @Transactional(readOnly = true)
+    public List<Lead> exportAll(AuthenticatedUser caller, LeadSearchCriteria criteria) {
+        return leadRepository.findAll(buildSpecification(caller, criteria),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     @Transactional(readOnly = true)
@@ -152,11 +177,102 @@ public class LeadService {
         applyRequest(lead, request);
 
         if (request.assignedToId() != null && !request.assignedToId().isBlank()) {
-            lead.setAssignedToId(resolveAssignee(caller.organizationId(), request.assignedToId()));
+            guardAssignmentPermission(caller);
+            setAssignee(lead, resolveAssignee(caller.organizationId(), request.assignedToId()));
         }
 
         applyAiScore(lead);
         return toResponse(leadRepository.save(lead));
+    }
+
+    /**
+     * Partial update. Every field is optional and only non-null ones are
+     * applied, so the caller can change one thing without round-tripping — and
+     * without a missing field silently blanking a column.
+     *
+     * Deliberately does NOT re-score: editing a phone number should not move a
+     * lead's temperature, and re-scoring on every keystroke-sized edit would
+     * burn a model call each time.
+     */
+    @Transactional
+    public LeadResponse patch(AuthenticatedUser caller, Long id, LeadPatchRequest patch) {
+        Lead lead = getOrThrow(caller, id);
+
+        if (patch.fullName() != null) lead.setFullName(patch.fullName());
+        if (patch.company() != null) lead.setCompany(patch.company());
+        if (patch.industry() != null) lead.setIndustry(patch.industry());
+        if (patch.employeeCount() != null) lead.setEmployeeCount(patch.employeeCount());
+        if (patch.email() != null) lead.setEmail(patch.email());
+        if (patch.phone() != null) lead.setPhone(patch.phone());
+        if (patch.product() != null) lead.setProduct(patch.product());
+        if (patch.estimatedDealValue() != null) lead.setEstimatedDealValue(patch.estimatedDealValue());
+        if (patch.sourceChannel() != null) lead.setSourceChannel(patch.sourceChannel());
+        if (patch.notes() != null) lead.setNotes(patch.notes());
+        if (patch.status() != null) lead.setStatus(patch.status().trim().toUpperCase());
+
+        if (patch.assignedToId() != null) {
+            guardAssignmentPermission(caller);
+            if (patch.assignedToId().isBlank()) {
+                clearAssignee(lead);
+            } else {
+                setAssignee(lead, resolveAssignee(caller.organizationId(), patch.assignedToId()));
+            }
+        }
+
+        if (patch.contactStatus() != null) {
+            applyContactStatus(lead, patch.contactStatus(), patch.contactNotes());
+        } else if (patch.contactNotes() != null) {
+            lead.setContactNotes(patch.contactNotes());
+        }
+
+        return toResponse(leadRepository.save(lead));
+    }
+
+    /**
+     * Flow step 4 — a manager places a qualified lead with a sales executive.
+     *
+     * Unqualified leads are refused here rather than merely discouraged in the
+     * UI: the whole point of the qualification step is that nothing downstream
+     * acts on a lead that failed it.
+     */
+    @Transactional
+    public LeadResponse assign(AuthenticatedUser caller, Long id, String assignedToId) {
+        guardAssignmentPermission(caller);
+        Lead lead = getOrThrow(caller, id);
+
+        if (assignedToId == null || assignedToId.isBlank()) {
+            clearAssignee(lead);
+            return toResponse(leadRepository.save(lead));
+        }
+
+        if ("UNQUALIFIED".equals(lead.getQualificationStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This lead was not qualified. Re-score it before assigning it to a sales executive.");
+        }
+
+        setAssignee(lead, resolveAssignee(caller.organizationId(), assignedToId));
+        return toResponse(leadRepository.save(lead));
+    }
+
+    /** Flow step 5 — the executive records how first contact went. */
+    @Transactional
+    public LeadResponse updateContactStatus(AuthenticatedUser caller, Long id, String contactStatus, String notes) {
+        Lead lead = getOrThrow(caller, id);
+        applyContactStatus(lead, contactStatus, notes);
+        return toResponse(leadRepository.save(lead));
+    }
+
+    private void applyContactStatus(Lead lead, String rawStatus, String notes) {
+        String status = rawStatus == null ? "" : rawStatus.trim().toUpperCase().replace(' ', '_');
+        if (!CONTACT_STATUSES.contains(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Unknown contact status: " + rawStatus + ". Expected one of " + CONTACT_STATUSES);
+        }
+        lead.setContactStatus(status);
+        lead.setContactStatusUpdatedAt(OffsetDateTime.now());
+        if (notes != null) {
+            lead.setContactNotes(notes);
+        }
     }
 
     @Transactional
@@ -270,10 +386,36 @@ public class LeadService {
         return assigneeId;
     }
 
+    /** Only ADMIN and MANAGER may decide who owns a lead. A rep changing their
+     *  own book would make the manager's pipeline view fiction. */
+    private void guardAssignmentPermission(AuthenticatedUser caller) {
+        if (caller.role() != Role.ADMIN && caller.role() != Role.MANAGER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only an administrator or manager can assign leads");
+        }
+    }
+
+    private void setAssignee(Lead lead, Long assigneeId) {
+        lead.setAssignedToId(assigneeId);
+        lead.setAssignedAt(OffsetDateTime.now());
+        lead.setAssignmentStatus("ASSIGNED");
+    }
+
+    private void clearAssignee(Lead lead) {
+        lead.setAssignedToId(null);
+        lead.setAssignedAt(null);
+        lead.setAssignmentStatus("UNASSIGNED");
+    }
+
     /** Least-busy-agent assignment: pick the SALES_REP in this org currently
-     *  carrying the fewest leads. Leaves the lead unassigned if the org has
-     *  no sales reps yet (e.g. a brand-new org's first lead). */
-    private void autoAssign(Lead lead, Long organizationId) {
+     *  carrying the fewest leads. Runs only for a qualified, still-unassigned
+     *  lead, and leaves it unassigned if the org has no sales reps yet (e.g. a
+     *  brand-new org's first lead). */
+    private void autoAssignIfQualified(Lead lead, Long organizationId) {
+        if (!"QUALIFIED".equals(lead.getQualificationStatus()) || lead.getAssignedToId() != null) {
+            return;
+        }
+
         List<User> reps = userRepository.findByOrganizationIdAndRoleAndStatusAndDeletedAtIsNull(organizationId, Role.SALES_REP, UserStatus.ACTIVE);
 
         User best = null;
@@ -287,10 +429,17 @@ public class LeadService {
             }
         }
 
-        lead.setAssignedToId(best != null ? best.getId() : null);
+        if (best != null) {
+            setAssignee(lead, best.getId());
+        }
     }
 
     private static final List<String> STATUS_LABELS = List.of("HOT", "WARM", "COLD");
+
+    /** The vocabulary of flow step 5. Held here rather than as an enum because
+     *  it crosses the wire as a string and the frontend owns the labels. */
+    static final Set<String> CONTACT_STATUSES = Set.of(
+            "NOT_CONTACTED", "MEETING_SCHEDULED", "NO_RESPONSE", "INTERESTED", "NOT_INTERESTED");
 
     private void applyAiScore(Lead lead) {
         AiScoreResult result = aiScoringClient.score(lead);
@@ -298,6 +447,10 @@ public class LeadService {
             lead.setAiScore(result.score());
             lead.setAiScoreLabel(result.label());
             lead.setAiScoreReason(result.reason());
+
+            lead.setQualificationStatus(result.qualificationStatus());
+            lead.setQualificationProbability(result.qualificationProbability());
+            lead.setQualificationReasoning(result.qualificationReasoning());
 
             // Drive the lead's status from the AI's verdict so the "Status"
             // column/filter (Hot/Warm/Cold) actually reflects scoring instead

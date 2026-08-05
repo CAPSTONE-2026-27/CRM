@@ -9,10 +9,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Talks to any OpenAI-compatible chat-completions endpoint.
@@ -79,6 +85,9 @@ public class AiChatClient {
     private record ChatRequest(String model, List<ChatMessage> messages) {
     }
 
+    private record StreamingChatRequest(String model, List<ChatMessage> messages, boolean stream) {
+    }
+
     private record ResponseMessage(String content) {
     }
 
@@ -86,6 +95,73 @@ public class AiChatClient {
     }
 
     private record ChatResponse(List<Choice> choices) {
+    }
+
+    /**
+     * Streams a reply token by token, invoking {@code onDelta} for each chunk.
+     *
+     * Uses the same chat-completions endpoint with {@code stream: true}, which
+     * responds as server-sent events. Blocks until the model finishes, so call
+     * it off the request thread.
+     *
+     * @throws IllegalStateException when the model is unreachable or not configured
+     */
+    public void stream(List<ChatMessage> messages, Consumer<String> onDelta) {
+        if (!configured) {
+            throw new IllegalStateException("AI base URL is not configured");
+        }
+        try {
+            restClient.post()
+                    .uri("/chat/completions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .body(new StreamingChatRequest(model, messages, true))
+                    .exchange((request, response) -> {
+                        if (response.getStatusCode().isError()) {
+                            throw new IllegalStateException("Model returned " + response.getStatusCode());
+                        }
+                        try (BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (!line.startsWith("data:")) {
+                                    continue;
+                                }
+                                String payload = line.substring(5).trim();
+                                // The provider signals end-of-stream with a
+                                // literal [DONE] rather than closing cleanly.
+                                if (payload.isEmpty() || "[DONE]".equals(payload)) {
+                                    continue;
+                                }
+                                String delta = extractDelta(payload);
+                                if (delta != null && !delta.isEmpty()) {
+                                    onDelta.accept(delta);
+                                }
+                            }
+                        }
+                        return null;
+                    });
+        } catch (RestClientException | UncheckedIOException e) {
+            throw new IllegalStateException("Model stream failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** Pulls choices[0].delta.content out of one streamed chunk. */
+    private String extractDelta(String payload) {
+        JsonNode root = AiJson.parse(payload);
+        if (root == null) {
+            return null;
+        }
+        JsonNode choices = root.get("choices");
+        if (choices == null || !choices.isArray() || choices.isEmpty()) {
+            return null;
+        }
+        JsonNode delta = choices.get(0).get("delta");
+        if (delta == null) {
+            return null;
+        }
+        JsonNode content = delta.get("content");
+        return content == null || content.isNull() ? null : content.asText();
     }
 
     /**

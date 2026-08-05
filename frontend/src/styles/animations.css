@@ -1,0 +1,112 @@
+/* Shared keyframes. Kept in CSS rather than inline styles because keyframes
+   can't be expressed as a style object, and because the reduced-motion query
+   below has to be able to switch all of them off at once. */
+
+/* Logo mark: the three bars rise in sequence, like a chart drawing itself. */
+@keyframes brand-bar-rise {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* Soft halo behind the mark while work is in flight. */
+@keyframes brand-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.08;
+  }
+}
+
+@keyframes brand-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Slow drift for the decorative panel background. */
+@keyframes brand-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0) scale(1.06);
+  }
+}
+
+@keyframes brand-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect the OS setting: motion here is decorative, so it all stops rather
+   than degrading to something subtler. */
+@media (prefers-reduced-motion: reduce) {
+  [class^='brand-anim-'],
+  [class*=' brand-anim-'] {
+    animation: none !important;
+  }
+}
+
+.brand-anim-bar {
+  transform-origin: bottom;
+  animation: brand-bar-rise 1.4s ease-in-out infinite;
+}
+
+.brand-anim-pulse {
+  animation: brand-pulse 2.2s ease-in-out infinite;
+}
+
+.brand-anim-fade-up {
+  animation: brand-fade-up 0.5s ease-out both;
+}
+
+.brand-anim-drift {
+  animation: brand-drift 14s ease-in-out infinite;
+}
+
+.brand-anim-spin {
+  animation: brand-spin 0.7s linear infinite;
+}
+
+/* --- Auth screen layout -------------------------------------------------- */
+/* The brand panel only earns its space on wider viewports; below that the form
+   takes the full width and the compact lockup stands in for it. */
+.auth-brand-panel {
+  display: none;
+}
+
+.auth-compact-brand {
+  display: block;
+}
+
+@media (min-width: 900px) {
+  .auth-shell {
+    grid-template-columns: 1.05fr 1fr;
+  }
+
+  .auth-brand-panel {
+    display: flex;
+  }
+
+  .auth-compact-brand {
+    display: none;
+  }
+}

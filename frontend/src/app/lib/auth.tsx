@@ -28,6 +28,49 @@ type AuthState = {
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 };
 
+
+/*
+ * Whether this browser has a session worth trying to restore.
+ *
+ * The refresh cookie is httpOnly by design, so JavaScript cannot see it. This
+ * flag is only a hint used to avoid a guaranteed-401 request on every page
+ * load by a logged-out visitor — the cookie remains the actual authority, and
+ * a stale hint costs nothing but the one request we were making anyway.
+ *
+ * OAuth is the exception: the server sets the cookie during a redirect that
+ * this app never observes, so the callback returns with ?signed_in=1 to say
+ * "a session was just created, go and pick it up".
+ */
+const SESSION_HINT_KEY = "techcrm.hasSession";
+
+function hasProbableSession(): boolean {
+  if (new URLSearchParams(window.location.search).has("signed_in")) {
+    return true;
+  }
+  try {
+    return window.localStorage.getItem(SESSION_HINT_KEY) === "1";
+  } catch {
+    // Private mode or blocked storage: fall back to always attempting.
+    return true;
+  }
+}
+
+function rememberSession(): void {
+  try {
+    window.localStorage.setItem(SESSION_HINT_KEY, "1");
+  } catch {
+    /* storage unavailable — the cookie still works, we just lose the hint */
+  }
+}
+
+function clearSessionHint(): void {
+  try {
+    window.localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -46,14 +89,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // the httpOnly refresh cookie is what persists a session across reloads.
     // Attempt a silent refresh first; only fall back to the login screen if
     // that fails (no cookie, or it's expired/revoked).
+    //
+    // Skipped entirely when we have no reason to think a session exists. The
+    // refresh cookie is httpOnly so we can't read it, but we do know whether
+    // this browser has ever signed in — and firing a request we expect to 401
+    // on every visit by a logged-out user is just console noise.
     (async () => {
+      if (!hasProbableSession()) {
+        if (!cancelled) setStatus("unauthenticated");
+        return;
+      }
       const token = await refreshAccessToken();
       if (!token) {
+        // The cookie is gone or was revoked; stop claiming a session exists.
+        clearSessionHint();
         if (!cancelled) setStatus("unauthenticated");
         return;
       }
       try {
         const me = await api.get<CurrentUser>("/auth/me");
+        rememberSession();
         if (!cancelled) {
           setUser(me);
           setStatus("authenticated");
@@ -72,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await api.post<{ accessToken: string }>("/auth/login", { email, password });
     setAccessToken(data.accessToken);
     setUser(await api.get<CurrentUser>("/auth/me"));
+    rememberSession();
     setStatus("authenticated");
   };
 
@@ -84,12 +140,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setAccessToken(data.accessToken);
     setUser(await api.get<CurrentUser>("/auth/me"));
+    rememberSession();
     setStatus("authenticated");
   };
 
   const logout: AuthState["logout"] = async () => {
     await api.post("/auth/logout").catch(() => {});
     setAccessToken(null);
+    clearSessionHint();
     setUser(null);
     setStatus("unauthenticated");
   };

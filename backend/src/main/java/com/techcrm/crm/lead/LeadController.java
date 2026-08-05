@@ -4,6 +4,7 @@ import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.common.PagedResponse;
 import com.techcrm.crm.email.EmailLeadParser;
 import com.techcrm.crm.email.PastedEmailRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -14,6 +15,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -40,11 +42,16 @@ public class LeadController {
     private final LeadService leadService;
     private final LeadImportService leadImportService;
     private final EmailLeadParser emailLeadParser;
+    private final LeadConversionService leadConversionService;
 
-    public LeadController(LeadService leadService, LeadImportService leadImportService, EmailLeadParser emailLeadParser) {
+    public LeadController(LeadService leadService,
+                          LeadImportService leadImportService,
+                          EmailLeadParser emailLeadParser,
+                          LeadConversionService leadConversionService) {
         this.leadService = leadService;
         this.leadImportService = leadImportService;
         this.emailLeadParser = emailLeadParser;
+        this.leadConversionService = leadConversionService;
     }
 
     @PostMapping
@@ -117,6 +124,76 @@ public class LeadController {
     @PutMapping("/{id}")
     public LeadResponse update(@AuthenticationPrincipal AuthenticatedUser caller, @PathVariable Long id, @Valid @RequestBody LeadRequest request) {
         return leadService.update(caller, id, request);
+    }
+
+    /** Partial update — changes only the fields present in the body. */
+    @PatchMapping("/{id}")
+    public LeadResponse patch(@AuthenticationPrincipal AuthenticatedUser caller,
+                              @PathVariable Long id,
+                              @Valid @RequestBody LeadPatchRequest request) {
+        return leadService.patch(caller, id, request);
+    }
+
+    /** Flow step 4 — place a qualified lead with a sales executive. */
+    @PostMapping("/{id}/assign")
+    public LeadResponse assign(@AuthenticationPrincipal AuthenticatedUser caller,
+                               @PathVariable Long id,
+                               @Valid @RequestBody LeadFlowDtos.AssignRequest request) {
+        return leadService.assign(caller, id, request.assignedToId());
+    }
+
+    /** Flow step 5 — record the outcome of first contact. */
+    @PostMapping("/{id}/contact-status")
+    public LeadResponse contactStatus(@AuthenticationPrincipal AuthenticatedUser caller,
+                                      @PathVariable Long id,
+                                      @Valid @RequestBody LeadFlowDtos.ContactStatusRequest request) {
+        return leadService.updateContactStatus(caller, id, request.contactStatus(), request.contactNotes());
+    }
+
+    /** Flow step 6 — convert a qualified, interested lead into an opportunity. */
+    @PostMapping("/{id}/convert")
+    public ResponseEntity<LeadFlowDtos.ConversionResponse> convert(
+            @AuthenticationPrincipal AuthenticatedUser caller,
+            @PathVariable Long id,
+            @RequestBody(required = false) LeadFlowDtos.ConvertRequest request) {
+
+        LeadFlowDtos.ConvertRequest body = request == null
+                ? new LeadFlowDtos.ConvertRequest(null, null, null)
+                : request;
+
+        LeadConversionService.ConversionResult result = leadConversionService.convert(
+                caller, id, body.meetingScheduledAt(), body.meetingMode(), body.meetingParticipants());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(new LeadFlowDtos.ConversionResponse(
+                String.valueOf(id),
+                String.valueOf(result.dealId()),
+                result.opportunityId(),
+                String.valueOf(result.accountId()),
+                result.accountCreated()));
+    }
+
+    /**
+     * Exports every lead matching the current filters as CSV.
+     *
+     * Streams straight to the response rather than building a String: an
+     * unfiltered export of a large organization is the whole lead database, and
+     * holding it twice in memory is how this endpoint would fall over first.
+     */
+    @GetMapping(value = "/export", produces = "text/csv")
+    public void export(@AuthenticationPrincipal AuthenticatedUser caller,
+                       @RequestParam(required = false) String q,
+                       @RequestParam(required = false) String status,
+                       @RequestParam(required = false) Long assignedToId,
+                       @RequestParam(required = false) String sourceChannel,
+                       @RequestParam(required = false) String industry,
+                       HttpServletResponse response) throws IOException {
+
+        LeadSearchCriteria criteria = LeadSearchCriteria.of(
+                q, null, null, null, null, status, assignedToId, sourceChannel, industry, null, null);
+
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"leads.csv\"");
+        LeadCsvExporter.write(leadService.exportAll(caller, criteria), response.getWriter());
     }
 
     @DeleteMapping("/{id}")
