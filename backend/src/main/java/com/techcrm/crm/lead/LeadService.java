@@ -476,6 +476,8 @@ public class LeadService {
         lead.setPhone(r.phone());
         lead.setProduct(r.product());
         lead.setEstimatedDealValue(r.estimatedDealValue());
+        lead.setProductQuantity(r.productQuantity());
+        lead.setPurchaseTimeline(r.purchaseTimeline());
         lead.setSourceChannel(r.sourceChannel());
         lead.setCaptureMethod(r.captureMethod());
         lead.setNotes(r.notes());

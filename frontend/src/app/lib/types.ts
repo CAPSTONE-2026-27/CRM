@@ -16,6 +16,26 @@ export type UserRow = {
   permissions: string[];
 };
 
+/**
+ * The only accepted purchase timelines, in descending urgency.
+ *
+ * These strings are not a UI label choice — they must match the model's
+ * training data character for character (TIMELINE_POINTS in
+ * Llama3_CRM/scripts/prompt_format.py is an exact-key lookup), and the backend
+ * enforces the same list in LeadRequest.PURCHASE_TIMELINES and a DB CHECK
+ * constraint. Change one here and the lead silently loses its urgency points.
+ */
+export const PURCHASE_TIMELINES = [
+  "Immediately",
+  "Within 15 Days",
+  "Within 1 Month",
+  "Within 2 Months",
+  "Within 3 Months",
+  "More than 3 Months",
+] as const;
+
+export type PurchaseTimeline = (typeof PURCHASE_TIMELINES)[number];
+
 export type Lead = {
   id: string;
   fullName: string;
@@ -26,6 +46,12 @@ export type Lead = {
   phone?: string | null;
   product?: string | null;
   estimatedDealValue?: string | number | null;
+
+  // Lead-scoring factors the fine-tuned model reads. Optional: a rep who does
+  // not know them yet can still save the lead, at the cost of score accuracy.
+  productQuantity?: number | null;
+  purchaseTimeline?: PurchaseTimeline | null;
+
   sourceChannel?: string | null;
   captureMethod?: "WEB_FORM" | "EMAIL_PARSING" | "RPA_BOT_IMPORT" | "CSV_IMPORT";
   notes?: string | null;

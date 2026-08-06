@@ -41,7 +41,8 @@ import {
 } from "../lib/queries";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS } from "../components/crm/Sidebar";
 import { scoreVariant } from "./MainScreens";
-import type { Deal, Lead } from "../lib/types";
+import type { Deal, Lead, PurchaseTimeline } from "../lib/types";
+import { PURCHASE_TIMELINES } from "../lib/types";
 import {
   User,
   Headphones,
@@ -579,15 +580,32 @@ const F03_CAPTURE_METHODS = ["WEB_FORM", "EMAIL_PARSING", "RPA_BOT_IMPORT"] as c
 // DB column is NUMERIC(15,2), which overflows at 10^13.
 const MAX_DEAL_VALUE = 9_999_999_999_999.99;
 
+/** Digits only, or undefined when the field is blank/unparseable.
+ *
+ *  Sent as a real number rather than a string: the backend field is an Integer,
+ *  and "120 units" would fail deserialisation rather than degrade. */
+function parseIntOrUndefined(raw: string): number | undefined {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return undefined;
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 type F03Form = {
   fullName: string;
   company: string;
   email: string;
   phone: string;
   product: string;
+  // The five fields below feed the AI lead score. Each is worth up to 20 of
+  // the model's 100 points; a lead missing some is scored on what remains and
+  // says so in its reasoning. See docs/AI-INTEGRATION.md §1.2.
+  employeeCount: string;
+  productQuantity: string;
   estimatedDealValue: string;
-  sourceChannel: string;
+  purchaseTimeline: PurchaseTimeline;
   notes: string;
+  sourceChannel: string;
 };
 
 // Everything on the lead form except Notes must be filled in. Order matches
@@ -598,7 +616,10 @@ const F03_REQUIRED_FIELDS: { key: keyof F03Form; label: string }[] = [
   { key: "email", label: "Email" },
   { key: "phone", label: "Phone" },
   { key: "product", label: "Product" },
+  { key: "employeeCount", label: "Employee count" },
+  { key: "productQuantity", label: "Product quantity" },
   { key: "estimatedDealValue", label: "Estimated deal value" },
+  { key: "purchaseTimeline", label: "Purchase timeline" },
   { key: "sourceChannel", label: "Source channel" },
 ];
 
@@ -623,7 +644,12 @@ function F03({ onCancel }: { onCancel: () => void }) {
     email: "",
     phone: "",
     product: "Enterprise Plan",
+    employeeCount: "",
+    productQuantity: "",
     estimatedDealValue: "",
+    // No blank default: an empty select reads as "not asked" and would let the
+    // most urgency-signalling field on the form be skipped by inattention.
+    purchaseTimeline: "Within 1 Month",
     sourceChannel: "Web form",
     notes: "",
   });
@@ -660,7 +686,10 @@ function F03({ onCancel }: { onCancel: () => void }) {
           email: form.email || undefined,
           phone: form.phone || undefined,
           product: form.product,
+          employeeCount: form.employeeCount || undefined,
+          productQuantity: parseIntOrUndefined(form.productQuantity),
           estimatedDealValue: Number.isFinite(dealValue) ? dealValue : undefined,
+          purchaseTimeline: form.purchaseTimeline,
           sourceChannel: form.sourceChannel,
           captureMethod: F03_CAPTURE_METHODS[capture],
           notes: form.notes || undefined,
@@ -706,6 +735,14 @@ function F03({ onCancel }: { onCancel: () => void }) {
       }
       if ((form.phone.match(/\d/g) ?? []).length < 7) {
         toast.error("Enter a valid phone number", { description: "It needs at least 7 digits." });
+        return;
+      }
+      if (parseIntOrUndefined(form.employeeCount) === undefined) {
+        toast.error("Enter a valid employee count", { description: "Use a whole number, e.g. 474." });
+        return;
+      }
+      if (parseIntOrUndefined(form.productQuantity) === undefined) {
+        toast.error("Enter a valid product quantity", { description: "Use a whole number of units, e.g. 120." });
         return;
       }
       const dealValue = parseFloat(form.estimatedDealValue.replace(/[^0-9.]/g, ""));
@@ -780,7 +817,10 @@ function F03({ onCancel }: { onCancel: () => void }) {
               <Field required label="Email" value={form.email} onChange={set("email")} placeholder="david.kim@initech.com" />
               <Field required label="Phone" value={form.phone} onChange={set("phone")} placeholder="+1 (555) 012-3456" />
               <Field required label="Product" type="select" value={form.product} onChange={set("product")} options={["Enterprise Plan", "Pro Plan", "Growth Plan", "Starter Plan"]} />
+              <Field required label="Employee count" value={form.employeeCount} onChange={set("employeeCount")} placeholder="e.g. 474" />
+              <Field required label="Product quantity" value={form.productQuantity} onChange={set("productQuantity")} placeholder="e.g. 120 (units)" />
               <Field required label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
+              <Field required label="Purchase timeline" type="select" value={form.purchaseTimeline} onChange={set("purchaseTimeline")} options={[...PURCHASE_TIMELINES]} />
               <Field required label="Source channel" type="select" value={form.sourceChannel} onChange={set("sourceChannel")} options={["Web form", "Referral", "Cold outreach", "Event"]} />
             </FieldGrid>
             <div>
@@ -788,7 +828,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
               <textarea
                 value={form.notes}
                 onChange={(e) => set("notes")(e.target.value)}
-                placeholder="Interested in the Enterprise Plan, mentioned Q3 budget approval pending."
+                placeholder="What the customer actually asked for — this is a scoring factor, so be specific. e.g. 'Budget already approved and ready to move forward.'"
                 style={{ width: "100%", border: `0.5px solid ${colors.border}`, borderRadius: 6, padding: "8px 10px", fontSize: 12, minHeight: 64, resize: "vertical", outline: "none", fontFamily: "inherit" }}
               />
             </div>

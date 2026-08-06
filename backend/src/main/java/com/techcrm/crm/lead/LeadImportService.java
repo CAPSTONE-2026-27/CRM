@@ -53,6 +53,8 @@ public class LeadImportService {
             Map.entry("phone", List.of("phone", "phonenumber", "mobile", "contactnumber", "telephone", "mobilenumber")),
             Map.entry("product", List.of("product", "productinterest", "interestedproduct", "interested")),
             Map.entry("estimatedDealValue", List.of("estimateddealvalue", "dealvalue", "value", "budget", "estimatedvalue", "dealsize", "amount")),
+            Map.entry("productQuantity", List.of("productquantity", "quantity", "qty", "units", "unitcount", "noofunits")),
+            Map.entry("purchaseTimeline", List.of("purchasetimeline", "timeline", "buyingtimeline", "purchasetime", "timeframe", "whentobuy")),
             Map.entry("sourceChannel", List.of("sourcechannel", "source", "leadsource", "channel")),
             Map.entry("notes", List.of("notes", "note", "comments", "comment", "description", "remarks"))
     );
@@ -174,6 +176,8 @@ public class LeadImportService {
                 column(record, headerByField, "phone"),
                 column(record, headerByField, "product"),
                 parseDecimal(column(record, headerByField, "estimatedDealValue")),
+                parseInteger(column(record, headerByField, "productQuantity")),
+                parseTimeline(column(record, headerByField, "purchaseTimeline")),
                 column(record, headerByField, "sourceChannel"),
                 "CSV_IMPORT",
                 column(record, headerByField, "notes"),
@@ -200,5 +204,43 @@ public class LeadImportService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /** Same forgiving treatment as parseDecimal — a spreadsheet writes "1,200"
+     *  or "1200 units" and means 1200. Unparseable text becomes null (field not
+     *  recorded) rather than failing the row: the lead is still worth importing
+     *  without one scoring factor. */
+    private Integer parseInteger(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(digits);
+        } catch (NumberFormatException e) {
+            return null;  // more digits than an int holds
+        }
+    }
+
+    /** Snaps a timeline to its canonical spelling, case- and spacing-insensitively.
+     *
+     *  The model looks this value up by exact string, so "immediately" from a
+     *  hand-typed spreadsheet has to become "Immediately" or the lead loses its
+     *  urgency points. Presentation is forgiven; meaning is not — a value that
+     *  matches nothing is passed through unchanged so @Pattern rejects the row
+     *  with a message naming the accepted values, rather than being silently
+     *  dropped and scored as if the rep had left it blank. */
+    private String parseTimeline(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String normalized = raw.trim().replaceAll("\\s+", " ");
+        return LeadRequest.PURCHASE_TIMELINES.stream()
+                .filter(allowed -> allowed.equalsIgnoreCase(normalized))
+                .findFirst()
+                .orElse(normalized);
     }
 }
