@@ -1,13 +1,16 @@
 spring:
   config:
     import: "optional:application-local.yml"
-  # Google / Microsoft sign-in. Credentials come from the environment and are
-  # REQUIRED to start: Spring Boot 4 validates every declared registration and
-  # refuses to boot on an empty client-id ("Client id of registration 'google'
-  # must not be empty"). Export GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-  # MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET before running the backend.
-  # To run without SSO at all, delete the registrations below rather than
-  # blanking them — a blank one fails at startup, not at the button.
+  # Google / Microsoft sign-in.
+  #
+  # THIS FILE IS COMMITTED TO GIT — never put a real client id or secret here.
+  # Put them in application-local.yml (gitignored), which is imported above and
+  # overrides these placeholders. Anything written literally below is published
+  # the moment the repository is pushed.
+  #
+  # Note that Spring Boot 4 validates every declared registration and refuses to
+  # start on a blank client-id ("Client id of registration 'google' must not be
+  # empty"), so these must be supplied somewhere before the backend will run.
   security:
     oauth2:
       client:
