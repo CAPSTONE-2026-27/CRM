@@ -1,0 +1,44 @@
+# CRM Deal Intelligence — QLoRA fine-tune of Llama 3.1 8B Instruct.
+#
+# Install:
+#   python -m venv venv
+#   venv/Scripts/activate            # Windows
+#   pip install -r requirements.txt
+#
+# torch is CUDA-specific and deliberately not pinned to a CPU wheel. For the
+# +cu126 build this machine uses:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
+
+# --- training ---------------------------------------------------------------
+torch==2.13.0
+transformers==5.14.1
+peft==0.19.1
+accelerate==1.14.0
+trl==1.8.0
+datasets==5.0.0
+# 4-bit NF4 quantisation. An fp16 8B needs ~16GB for weights alone, which does
+# not fit a 16GB card alongside optimizer state and activations.
+bitsandbytes==0.49.2
+
+# --- serving ----------------------------------------------------------------
+fastapi==0.139.2
+uvicorn==0.51.0
+pydantic==2.13.4
+
+# --- contract validation against the XGBoost deal scorer --------------------
+# Needed only by tests/test_contract.py::TestLiveBundle and
+# scripts/generate_dataset.py --validate. Everything else runs without them.
+#
+# NOTE: XgBoost/requirements.txt pins xgboost==3.3.0, and the saved bundle's
+# provenance records 3.3.0 as the training version — but no such release exists
+# on PyPI (3.2.0 is the highest published). That pin is uninstallable, so the
+# serving environment as written cannot be reproduced. 3.2.0 loads the bundle
+# and validates the schema correctly; it emits a version-mismatch warning and
+# should NOT be trusted for comparing predicted scores.
+xgboost==3.2.0
+pandas==3.0.5
+scikit-learn==1.9.0
+joblib==1.5.3
+
+# --- tests ------------------------------------------------------------------
+pytest==9.1.1
