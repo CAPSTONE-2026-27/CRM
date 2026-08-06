@@ -91,7 +91,9 @@ public class AiScoringClient {
         if (lead.getIndustry() != null) lines.add("Industry: " + lead.getIndustry());
         if (lead.getEmployeeCount() != null) lines.add("Company size: " + lead.getEmployeeCount() + " employees");
         if (lead.getProduct() != null) lines.add("Product interest: " + lead.getProduct());
+        if (lead.getProductQuantity() != null) lines.add("Product quantity: " + lead.getProductQuantity());
         if (lead.getEstimatedDealValue() != null) lines.add("Estimated deal value: " + lead.getEstimatedDealValue());
+        if (lead.getPurchaseTimeline() != null) lines.add("Purchase timeline: " + lead.getPurchaseTimeline());
         if (lead.getSourceChannel() != null) lines.add("Source channel: " + lead.getSourceChannel());
         if (lead.getNotes() != null) lines.add("Notes from sales executive: " + lead.getNotes());
         return String.join("\n", lines);

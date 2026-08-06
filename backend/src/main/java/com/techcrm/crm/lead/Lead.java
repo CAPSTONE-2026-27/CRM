@@ -35,6 +35,23 @@ public class Lead {
     @Column(name = "estimated_deal_value")
     private BigDecimal estimatedDealValue;
 
+    /* ---- Lead-scoring factors (see V17) -----------------------------------
+     * The fine-tuned model scores five factors; these are the two the CRM did
+     * not previously record. Without them a lead could not score above 60/100.
+     * Both are optional — a lead is still worth capturing when the rep does not
+     * know them yet, and the model handles their absence. */
+
+    /** Units the lead intends to buy. */
+    @Column(name = "product_quantity")
+    private Integer productQuantity;
+
+    /** When the lead intends to buy. Constrained by the DB to the six strings
+     *  the model was trained on — see LeadRequest.PURCHASE_TIMELINES. Any other
+     *  spelling scores zero for urgency instead of failing, so it is enforced
+     *  rather than trusted. */
+    @Column(name = "purchase_timeline", length = 30)
+    private String purchaseTimeline;
+
     @Column(name = "source_channel")
     private String sourceChannel;
 

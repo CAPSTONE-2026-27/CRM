@@ -13,6 +13,8 @@ public record LeadResponse(
         String phone,
         String product,
         BigDecimal estimatedDealValue,
+        Integer productQuantity,
+        String purchaseTimeline,
         String sourceChannel,
         String captureMethod,
         String notes,
