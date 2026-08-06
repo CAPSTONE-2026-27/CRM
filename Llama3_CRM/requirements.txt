@@ -1,0 +1,27 @@
+# Serving dependencies for scripts/main.py — the local LLM server the CRM
+# backend calls in place of Groq. Pinned to the versions the adapter in
+# outputs/lead_management_llama3_lora was trained and validated against.
+#
+# Install:
+#   python -m venv venv
+#   venv/Scripts/activate          # Windows
+#   pip install -r requirements.txt
+#
+# torch is CUDA-specific and is deliberately not pinned to a CPU wheel here.
+# For the +cu126 build this project uses:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
+
+torch==2.13.0
+transformers==5.14.1
+peft==0.19.1
+accelerate==1.14.0
+# 4-bit NF4 quantisation. Windows wheels exist from 0.44 onward; on Linux any
+# recent release works.
+bitsandbytes==0.49.2
+
+fastapi==0.139.2
+uvicorn==0.51.0
+pydantic==2.13.4
+
+# Tests only — none of the test suite loads the model.
+pytest==9.1.1

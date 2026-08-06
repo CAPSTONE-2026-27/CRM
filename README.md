@@ -70,11 +70,12 @@ degrade rather than fail.
 - **Auth** — JWT access tokens plus httpOnly refresh cookies, with optional
   Google and Microsoft SSO. Per-user, per-screen permissions; admins bypass.
   Every request is scoped to the caller's organization.
-- **AI** — any OpenAI-compatible chat-completions endpoint (`AI_BASE_URL`), so
-  the same code runs against a hosted API in development and a self-hosted
-  vLLM/Ollama server serving the fine-tuned model from [`ml/`](ml/) in
-  production. An unreachable model degrades gracefully; it never blocks a user
-  from saving their own work.
+- **AI** — any OpenAI-compatible chat-completions endpoint (`AI_BASE_URL`). It
+  defaults to the fine-tuned Llama 3.1 served locally by
+  [`Llama3_CRM/scripts/main.py`](Llama3_CRM/scripts/main.py) on `:8001`; a
+  hosted API works unchanged by setting the three `AI_*` variables. An
+  unreachable model degrades gracefully; it never blocks a user from saving
+  their own work.
 - **RPA bots** — Spring `@Async` for event- and manually-triggered runs,
   `@Scheduled` for the hourly follow-up sweep. No broker required; see
   `BotExecutionService` for the trade-offs that choice implies.

@@ -60,16 +60,34 @@ management:
   endpoint:
     health:
       show-details: always
-# Any OpenAI-compatible chat-completions endpoint. Defaults target Groq for
-# development; point base-url/model-name at a self-hosted vLLM or Ollama server
-# (api-key blank) to serve the fine-tuned model from ml/ instead — no code
-# changes, this is the whole integration surface.
+# Any OpenAI-compatible chat-completions endpoint — this is the whole LLM
+# integration surface, so switching providers is configuration, not code.
+#
+# Defaults now target the local fine-tuned model served by
+# Llama3_CRM/scripts/main.py (start it with `python scripts/main.py`). That
+# server routes internally: lead scoring runs through the LoRA adapter, the
+# other three modules run the base Llama 3.1 8B Instruct.
+#
+# Port 8001, not 8000: XgBoost/serve_api.py already owns 8000, and
+# deal-scoring.base-url below points at it.
+#
+# api-key stays blank — a self-hosted server needs no bearer token, and
+# AiChatClient omits the header entirely when it is empty.
+#
+# To fall back to a hosted provider, set the three env vars, e.g.
+#   AI_BASE_URL=https://api.groq.com/openai/v1
+#   AI_MODEL_NAME=llama-3.1-8b-instant
+#   AI_API_KEY=<key>
 ai:
-  base-url: ${AI_BASE_URL:https://api.groq.com/openai/v1}
-  model-name: ${AI_MODEL_NAME:llama-3.1-8b-instant}
+  base-url: ${AI_BASE_URL:http://localhost:8001/v1}
+  model-name: ${AI_MODEL_NAME:crm-llama-3.1-8b-lora}
   # Never commit a real key — set AI_API_KEY, or put it in application-local.yml.
   api-key: ${AI_API_KEY:}
-  request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:30000}
+  # Raised from the 30s that suited a hosted API. A local 4-bit 8B generates at
+  # roughly 15-30 tok/s on a consumer GPU, and deal analysis asks for ~900
+  # tokens of JSON in one reply — at 30s that call times out mid-generation and
+  # every deal silently falls through to the heuristic analyser.
+  request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:180000}
 app:
   # Where OAuth sends the browser back to once sign-in completes.
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
