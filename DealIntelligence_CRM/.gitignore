@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environment
+venv/
+.venv/
+
+# Base model weights and trained adapters — large binaries, not source.
+models/
+outputs/
+
+# Hugging Face cache
+hf_cache/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
