@@ -32,13 +32,24 @@ spring:
   #     hibernate:
   #       default_schema: public
 
-# Any OpenAI-compatible chat-completions endpoint. Point base-url and
-# model-name at a self-hosted vLLM/Ollama server to serve the fine-tuned model
-# from ml/ instead — api-key is then usually blank.
-ai:
-  base-url: https://api.groq.com/openai/v1
-  model-name: llama-3.1-8b-instant
-  api-key: your-api-key
+# Any OpenAI-compatible chat-completions endpoint. application.yml already
+# defaults to the local fine-tuned model, so this block only needs uncommenting
+# if you want to point somewhere else.
+#
+# Local fine-tuned model (the default — start Llama3_CRM/scripts/main.py first).
+# Note 8001: XgBoost/serve_api.py already occupies 8000.
+# ai:
+#   base-url: http://localhost:8001/v1
+#   model-name: crm-llama-3.1-8b-lora
+#   api-key: ""
+#   request-timeout-ms: 180000
+#
+# Hosted fallback:
+# ai:
+#   base-url: https://api.groq.com/openai/v1
+#   model-name: llama-3.1-8b-instant
+#   api-key: your-api-key
+#   request-timeout-ms: 30000
 
 app:
   jwt:

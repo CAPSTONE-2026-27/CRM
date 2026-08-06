@@ -397,14 +397,23 @@ def main():
         )
 
         # --- Train ---
-        # Resuming from checkpoint-380: the previous run of this exact config
-        # (r=16 LoRA revert + grounded reasoning + 8 epochs) was killed
-        # mid-run at step 384/456 when the machine went offline over the
-        # weekend, with no error -- just an abrupt stop. checkpoint-380 has
-        # full optimizer/scheduler/rng state, so resuming continues the same
-        # trajectory instead of repeating ~50 minutes of already-done work.
-        logger.info("Starting training...")
-        train_result = trainer.train(resume_from_checkpoint=True)
+        # resume_from_checkpoint was hardcoded True for a one-off recovery: an
+        # earlier run of this config died at step 384/456 when the machine went
+        # offline, and checkpoint-380 still held the optimizer/scheduler/rng
+        # state needed to continue rather than repeat ~50 minutes of work.
+        #
+        # Left as True it is a trap — with no checkpoint in OUTPUT_DIR the run
+        # aborts before the first step, and with a *stale* one it silently
+        # resumes someone else's trajectory. Resuming is now opt-in:
+        #     python scripts/train.py --resume
+        resume = "--resume" in sys.argv
+        if resume and not any(OUTPUT_DIR.glob("checkpoint-*")):
+            raise FileNotFoundError(
+                f"--resume given but no checkpoint-* directory exists in {OUTPUT_DIR}. "
+                "Drop the flag to train from scratch."
+            )
+        logger.info("Starting training%s...", " (resuming from checkpoint)" if resume else "")
+        train_result = trainer.train(resume_from_checkpoint=resume)
         logger.info("Training complete. Metrics: %s", train_result.metrics)
 
         # --- Eval (best checkpoint, since load_best_model_at_end=True) ---

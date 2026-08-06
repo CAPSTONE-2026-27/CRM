@@ -7,10 +7,10 @@ There are **two models**, and they do different jobs:
 | | Language model (LLM) | XGBoost model |
 |---|---|---|
 | **Job** | Read free text, produce structured judgements | Take structured inputs, predict a number |
-| **Runs** | Hosted API (Groq by default) | Local Python service on `:8000` |
+| **Runs** | Local Python service on `:8001` | Local Python service on `:8000` |
 | **Called from** | `ai/AiChatClient.java` | `deal/DealScoringClient.java` |
 | **Call sites** | 4 | 2 |
-| **Trained by us?** | No — prompted, not fine-tuned | **Yes** — `XgBoost/` |
+| **Trained by us?** | **Partly** — see §1.2 | **Yes** — `XgBoost/` |
 
 ---
 
@@ -28,15 +28,70 @@ configuration change, not a code change:
 
 ```yaml
 ai:
-  base-url:  https://api.groq.com/openai/v1     # or http://localhost:11434/v1
-  model-name: llama-3.1-8b-instant              # or your fine-tuned model
-  api-key:   gsk_...                            # blank for a self-hosted server
-  request-timeout-ms: 30000
+  base-url:  http://localhost:8001/v1           # local server (default)
+  model-name: crm-llama-3.1-8b-lora
+  api-key:   ""                                 # blank for a self-hosted server
+  request-timeout-ms: 180000
 ```
 
-That is the entire integration surface. **This is how the fine-tuned model from
-`ml/` or `Llama3_CRM/` gets swapped in** — serve it behind an OpenAI-compatible
-endpoint and change these three values.
+That is the entire integration surface. The migration off Groq changed these
+four values and nothing else — no Java file was touched.
+
+To go back to a hosted provider, set `AI_BASE_URL=https://api.groq.com/openai/v1`,
+`AI_MODEL_NAME=llama-3.1-8b-instant`, `AI_API_KEY=gsk_...`.
+
+### 1.2 What the local server actually serves
+
+`Llama3_CRM/scripts/main.py` speaks the same OpenAI protocol and loads **one**
+4-bit Llama 3.1 8B, with the LoRA adapter attached and toggled per request:
+
+| Request | Adapter | Why |
+|---|---|---|
+| Lead scoring | **on** | The fine-tune was trained on exactly this task |
+| Meeting analysis | off | Never trained on it — base instruct model handles it |
+| Deal analysis | off | Never trained on it |
+| Deal coach chat | off | Never trained on it |
+
+Routing is by system prompt: `AiScoringClient`'s prompt opens with "You are a CRM
+lead-scoring assistant", and `main.py` matches on that clause. **If that Java
+string is ever reworded, `LEAD_SCORING_MARKER` in `main.py` must be reworded with
+it** — otherwise lead scoring silently falls back to the base model. The test in
+`Llama3_CRM/tests/test_bridge.py` pins both sides.
+
+The adapter emits plain text (`Lead Score: 85/100 / Qualification: Hot / • five
+bullets`), not JSON, and reads seven field names the CRM does not use. `main.py`
+bridges both directions so `AiScoringClient` sees the exact JSON it always saw.
+
+### 1.3 The five scoring factors
+
+The fine-tune scores five factors at up to 20 points each, and defines the lead
+score as their sum. Migration **V17** added the last two to the `leads` table, so
+all five are now recordable:
+
+| Factor | CRM field | Tiers (0 / 5 / 10 / 15 / 20 pts) |
+|---|---|---|
+| Employees Count | `employee_count` | ≤51 / ≤204 / ≤1027 / ≤5015 / above |
+| Product Quantity | `product_quantity` | ≤10 / ≤50 / ≤101 / ≤500 / above |
+| Deal Value | `estimated_deal_value` | ≤1.06L / ≤9.99L / ≤51.3L / ≤2.02Cr / above |
+| Purchase Timeline | `purchase_timeline` | >3mo / 3mo / 2mo / 1mo / 15d or Immediately |
+| Customer Requirement | `notes` | 20 fixed phrases, see `CUSTOMER_REQUIREMENT_TIERS` |
+
+Scores are **deterministic** for known inputs: when the reply carries all five
+bullets, `reconcile_output` recomputes every point value from the lead's actual
+input and overrides whatever the model wrote. A model claiming 20 points for a
+474-person company still scores it 10.
+
+**`purchase_timeline` is an exact-string lookup.** The six accepted values are
+declared in three places that must agree — `LeadRequest.PURCHASE_TIMELINES`, the
+`leads_purchase_timeline_allowed` CHECK constraint, and `PURCHASE_TIMELINES` in
+the frontend's `types.ts`. `"Within 1 month"` is not `"Within 1 Month"`: the
+lowercase form scores 0 for urgency instead of failing.
+
+**Leads missing factors are still scored**, on whatever was recorded, with the
+remainder rescaled onto 0-100 (`CRM_NORMALISE_LEAD_SCORE=0` disables this) and
+the gap named in `qualificationReasoning`. This is what pre-V17 rows do — their
+scores are rankings, not values comparable to the training set. A lead with all
+five factors needs no rescaling and is directly comparable.
 
 Two methods:
 
@@ -382,9 +437,18 @@ required dependency.** No AI failure may lose a user's work.
 | Folder | Status |
 |---|---|
 | `XgBoost/` | **In use.** The deal-scoring model, served on `:8000`. |
-| `ml/` | Fine-tuning work for lead scoring. Not wired into the running system. |
-| `Llama3_CRM/` | Llama-3 lead-scoring experiments and a report. Not wired in. |
+| `Llama3_CRM/` | **In use.** The fine-tuned LLM, served on `:8001` by `scripts/main.py`. See §1.2. |
+| `ml/` | Earlier fine-tuning work for lead scoring. Not wired into the running system. |
 
-To put either into service, serve it behind an OpenAI-compatible endpoint and
+`scripts/main.py` is the only server the CRM talks to.
+
+`scripts/serve.py` is an older, narrower server kept for testing the adapter
+directly: it exposes a lead-only `POST /score` with its own request schema, and
+the CRM never calls it. **Starting it instead of `main.py` is a silent failure** —
+it answers a shape the backend does not send, and its default port 8000 collides
+with the XGBoost deal scorer, so every AI feature falls back with no error in
+either log. If you run it, give it a different port.
+
+To serve a different model, put it behind an OpenAI-compatible endpoint and
 repoint `ai.base-url` / `ai.model-name` / `ai.api-key`. No application code
 changes — that is the whole point of §1.1.
