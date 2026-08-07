@@ -54,7 +54,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTConfig, SFTTrainer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deal_state_format import SYSTEM_PROMPT, build_llama3_prompt  # noqa: E402
+import deal_state_format as fmt  # noqa: E402,F401
 
 
 # --------------------------------------------------------------------------
@@ -101,21 +101,21 @@ def set_seed(seed: int = SEED) -> None:
 # DATASET
 # --------------------------------------------------------------------------
 def formatting_func(example: dict) -> str:
-    """Build one training string from a generated row.
+    """Render one row as a prompt string.
 
-    Rows come from generate_dataset.py as {instruction, input, output}, where
-    `input` is the two-section user turn (previous state + meeting notes) and
-    `output` is the target JSON state.
+    NOT used for training — the trainer consumes the `messages` column directly
+    so the tokenizer's chat template applies and assistant_only_loss can mask
+    the prompt. This exists for scripts/check_lengths.py, which needs a single
+    string to tokenise, and it deliberately goes through the same chat template
+    rather than a hand-built prompt so the lengths it reports are the real ones.
     """
-    instruction = (example.get("instruction") or "").strip()
-    user_body = (example.get("input") or "").strip()
-    output = (example.get("output") or "").strip()
-
-    if not output or not user_body:
+    messages = example.get("messages")
+    if not messages:
         return ""
+    return _TOKENIZER.apply_chat_template(messages, tokenize=False)
 
-    user = f"{instruction}\n\n{user_body}" if instruction else user_body
-    return build_llama3_prompt(SYSTEM_PROMPT, user, output)
+
+_TOKENIZER = None  # set by load_tokenizer(); check_lengths.py sets it too
 
 
 def _is_valid(row: dict) -> bool:
@@ -125,12 +125,12 @@ def _is_valid(row: dict) -> bool:
     training, it just teaches the model to emit malformed JSON, and that only
     surfaces as a mysteriously high rejection rate at inference.
     """
-    output = (row.get("output") or "").strip()
-    if not output or not (row.get("input") or "").strip():
+    messages = row.get("messages")
+    if not messages or len(messages) != 3 or messages[-1].get("role") != "assistant":
         return False
     try:
-        state = json.loads(output)
-    except json.JSONDecodeError:
+        state = json.loads(messages[-1]["content"])
+    except (json.JSONDecodeError, TypeError):
         return False
     return isinstance(state, dict) and len(state) == 17
 
@@ -178,6 +178,15 @@ def load_tokenizer():
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
     tokenizer.padding_side = "right"
+
+    # This project's template, carrying the {% generation %} markers
+    # assistant_only_loss needs. serve.py installs the identical one, so
+    # training and inference render the same string. In-memory only — the shared
+    # base-model directory is never written to.
+    fmt.apply_chat_template(tokenizer)
+
+    global _TOKENIZER
+    _TOKENIZER = tokenizer
     return tokenizer
 
 
@@ -285,7 +294,10 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         seed=SEED,
         dataset_num_proc=1,       # Windows: avoid multiprocessing dataloader issues
         dataloader_num_workers=0,
-        remove_unused_columns=False,  # formatting_func needs the raw columns
+        # True, unlike the lead-scoring script: the dataset carries `output`,
+        # `meeting_notes` and `meta` alongside `messages` for inspection, and
+        # the trainer must strip them rather than try to collate them.
+        remove_unused_columns=True,
         logging_dir=str(LOG_DIR),
         **kwargs,
     )
@@ -322,11 +334,16 @@ def main() -> None:
         # assistant_only_loss is not in every trl release; fall back rather than
         # fail, but say so loudly — without it the model is being taught to copy
         # its input, and that is worth knowing before reading the eval curve.
+        # assistant_only_loss needs a conversational dataset, which generate_
+        # dataset.py now produces. If a trl build rejects the flag outright,
+        # fall back loudly rather than silently: without masking, the model is
+        # being taught to copy its own input, and that is worth knowing before
+        # reading the eval curve.
         try:
             config = build_training_config(assistant_only=True)
-        except TypeError:
+        except (TypeError, ValueError):
             logger.warning(
-                "This trl build does not support assistant_only_loss; training on "
+                "This trl build rejected assistant_only_loss; training on "
                 "prompt+completion. Expect the model to over-copy the previous state."
             )
             config = build_training_config(assistant_only=False)
@@ -337,7 +354,10 @@ def main() -> None:
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             processing_class=tokenizer,
-            formatting_func=formatting_func,
+            # No formatting_func: the dataset is conversational, so SFTTrainer
+            # applies the tokenizer's chat template itself. That is what makes
+            # assistant_only_loss possible, and it keeps training on the exact
+            # prompt serve.py builds at inference.
         )
 
         logger.info("Starting training%s...", " (resuming)" if resume else "")

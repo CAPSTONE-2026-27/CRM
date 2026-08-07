@@ -50,24 +50,112 @@ actually present in the training CSV, which only ever held Low/Medium/High.
 **The source is aspirational; the bundle is the authority.** Pinned by
 `test_buying_intent_very_high_really_is_rejected`.
 
+## Isolation from Lead Scoring
+
+The lead-scoring system in `../Llama3_CRM` is production and read-only. This
+project shares exactly one thing with it: the base-model directory on disk,
+which neither service writes to.
+
+| | Lead Scoring | Deal Intelligence |
+|---|---|---|
+| Project | `../Llama3_CRM` | `DealIntelligence_CRM` |
+| Port | 8001 | **8002** |
+| Adapter | `lead_management_llama3_lora` | `deal_state_llama3_lora` |
+| Dataset | its own `train.jsonl` | its own `train.jsonl` |
+| Prompt | `prompt_format.py` | `deal_state_format.py` |
+| API | OpenAI chat-completions | `POST /v1/deal-state` |
+| Process | separate | separate |
+
+Enforced by `tests/test_serve.py::TestIsolationFromLeadScoring`, which asserts
+no script here imports from that project and none writes to the shared weights.
+
+Port 8000 is the XGBoost deal scorer, so nothing here may use it.
+
 ## Layout
 
 ```
-scripts/deal_state_format.py   vocabulary, prompt, coerce_state()
+scripts/deal_state_format.py   vocabulary, prompt, coerce_state(), version
 scripts/generate_dataset.py    synthetic journey generator
-tests/test_contract.py         contract + dataset validity
+scripts/train.py               QLoRA fine-tune -> outputs/deal_state_llama3_lora
+scripts/serve.py               inference API on :8002
+scripts/check_lengths.py       truncation guard
+tests/                         contract, dataset, API
 data/train.jsonl               generated (not committed)
 ```
 
 ## Usage
 
 ```bash
-# Generate, validating every target against the real scorer
+# 1. Generate, validating every target against the real scorer
 python scripts/generate_dataset.py --rows 800 --validate
+
+# 2. Confirm nothing truncates
+python scripts/check_lengths.py
+
+# 3. Train (needs the GPU free — stop the lead-scoring server first)
+python scripts/train.py
+
+# 4. Serve
+python scripts/serve.py          # :8002
 
 # Tests (live-bundle tests skip cleanly without xgboost installed)
 python -m pytest tests/ -v
 ```
+
+## API
+
+```
+GET  /health        readiness, version, whether the adapter is loaded
+GET  /v1/schema     the emitted contract — field order, vocabulary, defaults
+POST /v1/deal-state
+```
+
+```jsonc
+// request
+{"previous_state": { /* 17 fields; omit for the first meeting */ },
+ "meeting_notes": "The CFO confirmed the full budget is approved..."}
+
+// response
+{"state":          { /* 17 fields — feed this to the XGBoost scorer */ },
+ "changed_fields": ["budget_status", "buying_intent"],
+ "repairs":        [],           // see below
+ "adapter":        true,         // false = base model, NOT production output
+ "model_version":  "1.0.0",
+ "latency_ms":     4210}
+```
+
+**`repairs` is not decoration.** Every reply passes through `coerce_state()`,
+which snaps values onto the trained vocabulary and imputes anything missing —
+that guarantee is the point of the service, because an unrecognised one-hot
+value does not raise at scoring time, it silently scores as zero. A state that
+needed six repairs and one that needed none produce equally confident deal
+scores, and this list is the only thing that distinguishes them. **Log it.**
+
+**`adapter: false`** means the service is running the base model because no
+trained adapter was found. It still answers, so the API and coercion layer can
+be exercised before training finishes, but the output is not fit for scoring.
+
+Two degradation paths worth knowing:
+
+- Model unreachable → `503`. Never a fabricated state; a caller must be able to
+  tell "service down" from "the deal genuinely looks like this".
+- Reply contains no JSON → the previous state is carried forward with
+  `total_meetings` incremented, and `repairs` says so. Losing an opportunity's
+  entire state because one generation was malformed is worse than a state that
+  did not move.
+
+## Versioning
+
+`CONTRACT_VERSION` in `deal_state_format.py` is bumped whenever the emitted
+contract changes shape — a field added or removed, a value added or retired, a
+numeric range moved. It is published by `/v1/schema` and returned on every
+response, so a consumer can pin against it and a silent vocabulary change cannot
+pass unnoticed.
+
+`VERIFIED_AGAINST_BUNDLE` records which deal-score bundle the vocabulary was
+checked against. **If the deal scorer is retrained, re-run
+`tests/test_contract.py::TestLiveBundle` before assuming the vocabulary still
+holds** — the bundle, not the pipeline source, is the authority.
 
 ## How the dataset is built
 
