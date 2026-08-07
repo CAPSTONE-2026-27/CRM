@@ -23,6 +23,7 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import train  # noqa: E402
 from train import DATA_PATH, MODEL_PATH, formatting_func  # noqa: E402
 
 MAX_LENGTH = 2048  # keep in step with build_training_config()
@@ -36,6 +37,10 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(
         str(MODEL_PATH), trust_remote_code=True, local_files_only=True
     )
+    # formatting_func renders through the chat template, so it needs the
+    # tokenizer. Set it directly rather than calling train.load_tokenizer(),
+    # which logs as though a training run were starting.
+    train._TOKENIZER = tokenizer
 
     with DATA_PATH.open(encoding="utf-8") as handle:
         rows = [json.loads(line) for line in handle]

@@ -44,6 +44,19 @@ found that way, each of which would have broken scoring:
 import json
 import re
 
+# Bumped when the emitted contract changes shape — a field added or removed, a
+# value added or retired, a numeric range moved. Consumers pin against this, and
+# /v1/schema publishes it, so a silent vocabulary change cannot pass unnoticed.
+#
+# 1.0.0 — 17 fields, vocabulary verified against deal_score bundle
+#         deal_score_v1.0.0_20260802_062230Z
+CONTRACT_VERSION = "1.0.0"
+
+# The bundle this contract was verified against. If the deal scorer is
+# retrained, re-run tests/test_contract.py::TestLiveBundle before assuming the
+# vocabulary still holds — the bundle, not the pipeline source, is the authority.
+VERIFIED_AGAINST_BUNDLE = "deal_score_v1.0.0_20260802_062230Z"
+
 # ============================================================
 # VOCABULARY  (verified against the saved bundle)
 # ============================================================
@@ -242,8 +255,92 @@ def build_user_turn(previous_state: dict, meeting_notes: str) -> str:
     )
 
 
+# Llama 3.1 Instruct chat format, with two deliberate departures from the
+# tokenizer's stock template. Assigned to the tokenizer by BOTH train.py and
+# serve.py, so training and inference provably render the same string.
+#
+# 1. `{% generation %}` markers around the assistant turn. TRL's
+#    assistant_only_loss needs them to build a mask of which tokens are the
+#    completion; the stock template has none, and trl refuses to patch it
+#    ("chat template is not training-compatible"). Without the mask, gradient
+#    flows through the prompt too — and here the prompt holds a full 17-field
+#    state while the target is a near-copy of it, so most of the learning signal
+#    would go into reproducing text the model was already handed, rewarding it
+#    for copying the previous state wholesale. Knowing which fields to change is
+#    the entire task.
+#
+# 2. No "Cutting Knowledge Date / Today Date" preamble. The stock template
+#    injects one into the system block. It carries no meaning for this task, and
+#    a date that shifts between training and serving is exactly the kind of
+#    silent prompt drift that makes a model perform worse at inference than its
+#    eval loss predicts.
+CHAT_TEMPLATE = (
+    "{{- bos_token }}"
+    "{%- for message in messages %}"
+    "{%- if message['role'] == 'assistant' %}"
+    "{{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
+    "{%- generation %}"
+    "{{- message['content'] | trim + '<|eot_id|>' }}"
+    "{%- endgeneration %}"
+    "{%- else %}"
+    "{{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' "
+    "+ message['content'] | trim + '<|eot_id|>' }}"
+    "{%- endif %}"
+    "{%- endfor %}"
+    "{%- if add_generation_prompt %}"
+    "{{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
+    "{%- endif %}"
+)
+
+
+def apply_chat_template(tokenizer):
+    """Install this project's template. Call before training or serving.
+
+    Mutates only the in-memory tokenizer object — the shared base-model
+    directory on disk is never written to, so the lead-scoring service that
+    loads the same weights is unaffected.
+    """
+    tokenizer.chat_template = CHAT_TEMPLATE
+    return tokenizer
+
+
+def build_messages(previous_state: dict, meeting_notes: str, target: str = None) -> list:
+    """The example in conversational form: system / user / (assistant).
+
+    This is the canonical representation for both training and inference, and
+    the reason it exists rather than a hand-built prompt string:
+
+    TRL's `assistant_only_loss` — which masks the prompt so gradient flows only
+    through the completion — requires a conversational dataset. That masking
+    matters more here than on most tasks: the prompt contains a full 17-field
+    state and the target is a near-copy of it, so training on the whole sequence
+    would spend most of the gradient teaching the model to reproduce text it was
+    already handed, and reward copying the previous state wholesale. The entire
+    task is knowing which fields to change.
+
+    Using messages also means the tokenizer's own chat template is applied at
+    both training and inference. Llama 3.1's template injects a "Cutting
+    Knowledge Date / Today Date" preamble into the system block that a
+    hand-built prompt does not, so mixing the two would train and infer on
+    measurably different prompts — the exact drift that makes a model behave
+    worse at inference than its eval loss suggests.
+    """
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": build_user_turn(previous_state, meeting_notes)},
+    ]
+    if target is not None:
+        messages.append({"role": "assistant", "content": target})
+    return messages
+
+
 def build_llama3_prompt(system: str, user: str, assistant: str = "") -> str:
-    """One example in raw Llama 3.1 Instruct chat format."""
+    """One example in raw Llama 3.1 Instruct chat format.
+
+    Retained for tests and offline inspection. Production paths use
+    build_messages() with the tokenizer's chat template instead — see the note
+    there about the date preamble.
+    """
     prompt = (
         "<|begin_of_text|>"
         "<|start_header_id|>system<|end_header_id|>\n\n"

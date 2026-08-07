@@ -569,12 +569,18 @@ def generate(rows: int, seed: int = SEED) -> list:
             if len(examples) >= rows:
                 break
             new_state, notes = advance(rng, state, trajectory, company)
+            target = fmt.render_state(new_state)
             examples.append({
-                "instruction": fmt.INSTRUCTION,
-                "input": fmt.build_user_turn(state, notes).split("\n\n", 1)[1],
-                "output": fmt.render_state(new_state),
-                # Not consumed by training — kept so a row can be traced back
-                # to the journey that produced it when a target looks wrong.
+                # What the trainer consumes. Conversational form is required for
+                # TRL's assistant_only_loss, and it makes the tokenizer's chat
+                # template the single prompt builder for training and serving.
+                "messages": fmt.build_messages(state, notes, target),
+                # Kept alongside for inspection, evaluation and debugging: the
+                # target on its own is what tests assert against, and `meta`
+                # traces a row back to the journey that produced it when a
+                # target looks wrong.
+                "output": target,
+                "meeting_notes": notes,
                 "meta": {"trajectory": trajectory, "company": company[0]},
             })
             state = new_state
