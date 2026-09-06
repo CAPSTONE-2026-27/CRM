@@ -35,3 +35,9 @@ build/
 ### Local secrets (never commit) ###
 application-local.yml
 .env
+
+### Generated contract documents (contract.storage.root) ###
+# Customer contracts with names, prices and signatures on them. The default
+# store sits inside the working directory, so it is excluded explicitly rather
+# than relying on anyone remembering to move it.
+var/

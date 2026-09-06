@@ -121,6 +121,11 @@ public final class DealDtos {
             String closingReason,
             OffsetDateTime closedAt,
 
+            // Mirrored from the deal's live contract so the pipeline board can
+            // show signature progress without a second request per card.
+            String contractStatus,
+            OffsetDateTime contractSignedAt,
+
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt
     ) {
@@ -174,6 +179,9 @@ public final class DealDtos {
                     d.getRiskLevel(),
                     d.getClosingReason(),
                     d.getClosedAt(),
+
+                    d.getContractStatus(),
+                    d.getContractSignedAt(),
 
                     d.getCreatedAt(),
                     d.getUpdatedAt()

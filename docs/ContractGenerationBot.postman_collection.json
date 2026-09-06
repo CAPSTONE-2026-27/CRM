@@ -1,0 +1,312 @@
+{
+  "info": {
+    "name": "CRM - Contract Generation Bot",
+    "description": "Every contract endpoint, in the order the SAP BPA bot calls them.\n\nSet the collection variables first:\n  baseUrl   - http://localhost:8080\n  email     - a CRM login\n  password  - its password\n  dealId    - deals.id of a deal in PROPOSAL, NEGOTIATION or CLOSED_WON\n\n\"1. Login\" stores the access token, and \"2. Generate contract\" stores contractId,\nso the later requests need no manual copying.\n\nThe webhook request is the exception: it is unauthenticated and needs\ndocumensoSecret to match documenso.webhook.secret on the server.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "email", "value": "admin@example.com" },
+    { "key": "password", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "dealId", "value": "31" },
+    { "key": "contractId", "value": "" },
+    { "key": "documensoDocumentId", "value": "" },
+    { "key": "documensoSecret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Login (existing CRM auth - not part of this module)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', body.accessToken || body.token);",
+              "pm.test('got a token', () => pm.expect(pm.collectionVariables.get('accessToken')).to.be.a('string'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "2. Generate contract",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('201 on a new contract, 200 on an absorbed retry', () => pm.expect([200, 201]).to.include(pm.response.code));",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('contractId', body.contractId);",
+              "pm.test('carries the four fields the workflow consumes', () => {",
+              "  pm.expect(body).to.have.property('contractId');",
+              "  pm.expect(body).to.have.property('dealId');",
+              "  pm.expect(body).to.have.property('status');",
+              "  pm.expect(body).to.have.property('pdfUrl');",
+              "  pm.expect(body).to.have.property('docxUrl');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/generate", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "generate"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dealId\": {{dealId}}\n}"
+        },
+        "description": "dealId is deals.id - the value GET /api/deals returns as `id`, NOT opportunityId (\"OPP-000031\") and NOT accountId.\n\n201 Created on a new contract; 200 OK when an existing live contract is returned because this was a retry. Body is identical either way.\n\n400 missing billing address / no contact with an email / no owner / zero value\n404 no such deal in this organization\n409 deal is in an ineligible stage\n500 DOCX, PDF or storage failure (reason recorded on the contract row)"
+        }
+    },
+    {
+      "name": "2b. Generate with explicit template and terms",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/generate", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "generate"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dealId\": {{dealId}},\n  \"contractType\": \"PROFESSIONAL_SERVICES_AGREEMENT\",\n  \"startDate\": \"2026-10-01\",\n  \"endDate\": \"2027-10-01\",\n  \"paymentTerms\": \"Net 45 from invoice date.\",\n  \"deliveryTimeline\": \"Phase 1 within 30 days of kickoff.\",\n  \"regenerate\": true\n}"
+        },
+        "description": "regenerate:true supersedes the deal's existing live contract and drafts a new one. Refused with 409 if that contract is already SIGNED.\n\ncontractType is one of STANDARD_SALES_AGREEMENT, ENTERPRISE_SUBSCRIPTION_AGREEMENT, PROFESSIONAL_SERVICES_AGREEMENT. Omit it to let the resolver choose."
+      }
+    },
+    {
+      "name": "2c. Generate - duplicate call (idempotency check)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('a retry is absorbed with 200, not a second contract', () => pm.response.to.have.status(200));",
+              "pm.test('same contract comes back', () => pm.expect(pm.response.json().contractId).to.eql(pm.collectionVariables.get('contractId')));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/generate", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "generate"] },
+        "body": { "mode": "raw", "raw": "{\n  \"dealId\": {{dealId}}\n}" },
+        "description": "Run immediately after \"2. Generate contract\". Proves the automation platform's retry does not produce a second contract for the same opportunity."
+      }
+    },
+    {
+      "name": "2d. Generate - unknown deal (expect 404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/generate", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "generate"] },
+        "body": { "mode": "raw", "raw": "{\n  \"dealId\": 99999999\n}" },
+        "description": "Expected: 404 { \"error\": \"Deal not found\" }"
+      }
+    },
+    {
+      "name": "3. Get contract",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/{{contractId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "contracts", "{{contractId}}"]
+        },
+        "description": "The whole record: customer and contact, sales executive, template used, status, frozen line items, document URLs, signing information."
+      }
+    },
+    {
+      "name": "4. Get contract status",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/{{contractId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "contracts", "{{contractId}}", "status"]
+        },
+        "description": "The small shape the bot polls while it waits for a signature.\n\nGENERATED -> SENT -> VIEWED -> SIGNED | REJECTED, plus FAILED and SUPERSEDED."
+      }
+    },
+    {
+      "name": "5. List contracts",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/contracts", "host": ["{{baseUrl}}"], "path": ["api", "contracts"] },
+        "description": "Every contract in the caller's organization, newest first."
+      }
+    },
+    {
+      "name": "6. Send for signature",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('documensoDocumentId', pm.response.json().documensoId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/send-for-signature", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "send-for-signature"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contractId\": {{contractId}}\n}"
+        },
+        "description": "recipientName and recipientEmail are optional overrides; both default to the contact the contract was generated for.\n\n200 { contractId, status: \"SENT\", signUrl, documensoId }\n404 no such contract\n409 no generated PDF, or not in a sendable state\n502 Documenso refused or was unreachable\n503 Documenso is not configured on this server\n\nCalling it twice returns the existing signing details rather than creating a second Documenso document."
+      }
+    },
+    {
+      "name": "7. Documenso webhook - signed",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Documenso-Secret", "value": "{{documensoSecret}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/sign-callback", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "sign-callback"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"DOCUMENT_COMPLETED\",\n  \"createdAt\": \"2026-09-05T10:00:00.000Z\",\n  \"payload\": {\n    \"id\": {{documensoDocumentId}},\n    \"externalId\": \"CTR-000042\",\n    \"status\": \"COMPLETED\",\n    \"recipients\": [\n      { \"id\": 45, \"email\": \"asha.menon@northwind.example\", \"signingStatus\": \"SIGNED\" }\n    ]\n  }\n}"
+        },
+        "description": "NO Authorization header - Documenso holds no CRM token. The X-Documenso-Secret header must equal documenso.webhook.secret on the server.\n\n200 { \"result\": \"processed\", \"contractId\": \"42\", \"status\": \"SIGNED\" }\n\nSets the contract to SIGNED, mirrors it onto deals.contract_status, writes an audit entry, and opens customer onboarding.\n\nIf documensoDocumentId is empty, replace \"id\" with the real Documenso document id, or drop it and rely on externalId (set it to your contract number)."
+      }
+    },
+    {
+      "name": "7b. Documenso webhook - duplicate delivery",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('redelivery is a no-op', () => pm.expect(pm.response.json().result).to.eql('duplicate'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Documenso-Secret", "value": "{{documensoSecret}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/sign-callback", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "sign-callback"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"DOCUMENT_COMPLETED\",\n  \"createdAt\": \"2026-09-05T10:00:00.000Z\",\n  \"payload\": {\n    \"id\": {{documensoDocumentId}},\n    \"externalId\": \"CTR-000042\",\n    \"status\": \"COMPLETED\",\n    \"recipients\": [\n      { \"id\": 45, \"email\": \"asha.menon@northwind.example\", \"signingStatus\": \"SIGNED\" }\n    ]\n  }\n}"
+        },
+        "description": "Send the SAME body as 7 again, byte for byte. Expected: 200 { \"result\": \"duplicate\" } and no second onboarding record."
+      }
+    },
+    {
+      "name": "7c. Documenso webhook - rejected",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Documenso-Secret", "value": "{{documensoSecret}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/sign-callback", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "sign-callback"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"DOCUMENT_REJECTED\",\n  \"payload\": {\n    \"id\": {{documensoDocumentId}},\n    \"externalId\": \"CTR-000042\",\n    \"recipients\": [\n      { \"id\": 45, \"rejectionReason\": \"Pricing not approved by finance\" }\n    ]\n  }\n}"
+        },
+        "description": "Sets REJECTED with the reason, and activates nobody."
+      }
+    },
+    {
+      "name": "7d. Documenso webhook - bad secret (expect 401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Documenso-Secret", "value": "wrong-secret" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/contracts/sign-callback", "host": ["{{baseUrl}}"], "path": ["api", "contracts", "sign-callback"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"DOCUMENT_COMPLETED\",\n  \"payload\": { \"id\": 1, \"externalId\": \"CTR-000042\" }\n}"
+        },
+        "description": "Expected: 401 { \"error\": \"Invalid webhook signature\" }, and nothing changed.\n\nWith no secret configured on the server at all: 503, because the endpoint fails closed."
+      }
+    },
+    {
+      "name": "8. Download PDF",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/{{contractId}}/document.pdf",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "contracts", "{{contractId}}", "document.pdf"]
+        },
+        "description": "200 application/pdf, Content-Disposition: attachment; filename=\"CTR-000042.pdf\", Cache-Control: no-store.\n\n404 when the contract has no PDF (LibreOffice disabled) or the file has gone missing from the store.\n401 without a token - documents are never public."
+      }
+    },
+    {
+      "name": "9. Download DOCX",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/{{contractId}}/document.docx",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "contracts", "{{contractId}}", "document.docx"]
+        },
+        "description": "200 application/vnd.openxmlformats-officedocument.wordprocessingml.document, Content-Disposition: attachment; filename=\"CTR-000042.docx\"."
+      }
+    },
+    {
+      "name": "10. Deal, showing the mirrored contract status",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/deals/{{dealId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "deals", "{{dealId}}"]
+        },
+        "description": "Existing endpoint. The response now also carries contractStatus and contractSignedAt.\n\nNote that `stage` is unchanged by any of the contract flow - contract progress is a second axis."
+      }
+    }
+  ]
+}

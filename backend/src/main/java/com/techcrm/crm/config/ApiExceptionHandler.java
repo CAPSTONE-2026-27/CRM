@@ -1,5 +1,9 @@
 package com.techcrm.crm.config;
 
+import com.techcrm.crm.contract.document.ContractDocumentException;
+import com.techcrm.crm.contract.signature.DocumensoException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +17,8 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
@@ -36,6 +42,25 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(DataIntegrityViolationException ex) {
         return errorBody(HttpStatus.BAD_REQUEST, "One of the values provided is invalid or out of range.");
+    }
+
+    // Document generation carries docx4j stack traces and LibreOffice stderr in
+    // its message. ContractService already converts the ones it raises itself
+    // into clean responses; this is the safety net for the paths that don't --
+    // a download hitting an unreadable file, most often -- so the detail lands
+    // in the log and the caller gets a sentence.
+    @ExceptionHandler(ContractDocumentException.class)
+    public ResponseEntity<Map<String, Object>> handleContractDocument(ContractDocumentException ex) {
+        log.error("Contract document operation failed", ex);
+        return errorBody(HttpStatus.INTERNAL_SERVER_ERROR, "The contract document could not be produced or read.");
+    }
+
+    // Likewise for the signature provider: its errors can quote request details
+    // back at us, and 502 is the honest status for an upstream that failed.
+    @ExceptionHandler(DocumensoException.class)
+    public ResponseEntity<Map<String, Object>> handleDocumenso(DocumensoException ex) {
+        log.error("Documenso call failed", ex);
+        return errorBody(HttpStatus.BAD_GATEWAY, "The electronic signature provider could not be reached.");
     }
 
     private ResponseEntity<Map<String, Object>> errorBody(HttpStatus status, String message) {

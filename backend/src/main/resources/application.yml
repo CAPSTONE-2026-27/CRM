@@ -111,3 +111,84 @@ app:
     # has no per-message tenant signal, so this is a fixed assumption for
     # v1 (one mailbox = one org). Find your org id via GET /api/auth/me.
     organization-id:
+
+# Contract generation (Contract Generation Bot). See docs/CONTRACT-GENERATION.md.
+#
+# THIS FILE IS COMMITTED TO GIT -- no secrets below. The Documenso API key and
+# webhook secret are read from environment variables, or from
+# application-local.yml (gitignored), which overrides everything here.
+contract:
+  # Which deal stages a contract may be generated from. The workflow's trigger
+  # is "Proposal Accepted", which is not a stage this CRM has -- DealStages is a
+  # fixed vocabulary shared with the frontend pipeline board -- so these are the
+  # stages that mean the same thing here. Every value must be a real deal stage.
+  eligible-stages: PROPOSAL,NEGOTIATION,CLOSED_WON
+  # Used when the caller supplies no end date.
+  default-term-months: 12
+  # Neither payment terms nor a delivery schedule is recorded anywhere in the
+  # CRM, so they default from here and can be overridden per request.
+  default-payment-terms: "50% on execution of this agreement, 50% on delivery. Invoices are payable within 30 days."
+  default-delivery-timeline: "Within 30 days of the contract start date."
+  # At or above this deal value a product sale is written as an enterprise
+  # subscription rather than a one-off sale. In the deal's own currency.
+  enterprise-value-threshold: 2500000
+  templates:
+    # A classpath: location uses the bundled templates; point this at a
+    # directory to let an admin drop in their own without a rebuild.
+    location: ${CONTRACT_TEMPLATE_LOCATION:classpath:contract-templates/}
+  storage:
+    # Generated DOCX and PDF files. The database stores paths relative to this,
+    # so moving the store is a config change rather than a data migration.
+    root: ${CONTRACT_STORAGE_ROOT:./var/contracts}
+  libreoffice:
+    # Set to false where LibreOffice is not installed: contracts then generate
+    # as DOCX only and cannot be sent for signature.
+    enabled: ${CONTRACT_LIBREOFFICE_ENABLED:true}
+    # A bare name is resolved on PATH. On Windows this is usually
+    # "C:/Program Files/LibreOffice/program/soffice.exe"; on macOS
+    # "/Applications/LibreOffice.app/Contents/MacOS/soffice".
+    path: ${CONTRACT_LIBREOFFICE_PATH:soffice}
+    timeout-seconds: 120
+
+# Documenso e-signature. Written against Documenso's public API v1 -- this
+# project had no prior Documenso integration to match, so the two things
+# installations differ on are settings rather than assumptions.
+documenso:
+  base-url: ${DOCUMENSO_BASE_URL:}
+  # Never commit a real key -- set DOCUMENSO_API_KEY, or put it in
+  # application-local.yml. Blank disables send-for-signature (503) rather than
+  # posting a contract at a URL nobody configured.
+  api-key: ${DOCUMENSO_API_KEY:}
+  # Documenso v1 takes the raw key in the Authorization header. Set this to
+  # "Bearer" behind a proxy that expects an auth scheme -- just the scheme name,
+  # the separating space is added by the client.
+  api-key-prefix: ${DOCUMENSO_API_KEY_PREFIX:}
+  request-timeout-ms: 30000
+  # Whether Documenso emails the signer itself, or the bot sends its own mail
+  # using the returned signUrl.
+  send-email: true
+  webhook:
+    # The signature callback is unauthenticated by necessity, so this shared
+    # secret is its only access control. Blank means the endpoint refuses every
+    # delivery rather than trusting one.
+    secret: ${DOCUMENSO_WEBHOOK_SECRET:}
+    secret-header: X-Documenso-Secret
+  # Where the signer signs. Documenso refuses to send a document whose signer has
+  # no signature field, so one is always placed; NAME and DATE below it make it
+  # read as a signature block rather than a lone widget.
+  #
+  # All positions are percentages of the page -- the unit Documenso's field API
+  # uses. Defaults sit low on the LAST page, under the templates' own
+  # "Signed for and on behalf of" line. Tune them for different wording, or drag
+  # the fields in Documenso's editor.
+  signature-field:
+    # 0 = the document's last page, resolved by counting pages in the generated
+    # PDF. A positive number pins a specific page instead.
+    page: 0
+    x: 8
+    y: 62
+    width: 34
+    height: 10
+    include-name-and-date: true
+    row-gap: 2
+    row-height: 6

@@ -55,3 +55,35 @@ app:
   jwt:
     # Generate with: openssl rand -hex 32
     access-secret: replace-me-with-a-long-random-secret
+
+# --- Contract generation (Contract Generation Bot) ---
+# application.yml already carries working defaults, so this block is only needed
+# where LibreOffice is somewhere unusual, or not installed at all.
+#
+# contract:
+#   libreoffice:
+#     # Windows:
+#     path: "C:/Program Files/LibreOffice/program/soffice.exe"
+#     # macOS:
+#     # path: /Applications/LibreOffice.app/Contents/MacOS/soffice
+#     # No LibreOffice on this machine? Contracts then generate as DOCX only and
+#     # cannot be sent for signature.
+#     # enabled: false
+#   storage:
+#     root: ./var/contracts
+
+# --- Documenso e-signature ---
+# Leave unset to develop without it: send-for-signature returns 503 and the
+# signature callback refuses every delivery, rather than either failing obscurely.
+#
+# The webhook secret is the only thing protecting POST /api/contracts/sign-callback,
+# which is necessarily unauthenticated. Generate one with: openssl rand -hex 32
+#
+# documenso:
+#   base-url: https://app.documenso.com
+#   api-key: your-documenso-api-key
+#   # Documenso v1 takes the raw key. Set to "Bearer" behind a proxy that wants
+#   # an auth scheme -- scheme name only, the client adds the space.
+#   api-key-prefix: ""
+#   webhook:
+#     secret: replace-me-with-a-long-random-secret

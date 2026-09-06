@@ -46,18 +46,22 @@ public class EmailLeadParser {
         String notes = buildNotes(subject, body);
         return new LeadRequest(
                 fullName,
-                null,
-                null,
-                null,
+                null,           // company
+                null,           // industry
+                null,           // employeeCount
                 email,
-                null,
-                null,
-                null,
-                "Email",
-                "EMAIL_PARSING",
+                null,           // phone
+                null,           // product
+                null,           // estimatedDealValue
+                // Neither scoring factor can be read out of an inbound email;
+                // the rep fills them in when they qualify the lead.
+                null,           // productQuantity
+                null,           // purchaseTimeline
+                "Email",        // sourceChannel
+                "EMAIL_PARSING",// captureMethod
                 notes,
-                null,
-                null
+                null,           // status
+                null            // assignedToId
         );
     }
 
