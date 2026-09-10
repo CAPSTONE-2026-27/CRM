@@ -278,13 +278,18 @@ class TestGeneratedDataset:
         with TRAIN_JSONL.open(encoding="utf-8") as handle:
             return [json.loads(line) for line in handle]
 
-    def test_every_row_has_the_training_fields(self, rows):
+    def test_every_row_is_conversational(self, rows):
+        # The trainer consumes `messages`, not instruction/input/output — that
+        # is what lets the tokenizer's chat template apply and assistant_only_
+        # loss mask the prompt. A row missing it trains on nothing.
         for row in rows:
-            assert row["instruction"] and row["input"] and row["output"]
+            messages = row["messages"]
+            assert [m["role"] for m in messages] == ["system", "user", "assistant"]
+            assert all(m["content"].strip() for m in messages)
 
     def test_every_target_is_a_complete_valid_state(self, rows):
         for row in rows:
-            state = json.loads(row["output"])
+            state = json.loads(row["messages"][2]["content"])
             assert list(state) == fmt.FIELD_ORDER
             coerced, repairs = fmt.coerce_state(state)
             assert repairs == [], f"generator emitted a value needing repair: {repairs}"
@@ -293,20 +298,20 @@ class TestGeneratedDataset:
         from generate_dataset import _lead_score
 
         for row in rows:
-            state = json.loads(row["output"])
+            state = json.loads(row["messages"][2]["content"])
             assert _lead_score(state) == state["lead_score"]
 
     def test_engagement_score_is_derivable_from_the_state(self, rows):
         from generate_dataset import _engagement_score
 
         for row in rows:
-            state = json.loads(row["output"])
+            state = json.loads(row["messages"][2]["content"])
             assert _engagement_score(state) == state["engagement_score"]
 
     def test_total_meetings_always_increments_by_one(self, rows):
         for row in rows:
-            previous = fmt.extract_state(row["input"])
-            state = json.loads(row["output"])
+            previous = fmt.extract_state(row["messages"][1]["content"])
+            state = json.loads(row["messages"][2]["content"])
             assert state["total_meetings"] == previous["total_meetings"] + 1
 
     def test_most_fields_stay_put_in_a_given_meeting(self, rows):
@@ -317,8 +322,8 @@ class TestGeneratedDataset:
         """
         unchanged = 0
         for row in rows:
-            previous = fmt.extract_state(row["input"])
-            state = json.loads(row["output"])
+            previous = fmt.extract_state(row["messages"][1]["content"])
+            state = json.loads(row["messages"][2]["content"])
             unchanged += sum(
                 1 for f in fmt.FIELD_ORDER
                 if f != "total_meetings" and previous[f] == state[f]
@@ -335,6 +340,6 @@ class TestGeneratedDataset:
         # It is the one field with memory; a jump would mean trust appearing
         # from nowhere.
         for row in rows:
-            previous = fmt.extract_state(row["input"])
-            state = json.loads(row["output"])
+            previous = fmt.extract_state(row["messages"][1]["content"])
+            state = json.loads(row["messages"][2]["content"])
             assert abs(state["relationship_strength"] - previous["relationship_strength"]) <= 1

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { colors } from "../tokens";
 import { useAuth } from "../lib/auth";
 import { SERVER_ORIGIN } from "../lib/apiClient";
-import { BrandLockup, BrandMark, Spinner } from "../components/crm/BrandLogo";
+import { BrandLockup, Spinner } from "../components/crm/BrandLogo";
 
 function GoogleIcon() {
   return (
@@ -146,17 +146,10 @@ export function AuthScreen() {
       style={{
         minHeight: "100vh",
         width: "100%",
-        display: "grid",
-        // Brand panel sits alongside the form on desktop and is dropped
-        // entirely below 900px, where it would only push the form off-screen.
-        gridTemplateColumns: "minmax(0, 1fr)",
         background: colors.bgPrimary,
         fontFamily: "Inter, system-ui, sans-serif",
       }}
-      className="auth-shell"
     >
-      <BrandPanel />
-
       <div
         style={{
           display: "flex",
@@ -171,8 +164,7 @@ export function AuthScreen() {
           className="brand-anim-fade-up"
           style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 16 }}
         >
-          {/* Shown here only on narrow screens, where the brand panel is hidden. */}
-          <div className="auth-compact-brand" style={{ marginBottom: 4 }}>
+          <div style={{ marginBottom: 4 }}>
             <BrandLockup size={34} />
           </div>
 
@@ -242,112 +234,6 @@ export function AuthScreen() {
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-/** Left-hand brand panel: product framing next to the form, hidden on narrow
- *  screens so the form keeps the full width. */
-function BrandPanel() {
-  const highlights = [
-    { title: "AI lead scoring", body: "Every lead scored and ranked the moment it lands." },
-    { title: "Automation that runs itself", body: "Bots enrich records, route cases and chase follow-ups." },
-    { title: "One view of the pipeline", body: "Accounts, deals, cases and campaigns in a single workspace." },
-  ];
-
-  return (
-    <div
-      className="auth-brand-panel"
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        background: `linear-gradient(150deg, ${colors.primaryDark} 0%, ${colors.primary} 55%, #2C7BC4 100%)`,
-        padding: "48px 44px",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        minHeight: "100vh",
-      }}
-    >
-      {/* Decorative drifting orbs — aria-hidden, purely atmospheric. */}
-      <div
-        aria-hidden="true"
-        className="brand-anim-drift"
-        style={{
-          position: "absolute",
-          top: -90,
-          right: -70,
-          width: 320,
-          height: 320,
-          borderRadius: "50%",
-          background: "rgba(255,255,255,0.09)",
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="brand-anim-drift"
-        style={{
-          position: "absolute",
-          bottom: -120,
-          left: -60,
-          width: 280,
-          height: 280,
-          borderRadius: "50%",
-          background: "rgba(255,255,255,0.07)",
-          animationDelay: "3s",
-        }}
-      />
-
-      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
-        <BrandMark size={34} animated />
-        <span style={{ fontSize: 19, fontWeight: 600, color: "#FFFFFF", letterSpacing: -0.2 }}>TechCRM</span>
-      </div>
-
-      <div style={{ position: "relative", maxWidth: 420 }}>
-        <h2
-          className="brand-anim-fade-up"
-          style={{ fontSize: 30, lineHeight: 1.25, fontWeight: 600, color: "#FFFFFF", margin: "0 0 14px", letterSpacing: -0.6 }}
-        >
-          The CRM that scores, routes and follows up for you.
-        </h2>
-        <p
-          className="brand-anim-fade-up"
-          style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.82)", margin: 0, animationDelay: "0.1s" }}
-        >
-          Capture leads from any channel, let the model rank them, and keep the
-          pipeline moving without the manual admin.
-        </p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 32 }}>
-          {highlights.map((item, i) => (
-            <div
-              key={item.title}
-              className="brand-anim-fade-up"
-              style={{ display: "flex", gap: 12, animationDelay: `${0.2 + i * 0.1}s` }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  marginTop: 6,
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.9)",
-                  flexShrink: 0,
-                }}
-              />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#FFFFFF" }}>{item.title}</div>
-                <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>{item.body}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ position: "relative", fontSize: 11.5, color: "rgba(255,255,255,0.6)" }}>
-        © {new Date().getFullYear()} TechCRM
       </div>
     </div>
   );

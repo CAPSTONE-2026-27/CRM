@@ -6,6 +6,7 @@ import com.techcrm.crm.user.dto.ResetPasswordResponse;
 import com.techcrm.crm.user.dto.UserRequest;
 import com.techcrm.crm.user.dto.UserResponse;
 import com.techcrm.crm.user.dto.UserStatusRequest;
+import com.techcrm.crm.user.dto.SelfUpdateRequest;
 import com.techcrm.crm.user.dto.UserUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -45,6 +46,24 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> create(@AuthenticationPrincipal AuthenticatedUser caller, @Valid @RequestBody UserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(caller, request));
+    }
+
+    /**
+     * The signed-in user editing their own profile.
+     *
+     * Declared before /{id} for readability; Spring prefers the literal path
+     * over the pattern regardless. Without this route "me" was being bound to
+     * the Long id below and every save from the Profile screen failed with a
+     * type-mismatch — silently, from the user's point of view.
+     *
+     * No @PreAuthorize beyond authentication: /{id} is ADMIN-only because it can
+     * change anyone's role, whereas this changes only the caller's own
+     * non-privileged fields.
+     */
+    @PatchMapping("/me")
+    public UserResponse updateSelf(@AuthenticationPrincipal AuthenticatedUser caller,
+                                   @Valid @RequestBody SelfUpdateRequest request) {
+        return userService.updateSelf(caller, request);
     }
 
     @PatchMapping("/{id}")

@@ -247,7 +247,7 @@ public class AuthService {
                 user.getEmail(),
                 user.getRole().name(),
                 user.getPermissions(),
-                null,
+                user.getAvatarUrl(),
                 "LOCAL",
                 true,
                 user.getPhone(),

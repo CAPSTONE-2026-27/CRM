@@ -6,7 +6,7 @@ import { useAnalyzeMeeting, useLeadMeetings, useSaveMeeting } from "../../lib/qu
 import type { Lead, MeetingAnalysis } from "../../lib/types";
 
 /*
- * Lead Output module — records the outcome of a customer meeting.
+ * Meeting module — records the outcome of a customer meeting.
  *
  * Two phases: the rep fills in the meeting details and generates an AI summary
  * plus a re-evaluated score (nothing is persisted yet), reviews and optionally
@@ -152,7 +152,7 @@ export function LeadOutputModal({ lead, onClose }: { lead: Lead; onClose: () => 
         onClick={(e) => e.stopPropagation()}
         style={{ background: "#FFFFFF", borderRadius: 8, width: "min(620px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: 20 }}
       >
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>Lead output</div>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>Meeting</div>
         <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 16 }}>
           Record what happened in the meeting — the AI re-scores the lead from your notes.
         </div>
@@ -191,15 +191,6 @@ export function LeadOutputModal({ lead, onClose }: { lead: Lead; onClose: () => 
           placeholder="Capture everything discussed — customer requirements, questions asked, objections, budget, timeline, level of interest, competitors mentioned, next steps, and the overall outcome."
           style={{ ...textareaStyle, minHeight: 150 }}
         />
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <Button
-            label={analyze.isPending ? "Generating summary…" : analysis ? "Regenerate summary" : "Generate summary"}
-            variant="primary"
-            onClick={handleGenerate}
-            disabled={busy}
-          />
-        </div>
 
         {analyze.isPending && (
           <div style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center", padding: "12px 0" }}>
@@ -318,8 +309,22 @@ export function LeadOutputModal({ lead, onClose }: { lead: Lead; onClose: () => 
           </>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginTop: 16,
+          }}
+        >
           <Button label="Cancel" onClick={onClose} disabled={busy} />
+          <Button
+            label={analyze.isPending ? "Generating summary…" : analysis ? "Regenerate summary" : "Generate summary"}
+            onClick={handleGenerate}
+            disabled={busy}
+          />
           <Button
             label={saveMeeting.isPending ? "Saving…" : "Save meeting record"}
             variant="primary"

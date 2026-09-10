@@ -52,6 +52,24 @@ public class Lead {
     @Column(name = "purchase_timeline", length = 30)
     private String purchaseTimeline;
 
+    /* ---- Qualification-meeting context (see V18) ---------------------------
+     * Carried on the lead so a meeting reading has the same business context a
+     * sales director would have. All nullable: existing leads predate them, and
+     * a lead is still worth working without them. */
+
+    @Column(name = "company_location", length = 150)
+    private String companyLocation;
+
+    /** New Business / Existing Customer / Renewal / Upsell / Partner.
+     *  Constrained by leads_customer_type_allowed. */
+    @Column(name = "customer_type", length = 30)
+    private String customerType;
+
+    /** The band of the most recent meeting score — High/Medium/Low/Very Low
+     *  Priority. Written only by LeadScoreService, never from a request. */
+    @Column(name = "lead_priority", length = 20)
+    private String leadPriority;
+
     @Column(name = "source_channel")
     private String sourceChannel;
 

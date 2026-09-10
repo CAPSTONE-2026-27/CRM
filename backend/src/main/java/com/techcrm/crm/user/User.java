@@ -39,7 +39,10 @@ public class User {
     @Column(name = "provider_account_id")
     private String providerAccountId;
 
-    @Column(name = "avatar_url", length = 500)
+    /** Either a short OAuth provider URL or a base64 data URI uploaded from the
+     *  profile screen, so the column is TEXT (V21). The upload size is bounded
+     *  in {@code SelfUpdateRequest}, not here. */
+    @Column(name = "avatar_url", columnDefinition = "text")
     private String avatarUrl;
 
     @Column(name = "email_verified", nullable = false)

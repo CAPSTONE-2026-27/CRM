@@ -45,7 +45,6 @@ import type { Deal, Lead, PurchaseTimeline } from "../lib/types";
 import { PURCHASE_TIMELINES } from "../lib/types";
 import {
   User,
-  Headphones,
   ShieldCheck,
   FileText,
   Mail,
@@ -63,9 +62,7 @@ import {
   Sparkles,
   Shuffle,
   Clock,
-  TrendingUp,
   UserCheck,
-  Megaphone,
 } from "lucide-react";
 
 export type WizardId = "F01" | "F02" | "F03" | "F04" | "F05" | "F06" | "F07" | "F08";
@@ -315,23 +312,15 @@ function F01Review({ botName, trigger, platform }: { botName: string; trigger: n
 }
 
 /* ============ F02 Create User ============ */
-const F02_STEPS = ["User details", "Role & access", "Identity provider", "Review"];
+const F02_STEPS = ["User details", "Access", "Security", "Review"];
 
-const F02_ROLES = [
-  { icon: User, label: "Sales representative", sub: "Leads, pipeline, accounts" },
-  { icon: Headphones, label: "Support agent", sub: "Cases & tickets" },
-  { icon: Megaphone, label: "Marketing", sub: "Marketing & analytics" },
-  { icon: TrendingUp, label: "Manager", sub: "Team oversight" },
-  { icon: ShieldCheck, label: "Admin", sub: "Full system access" },
-];
-const F02_PROVIDERS = [
-  { icon: Cloud, label: "Azure AD", sub: "SSO + SCIM" },
-  { icon: ShieldCheck, label: "Okta", sub: "SSO + MFA" },
-  { icon: User, label: "Local (JWT)", sub: "Password-based" },
-];
-
-const F02_ROLE_VALUES = ["SALES_REP", "SUPPORT_AGENT", "MARKETING", "MANAGER", "ADMIN"] as const;
-const F02_PROVIDER_VALUES = ["AZURE_AD", "OKTA", "LOCAL"] as const;
+/** Role is no longer chosen here — the wizard sets per-screen access instead.
+ *  UserRequest still requires one (it drives backend authorization: lead
+ *  scoping for reps, assignment rights for managers), so every account starts
+ *  at the least-privileged role and an admin can raise it from Security &
+ *  audit, which is the only screen that edits roles now. */
+const F02_DEFAULT_ROLE = "SALES_REP" as const;
+const F02_DEFAULT_ROLE_LABEL = "Sales representative";
 
 type F02Form = {
   fullName: string;
@@ -348,11 +337,9 @@ function genTempPassword(): string {
 
 function F02({ onCancel }: { onCancel: () => void }) {
   const [step, setStep] = useState(0);
-  const [role, setRole] = useState(0);
-  const [idp, setIdp] = useState(0);
   const [mfa, setMfa] = useState(true);
-  // Seeded from the role's defaults; the admin can toggle individual screens.
-  const [permissions, setPermissions] = useState<string[]>(ROLE_DEFAULT_PERMISSIONS[F02_ROLE_VALUES[0]]);
+  // Seeded from the default role; the admin toggles individual screens from there.
+  const [permissions, setPermissions] = useState<string[]>(ROLE_DEFAULT_PERMISSIONS[F02_DEFAULT_ROLE]);
   const [form, setForm] = useState<F02Form>({
     fullName: "",
     email: "",
@@ -364,11 +351,6 @@ function F02({ onCancel }: { onCancel: () => void }) {
   const set = <K extends keyof F02Form>(key: K) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
   const createUser = useCreateUser();
 
-  // Picking a role re-seeds the permission toggles to that role's defaults.
-  const selectRole = (i: number) => {
-    setRole(i);
-    setPermissions(ROLE_DEFAULT_PERMISSIONS[F02_ROLE_VALUES[i]]);
-  };
   const togglePermission = (key: string) =>
     setPermissions((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
 
@@ -396,13 +378,12 @@ function F02({ onCancel }: { onCancel: () => void }) {
         jobTitle: form.jobTitle || undefined,
         phone: form.phone || undefined,
         department: form.department,
-        role: F02_ROLE_VALUES[role],
+        role: F02_DEFAULT_ROLE,
         permissions,
-        identityProvider: F02_PROVIDER_VALUES[idp],
         mfaEnabled: mfa,
       });
       toast.success("User created successfully", {
-        description: `${form.fullName} (${F02_ROLES[role].label}) can now log in with email "${form.email}" and password "${form.password}". Share this with them — they should change it after first login.`,
+        description: `${form.fullName} can now log in with email "${form.email}" and password "${form.password}". Share this with them — they should change it after first login.`,
       });
       onCancel();
     } catch (err) {
@@ -421,9 +402,9 @@ function F02({ onCancel }: { onCancel: () => void }) {
       <Stepper steps={F02_STEPS} current={step} />
 
       {step === 0 && <F02Details form={form} set={set} />}
-      {step === 1 && <F02Role role={role} setRole={selectRole} permissions={permissions} togglePermission={togglePermission} />}
-      {step === 2 && <F02Identity idp={idp} setIdp={setIdp} mfa={mfa} setMfa={setMfa} />}
-      {step === 3 && <F02Review form={form} role={role} idp={idp} mfa={mfa} permissions={permissions} />}
+      {step === 1 && <F02Role permissions={permissions} togglePermission={togglePermission} />}
+      {step === 2 && <F02Identity mfa={mfa} setMfa={setMfa} />}
+      {step === 3 && <F02Review form={form} mfa={mfa} permissions={permissions} />}
 
       <F03Footer
         onCancel={onCancel}
@@ -442,7 +423,7 @@ function F02Details({ form, set }: { form: F02Form; set: <K extends keyof F02For
   return (
     <Card title="User details">
       <Stack>
-        <AIInsightBox text="AI will suggest a role and default permissions in the next step based on the department you choose." />
+        <AIInsightBox text="AI will suggest default screen permissions in the next step based on the department you choose." />
         <FieldGrid>
           <Field label="Full name" value={form.fullName} onChange={set("fullName")} placeholder="e.g. Alex Morgan" />
           <Field label="Work email" value={form.email} onChange={set("email")} placeholder="alex.morgan@example.com" />
@@ -459,70 +440,43 @@ function F02Details({ form, set }: { form: F02Form; set: <K extends keyof F02For
   );
 }
 
-/* ---- F02 step 2: Role & access ---- */
+/* ---- F02 step 2: Access ---- */
 function F02Role({
-  role,
-  setRole,
   permissions,
   togglePermission,
 }: {
-  role: number;
-  setRole: (i: number) => void;
   permissions: string[];
   togglePermission: (key: string) => void;
 }) {
-  const isAdmin = F02_ROLE_VALUES[role] === "ADMIN";
   return (
-    <Card title="Role & access">
+    <Card title="Access">
       <Stack>
-        <RPAInsightBox text="Pick a role to seed sensible defaults, then toggle exactly which screens this user can access." />
-        <div>
-          <SubLabel>Role</SubLabel>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {F02_ROLES.map((r, i) => (
-              <OptionCard key={r.label} icon={r.icon} label={r.label} sub={r.sub} selected={role === i} onClick={() => setRole(i)} />
-            ))}
-          </div>
-        </div>
+        <RPAInsightBox text="Toggle exactly which screens this user can access. The list starts from a standard set — turn on only what they need." />
         <div>
           <SubLabel>Screen access</SubLabel>
-          {isAdmin ? (
-            <div style={{ fontSize: 12, color: colors.textSecondary, padding: "8px 0" }}>
-              Admins always have full access to every screen — individual toggles don't apply.
-            </div>
-          ) : (
-            PERMISSION_CATALOG.map((p) => (
-              <ToggleRow
-                key={p.key}
-                label={p.label}
-                on={permissions.includes(p.key)}
-                onChange={() => togglePermission(p.key)}
-              />
-            ))
-          )}
+          {PERMISSION_CATALOG.map((p) => (
+            <ToggleRow
+              key={p.key}
+              label={p.label}
+              on={permissions.includes(p.key)}
+              onChange={() => togglePermission(p.key)}
+            />
+          ))}
         </div>
       </Stack>
     </Card>
   );
 }
 
-/* ---- F02 step 3: Identity provider ---- */
-function F02Identity({ idp, setIdp, mfa, setMfa }: { idp: number; setIdp: (i: number) => void; mfa: boolean; setMfa: (v: boolean) => void }) {
+/* ---- F02 step 3: Security ---- */
+function F02Identity({ mfa, setMfa }: { mfa: boolean; setMfa: (v: boolean) => void }) {
   const [extra, setExtra] = useState([true, false]);
   return (
-    <Card title="Identity provider">
+    <Card title="Security">
       <Stack>
-        <RPAInsightBox text="Choose how this user authenticates. SSO providers enforce your organization's security policies automatically." />
+        <RPAInsightBox text="Set how this user signs in. They authenticate with the temporary password from step 1 and can change it after first login." />
         <div>
-          <SubLabel>Provider</SubLabel>
-          <div style={{ display: "flex", gap: 10 }}>
-            {F02_PROVIDERS.map((p, i) => (
-              <OptionCard key={p.label} icon={p.icon} label={p.label} sub={p.sub} selected={idp === i} onClick={() => setIdp(i)} />
-            ))}
-          </div>
-        </div>
-        <div>
-          <SubLabel>Security</SubLabel>
+          <SubLabel>Sign-in requirements</SubLabel>
           <ToggleRow label="Enforce multi-factor authentication (MFA)" on={mfa} onChange={() => setMfa(!mfa)} />
           <ToggleRow label="Single sign-on (SSO)" on={extra[0]} onChange={() => setExtra((t) => [!t[0], t[1]])} />
           <ToggleRow label="LDAP / Active Directory sync" on={extra[1]} onChange={() => setExtra((t) => [t[0], !t[1]])} />
@@ -537,18 +491,16 @@ function F02Identity({ idp, setIdp, mfa, setMfa }: { idp: number; setIdp: (i: nu
 }
 
 /* ---- F02 step 4: Review ---- */
-function F02Review({ form, role, idp, mfa, permissions }: { form: F02Form; role: number; idp: number; mfa: boolean; permissions: string[] }) {
-  const isAdmin = F02_ROLE_VALUES[role] === "ADMIN";
-  const accessSummary = isAdmin
-    ? "Full access (Admin)"
-    : PERMISSION_CATALOG.filter((p) => permissions.includes(p.key)).map((p) => p.label).join(", ") || "No screens — dashboard only";
+function F02Review({ form, mfa, permissions }: { form: F02Form; mfa: boolean; permissions: string[] }) {
+  const accessSummary =
+    PERMISSION_CATALOG.filter((p) => permissions.includes(p.key)).map((p) => p.label).join(", ") ||
+    "No screens — dashboard only";
   const summary = [
     { label: "Full name", value: form.fullName || "—" },
     { label: "Work email", value: form.email || "—" },
     { label: "Department", value: form.department },
-    { label: "Role", value: F02_ROLES[role].label },
+    { label: "Role", value: `${F02_DEFAULT_ROLE_LABEL} (default — change in Security & audit)` },
     { label: "Screen access", value: accessSummary },
-    { label: "Identity provider", value: F02_PROVIDERS[idp].label },
     { label: "MFA", value: mfa ? "Enforced" : "Not enforced" },
     { label: "Temporary password", value: form.password },
   ];

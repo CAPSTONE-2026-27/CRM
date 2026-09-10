@@ -16,17 +16,28 @@ public record LeadSearchCriteria(
         String sourceChannel,
         String industry,
         OffsetDateTime createdFrom,
-        OffsetDateTime createdTo
+        OffsetDateTime createdTo,
+        // Per-column filters from the lead list header row.
+        String product,
+        String qualificationStatus,
+        String contactStatus,
+        Integer scoreMin,
+        Integer scoreMax,
+        Boolean unassigned
 ) {
     public static LeadSearchCriteria of(
             String q, String fullName, String company, String email, String phone,
             String status, Long assignedToId, String sourceChannel, String industry,
-            OffsetDateTime createdFrom, OffsetDateTime createdTo
+            OffsetDateTime createdFrom, OffsetDateTime createdTo,
+            String product, String qualificationStatus, String contactStatus,
+            Integer scoreMin, Integer scoreMax, Boolean unassigned
     ) {
         return new LeadSearchCriteria(
                 normalize(q), normalize(fullName), normalize(company), normalize(email), normalize(phone),
                 normalize(status), assignedToId, normalize(sourceChannel), normalize(industry),
-                createdFrom, createdTo
+                createdFrom, createdTo,
+                normalize(product), normalize(qualificationStatus), normalize(contactStatus),
+                scoreMin, scoreMax, unassigned
         );
     }
 

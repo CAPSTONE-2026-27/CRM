@@ -68,15 +68,15 @@ def client(monkeypatch):
     """A server whose weights are 'loaded' but whose generation is stubbed."""
     calls = {}
 
-    def fake_generate(prompt, *, use_adapter, max_new_tokens, temperature):
+    def fake_generate(prompt, *, adapter, max_new_tokens, temperature):
         calls.update(
-            prompt=prompt, use_adapter=use_adapter, max_new_tokens=max_new_tokens,
+            prompt=prompt, adapter=adapter, max_new_tokens=max_new_tokens,
             temperature=temperature,
         )
-        return FINE_TUNE_OUTPUT if use_adapter else "The base model's answer."
+        return FINE_TUNE_OUTPUT if adapter == main.LEAD_SCORING_ADAPTER else "The base model's answer."
 
-    def fake_stream(prompt, *, use_adapter, max_new_tokens, temperature):
-        calls.update(prompt=prompt, use_adapter=use_adapter, streamed=True)
+    def fake_stream(prompt, *, adapter, max_new_tokens, temperature):
+        calls.update(prompt=prompt, adapter=adapter, streamed=True)
         yield from ["Focus ", "on ", "the ", "renewal."]
 
     monkeypatch.setattr(main, "model", object())
@@ -127,7 +127,10 @@ class TestBlockingResponseShape:
 class TestRouting:
     def test_lead_scoring_enables_the_adapter(self, client):
         _chat(client, LEAD_SYSTEM_PROMPT, LEAD_USER_MESSAGE)
-        assert client.calls["use_adapter"] is True
+        # Routed to the lead-scoring adapter by name, not merely "adapter on" —
+        # there are two adapters now and picking the wrong one would still
+        # produce a confident, well-formed, wrong answer.
+        assert client.calls["adapter"] == main.LEAD_SCORING_ADAPTER
         # Built from the trained prompt, not passed through from the CRM.
         assert "Employees Count: 474" in client.calls["prompt"]
         assert "You are an AI CRM Lead Management Assistant" in client.calls["prompt"]
@@ -142,7 +145,49 @@ class TestRouting:
     )
     def test_other_modules_bypass_the_adapter(self, client, system):
         _chat(client, system, "notes")
-        assert client.calls["use_adapter"] is False
+        assert client.calls["adapter"] is None
+
+    def test_meeting_extraction_routes_to_its_own_adapter(self, client, monkeypatch):
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "You are a CRM Lead Qualification Analyst.", "meeting notes here")
+        assert client.calls["adapter"] == main.MEETING_ADAPTER
+
+    def test_meeting_extraction_falls_back_to_base_when_untrained(self, client, monkeypatch):
+        # A fresh clone has no meeting adapter. Extraction must still answer --
+        # badly, and loudly -- rather than 500, so lead scoring is not taken
+        # down by a model that was never trained.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", False)
+        response = _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
+        assert response.status_code == 200
+        assert client.calls["adapter"] is None
+
+    def test_meeting_extraction_uses_its_own_prompt_not_the_lead_scorer(self, client, monkeypatch):
+        # The adapter was trained against meeting_prompt_format.SYSTEM_PROMPT.
+        # Rendering the request's own system text instead would infer on a
+        # different prompt than training used.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "You are a CRM Lead Qualification Analyst.", "the meeting notes")
+        prompt = client.calls["prompt"]
+        assert "extract five business signals" in prompt
+        assert "the meeting notes" in prompt
+
+    def test_meeting_extraction_decodes_greedily(self, client, monkeypatch):
+        # Five values from closed vocabularies: sampling buys nothing and costs
+        # the determinism the score audit trail depends on.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
+        assert client.calls["temperature"] == 0.0
+
+    def test_lead_scoring_and_extraction_do_not_collide(self, client, monkeypatch):
+        # Both markers are matched against the same system text. If either
+        # prompt were ever reworded to contain the other's marker, one task
+        # would silently answer with the other's adapter.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        assert main.is_lead_scoring(LEAD_SYSTEM_PROMPT)
+        assert not main.is_meeting_extraction(LEAD_SYSTEM_PROMPT)
+        analyst = "You are a CRM Lead Qualification Analyst."
+        assert main.is_meeting_extraction(analyst)
+        assert not main.is_lead_scoring(analyst)
 
     def test_json_tasks_decode_greedily(self, client):
         _chat(client, "Respond with ONLY strict JSON, no prose.", "extract this")

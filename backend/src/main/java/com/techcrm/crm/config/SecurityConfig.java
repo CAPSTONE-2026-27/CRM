@@ -3,6 +3,8 @@ package com.techcrm.crm.config;
 import com.techcrm.crm.auth.JwtAuthenticationFilter;
 import com.techcrm.crm.auth.JwtService;
 import com.techcrm.crm.auth.OAuth2SuccessHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +14,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -20,6 +24,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     private final JwtService jwtService;
 
@@ -83,8 +89,22 @@ public class SecurityConfig {
                         .successHandler(oAuth2SuccessHandler)
                         // A provider-side failure returns the user to the app with
                         // a flag rather than dumping a Spring error page on them.
-                        .failureHandler((request, response, exception) ->
-                                response.sendRedirect(frontendUrl + "/?oauth_error=1")))
+                        //
+                        // The redirect deliberately carries no detail — an OAuth
+                        // error can name accounts and tenants, and that belongs in
+                        // the server log rather than a URL the user can screenshot.
+                        // But it does have to reach the log: without this the only
+                        // symptom is "?oauth_error=1" and the cause is gone.
+                        .failureHandler((request, response, exception) -> {
+                            if (exception instanceof OAuth2AuthenticationException oauthEx) {
+                                OAuth2Error error = oauthEx.getError();
+                                log.warn("OAuth2 login failed — code='{}' description='{}' uri='{}'",
+                                        error.getErrorCode(), error.getDescription(), error.getUri(), exception);
+                            } else {
+                                log.warn("OAuth2 login failed: {}", exception.getMessage(), exception);
+                            }
+                            response.sendRedirect(frontendUrl + "/?oauth_error=1");
+                        }))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

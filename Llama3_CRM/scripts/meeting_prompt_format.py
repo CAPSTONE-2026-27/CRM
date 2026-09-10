@@ -1,316 +1,276 @@
 """
 meeting_prompt_format.py
 ========================
-Single source of truth for the meeting re-scoring task: the system prompt, the
-parameter vocabulary, the points policy, and the deterministic reconciliation
-that keeps the model's arithmetic honest.
+Single source of truth for the lead qualification-meeting extraction task:
+vocabulary, prompt, output parsing, and the rule table the backend scores with.
 
-Imported by generate_meeting_dataset.py, train_meeting.py and main.py, so the
-prompt used at generation, training and inference time can never drift apart —
-the same reason prompt_format.py exists for lead scoring.
+Task
+----
+Input : a Sales Executive's qualification meeting notes (free text)
+Output: five business signals, as JSON
 
-The task
---------
-Given a lead's profile, its current score, and the rep's raw meeting notes,
-extract five signals and re-score the lead from them:
+The model NEVER produces a score. It reads the meeting and names five values;
+the Java LeadScoreFluctuationEngine turns those into a meeting score, a priority
+band and the lead's updated score.
 
-    customer_sentiment            Negative | Neutral | Positive
-    buying_intent                 Low | Medium | High
-    decision_maker_involvement    No | Indirect | Yes
-    customer_urgency              Low | Medium | High | Critical
-    product_interest_level        Low | Medium | High | Very High
+That split is the whole design. A model asked for both a reading and a number
+can return a number its own reading does not support, and afterwards nothing can
+say which of the two was wrong. Keeping the arithmetic outside the model means
+any score can be recomputed -- and challenged -- from the stored signals months
+later, and the weights can be retuned without retraining anything.
 
-The vocabulary is not a free choice. It is copied verbatim from
-backend/.../dealflow/DealParameters.java, which the deal-flow XGBoost bundle
-already accepts in strict mode. Sharing it means a signal means the same thing
-whether it was read off a lead meeting or a deal meeting, and it lets
-DealParameters.snap() absorb the model's near-misses without a second mapping.
+Separate from prompt_format.py, which serves the capture-time lead scorer. That
+task and this one share a base model and nothing else: different input, different
+output, different adapter. Importing across them would couple two things that
+must be free to change independently.
 """
 
+import json
 import re
 
-# ============================================================
-# PARAMETER VOCABULARY  (mirrors DealParameters.java)
-# ============================================================
+CONTRACT_VERSION = "1.0.0"
 
-CUSTOMER_SENTIMENT = "customer_sentiment"
-BUYING_INTENT = "buying_intent"
-DECISION_MAKER_INVOLVEMENT = "decision_maker_involvement"
-CUSTOMER_URGENCY = "customer_urgency"
-PRODUCT_INTEREST_LEVEL = "product_interest_level"
+# ============================================================
+# VOCABULARY
+# ============================================================
+# Mirrors the lead_ai_analysis_vocabulary CHECK in V18 and LeadSignals.java.
+# Three copies of one list is not redundancy: the model is the least reliable of
+# the three, and each layer catches a different failure.
 
-ORDERED = [
-    CUSTOMER_SENTIMENT,
-    BUYING_INTENT,
-    DECISION_MAKER_INVOLVEMENT,
-    CUSTOMER_URGENCY,
-    PRODUCT_INTEREST_LEVEL,
+SENTIMENT = ["Positive", "Neutral", "Negative"]
+BUYING_INTENT = ["High", "Medium", "Low"]
+DECISION_MAKER = ["Present", "Indirect", "Absent"]
+URGENCY = ["High", "Medium", "Low"]
+PRODUCT_INTEREST = ["High", "Medium", "Low"]
+
+FIELD_ORDER = [
+    "customer_sentiment",
+    "buying_intent",
+    "decision_maker_involvement",
+    "customer_urgency",
+    "product_interest_level",
 ]
-
-DISPLAY_NAMES = {
-    CUSTOMER_SENTIMENT: "Customer Sentiment",
-    BUYING_INTENT: "Buying Intent",
-    DECISION_MAKER_INVOLVEMENT: "Decision Maker Involvement",
-    CUSTOMER_URGENCY: "Customer Urgency",
-    PRODUCT_INTEREST_LEVEL: "Product Interest Level",
-}
 
 ALLOWED_VALUES = {
-    CUSTOMER_SENTIMENT: ["Negative", "Neutral", "Positive"],
-    BUYING_INTENT: ["Low", "Medium", "High"],
-    DECISION_MAKER_INVOLVEMENT: ["No", "Indirect", "Yes"],
-    CUSTOMER_URGENCY: ["Low", "Medium", "High", "Critical"],
-    PRODUCT_INTEREST_LEVEL: ["Low", "Medium", "High", "Very High"],
+    "customer_sentiment": SENTIMENT,
+    "buying_intent": BUYING_INTENT,
+    "decision_maker_involvement": DECISION_MAKER,
+    "customer_urgency": URGENCY,
+    "product_interest_level": PRODUCT_INTEREST,
+}
+
+# Middle of each scale, never the worst. A missing reading means "the notes did
+# not say", and scoring that as Negative/Absent/Low would punish the lead for
+# the model's failure to parse rather than for anything the customer did.
+DEFAULTS = {
+    "customer_sentiment": "Neutral",
+    "buying_intent": "Medium",
+    "decision_maker_involvement": "Indirect",
+    "customer_urgency": "Medium",
+    "product_interest_level": "Medium",
 }
 
 # ============================================================
-# POINTS POLICY
+# RULE TABLE
 # ============================================================
-# Each parameter contributes 0-20 points and the updated score is their sum, so
-# the scale is 0-100 by construction — the same shape as the lead scorer's five
-# factors. That symmetry is deliberate: a rep reading either score is reading
-# the same kind of number, and reconcile_meeting_output() can verify the
-# arithmetic exactly as reconcile_output() does for lead scoring.
-#
-# Spacing follows DealParameters.NUMERIC_ENCODING's calibration rather than
-# being uniform. Note in particular that Negative sentiment scores 0, not a
-# proportional 2: a customer who was actively negative in a meeting is a much
-# stronger signal than a neutral one is a weak one, which is exactly the
-# asymmetry that encoding table records.
-#
-# THIS TABLE IS THE POLICY. It is the one place to tune how a meeting moves a
-# score; everything downstream — dataset, training targets, reconciliation — is
-# derived from it.
-PARAMETER_POINTS = {
-    CUSTOMER_SENTIMENT: {"Negative": 0, "Neutral": 10, "Positive": 20},
-    BUYING_INTENT: {"Low": 0, "Medium": 10, "High": 20},
-    DECISION_MAKER_INVOLVEMENT: {"No": 0, "Indirect": 10, "Yes": 20},
-    CUSTOMER_URGENCY: {"Low": 0, "Medium": 10, "High": 15, "Critical": 20},
-    PRODUCT_INTEREST_LEVEL: {"Low": 0, "Medium": 10, "High": 15, "Very High": 20},
+# Duplicated from LeadScoreFluctuationEngine.java so the generator can compute
+# the ground-truth score for a sampled label set, and so tests can assert the
+# two implementations agree. Java remains the authority at runtime -- nothing
+# in the serving path reads these numbers.
+
+WEIGHTS = {
+    "customer_sentiment": {"Positive": 20, "Neutral": 10, "Negative": 0},
+    "buying_intent": {"High": 30, "Medium": 15, "Low": 5},
+    "decision_maker_involvement": {"Present": 20, "Indirect": 10, "Absent": 0},
+    "customer_urgency": {"High": 15, "Medium": 10, "Low": 5},
+    "product_interest_level": {"High": 15, "Medium": 10, "Low": 5},
 }
 
-MAX_POINTS_PER_PARAMETER = 20
+MAX_POINTS = {"customer_sentiment": 20, "buying_intent": 30,
+              "decision_maker_involvement": 20, "customer_urgency": 15,
+              "product_interest_level": 15}
 
-# Qualification bands, matching the lead scorer's (prompt_format.py) so the two
-# scores are read on one scale. Cutoffs are inclusive upper bounds.
-QUALIFICATION_BY_SCORE = [
-    (32, "Cold", "Low"),
-    (62, "Warm", "Medium"),
-    (100, "Hot", "High"),
-]
-
-# ============================================================
-# QUALIFICATION PROBABILITY
-# ============================================================
-# Deliberately NOT a copy of the score. The score answers "how warm is this
-# lead"; the probability answers "how likely is pursuing it to be worth a rep's
-# time", and those differ. A lead can be enthusiastic (high sentiment and
-# interest) while having nobody who can sign — pleasant, and unlikely to close.
-#
-# So the probability is weighted toward the three parameters that predict
-# closing rather than enthusiasm. The weights sum to 1.0.
-PROBABILITY_WEIGHTS = {
-    DECISION_MAKER_INVOLVEMENT: 0.40,
-    BUYING_INTENT: 0.35,
-    CUSTOMER_URGENCY: 0.25,
-}
+PRIORITY_BANDS = [(85, "High Priority"), (70, "Medium Priority"),
+                  (50, "Low Priority"), (0, "Very Low Priority")]
 
 
-def qualification_probability(parameters: dict) -> int:
-    """0-100 confidence that pursuing this lead is worthwhile."""
-    total = 0.0
-    for name, weight in PROBABILITY_WEIGHTS.items():
-        points = PARAMETER_POINTS[name].get(parameters.get(name), 0)
-        total += weight * (points / MAX_POINTS_PER_PARAMETER)
-    return max(0, min(100, round(total * 100)))
+def meeting_score(signals: dict) -> int:
+    """The 0-100 score a signal set earns. Minimum achievable is 15, not 0."""
+    return sum(WEIGHTS[field].get(signals.get(field), 0) for field in FIELD_ORDER)
 
 
-def score_for(parameters: dict) -> int:
-    """The updated lead score: the five parameters' points, summed."""
-    return max(0, min(100, sum(
-        PARAMETER_POINTS[name].get(parameters.get(name), 0) for name in ORDERED
-    )))
-
-
-def qualification_for(score: int) -> tuple:
-    """(qualification, priority) for a score, from the shared bands."""
-    for cutoff, qualification, priority in QUALIFICATION_BY_SCORE:
-        if score <= cutoff:
-            return qualification, priority
-    return QUALIFICATION_BY_SCORE[-1][1], QUALIFICATION_BY_SCORE[-1][2]
+def priority_for(score: int) -> str:
+    for floor, band in PRIORITY_BANDS:
+        if score >= floor:
+            return band
+    return PRIORITY_BANDS[-1][1]
 
 
 # ============================================================
-# PROMPTS
+# PROMPT
 # ============================================================
 
 INSTRUCTION = (
-    "Analyze the meeting notes below and re-score the lead. Extract the five "
-    "signals, then report the updated Lead Score, Qualification and Summary."
+    "Read the qualification meeting notes and extract the five business signals."
 )
 
 
-def _allowed_values_block() -> str:
-    lines = []
-    for name in ORDERED:
-        values = ALLOWED_VALUES[name]
-        lines.append(f"{DISPLAY_NAMES[name]}: one of [{', '.join(values)}]")
-    return "\n".join(lines)
+def _vocabulary_block() -> str:
+    return "\n".join(
+        f"- {field}: one of [{', '.join(ALLOWED_VALUES[field])}]" for field in FIELD_ORDER
+    )
 
 
 SYSTEM_PROMPT = (
-    "You are an AI CRM Meeting Analysis Assistant.\n\n"
-    "You will be given a lead's profile, its current lead score, and a sales "
-    "representative's raw notes from a customer meeting. Read the notes and "
-    "extract five signals, then re-score the lead from those signals alone.\n\n"
+    "You are a CRM Lead Qualification Analyst.\n\n"
+    "You will be given a sales executive's written notes from a qualification "
+    "meeting with a customer. Read the notes and extract five business signals.\n\n"
+    "You do NOT score the lead. You do not calculate, estimate or mention any "
+    "score, rating or number. You only report what the notes show.\n\n"
     "Rules:\n"
-    "- Base every signal strictly on the meeting notes. Never infer facts that "
-    "are not stated.\n"
-    "- When the notes are silent on a signal, choose the neutral or lowest "
-    "value rather than guessing a favourable one.\n"
-    "- Use ONLY the allowed values listed below.\n\n"
+    "- Base every value strictly on the notes. Never infer facts that are not there.\n"
+    "- The notes will not state these values outright. Read the business meaning: "
+    "how the customer reacted, who attended, what they asked for, how soon they "
+    "need it, how much of the product interested them.\n"
+    "- When the notes are silent on a signal, choose the middle value rather than "
+    "guessing a favourable or unfavourable one.\n"
+    "- Use ONLY the allowed values below. Never use synonyms.\n\n"
     "Allowed values:\n"
-    f"{_allowed_values_block()}\n\n"
-    "Respond ONLY in this exact format. Do not add greetings, markdown, or any "
-    "commentary outside it.\n\n"
-    "Updated Lead Score: <0-100>/100\n\n"
-    "Qualification:\n"
-    "<Hot/Warm/Cold>\n\n"
-    "Priority:\n"
-    "<High/Medium/Low>\n\n"
-    "Summary:\n"
-    "<2-4 sentences describing what happened in the meeting>\n\n"
-    "Signals:\n"
-    "• Customer Sentiment — <value>, contributing <n> points.\n"
-    "• Buying Intent — <value>, contributing <n> points.\n"
-    "• Decision Maker Involvement — <value>, contributing <n> points.\n"
-    "• Customer Urgency — <value>, contributing <n> points.\n"
-    "• Product Interest Level — <value>, contributing <n> points.\n\n"
-    "Qualification Probability: <0-100>\n\n"
-    "Recommended Action:\n"
-    "<one short instruction>"
+    f"{_vocabulary_block()}\n\n"
+    "Guidance on the harder judgements:\n"
+    "- decision_maker_involvement is Present when someone who can approve the "
+    "purchase attended, Indirect when they were represented or consulted but "
+    "absent, Absent when only evaluators or technical staff attended.\n"
+    "- buying_intent is High when the customer asked for a proposal, pricing, "
+    "contract or implementation plan; Medium when they asked for a demo or "
+    "further evaluation; Low when they were gathering information only.\n"
+    "- customer_urgency is High when a date, deadline or compelling event was "
+    "named; Medium when a rough timeframe was given; Low when none was.\n\n"
+    "Respond with ONLY the JSON object below. No prose, no markdown fences, no "
+    "explanation, no score.\n\n"
+    "{\n"
+    '  "customer_sentiment": "",\n'
+    '  "buying_intent": "",\n'
+    '  "decision_maker_involvement": "",\n'
+    '  "customer_urgency": "",\n'
+    '  "product_interest_level": ""\n'
+    "}"
 )
 
 
-def build_user_turn(meeting_input: str) -> str:
-    """Combine the fixed instruction with the meeting block."""
-    return f"{INSTRUCTION}\n\n{meeting_input}"
+def build_messages(meeting_notes: str, target: dict = None) -> list:
+    """The example in conversational form: system / user / (assistant).
+
+    Conversational because TRL's assistant_only_loss -- which masks the prompt so
+    gradient flows only through the completion -- requires it. That masking
+    matters here: the prompt is a 200-word meeting note and the target is five
+    short values, so training on the whole sequence would spend almost all of the
+    signal teaching the model to reproduce the notes it was handed.
+    """
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"{INSTRUCTION}\n\n{meeting_notes.strip()}"},
+    ]
+    if target is not None:
+        messages.append({"role": "assistant", "content": render(target)})
+    return messages
 
 
 def build_llama3_prompt(system: str, user: str, assistant: str = "") -> str:
-    """One example in raw Llama 3.1 Instruct chat format.
+    """Render one turn in the exact format train_meeting.py trained against.
 
-    Identical construction to prompt_format.build_llama3_prompt — duplicated
-    rather than imported so the two tasks' prompt builders stay independently
-    changeable, which is the whole reason they are separate adapters.
+    Must stay byte-identical to what train_meeting.CHAT_TEMPLATE produces for
+    the same messages, which is standard Llama 3.1 Instruct WITHOUT the
+    tokenizer's stock "Cutting Knowledge Date / Today Date" preamble. Rendering
+    through the stock template at inference would feed the adapter a prompt it
+    never saw in training -- and the replies would stay well-formed while
+    quietly getting worse, which is the hardest kind of regression to notice.
+
+    Guarded by tests/test_server.py::test_meeting_extraction_uses_its_own_prompt.
     """
     prompt = (
         "<|begin_of_text|>"
         "<|start_header_id|>system<|end_header_id|>\n\n"
-        f"{system}"
+        f"{system.strip()}"
         "<|eot_id|>"
         "<|start_header_id|>user<|end_header_id|>\n\n"
-        f"{user}"
+        f"{user.strip()}"
         "<|eot_id|>"
         "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        f"{assistant}"
     )
     if assistant:
-        prompt += "<|eot_id|>"
+        prompt += f"{assistant.strip()}<|eot_id|>"
     return prompt
 
 
+def render(signals: dict) -> str:
+    """Serialise in canonical field order, as the model must emit it."""
+    return json.dumps({field: signals[field] for field in FIELD_ORDER}, indent=2)
+
+
 # ============================================================
-# OUTPUT PARSING + RECONCILIATION
+# PARSING
 # ============================================================
 
-SCORE_RE = re.compile(r"Updated Lead Score:\s*(\d+)/100")
-QUALIFICATION_RE = re.compile(r"Qualification:\s*\n\s*(\w+)")
-PRIORITY_RE = re.compile(r"Priority:\s*\n\s*(\w+)")
-SUMMARY_RE = re.compile(r"Summary:\s*\n(.+?)(?:\n\nSignals:|\Z)", re.DOTALL)
-PROBABILITY_RE = re.compile(r"Qualification Probability:\s*(\d+)")
-ACTION_RE = re.compile(r"Recommended Action:\s*\n(.+)", re.DOTALL)
-
-# "• Customer Sentiment — Positive, contributing 20 points."
-SIGNAL_RE = re.compile(
-    r"^•\s*(?P<label>[A-Za-z ]+?)\s*[—–-]\s*(?P<value>[A-Za-z ]+?),\s*"
-    r"contributing\s*(?P<points>\d+)\s*points\.?$",
-    re.MULTILINE,
-)
-
-_LABEL_TO_NAME = {label.lower(): name for name, label in DISPLAY_NAMES.items()}
+def extract(reply: str):
+    """Pull the JSON object out of a model reply, or None if there isn't one."""
+    if not reply:
+        return None
+    start, end = reply.find("{"), reply.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(reply[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
-def parse_signals(output: str) -> dict:
-    """Extract {parameter_name: value} from the Signals block."""
-    found = {}
-    for match in SIGNAL_RE.finditer(output):
-        name = _LABEL_TO_NAME.get(match.group("label").strip().lower())
-        if name is None:
-            continue
-        value = match.group("value").strip()
-        # Snap to the allowed list case-insensitively; an unrecognised value is
-        # dropped rather than trusted, so reconciliation treats it as missing.
-        for allowed in ALLOWED_VALUES[name]:
-            if allowed.lower() == value.lower():
-                found[name] = allowed
-                break
-    return found
+def _normalise(value) -> str:
+    return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
-def reconcile_meeting_output(output: str) -> str:
-    """Recompute every derived number from the signals the model extracted.
+def snap(field: str, raw):
+    """Map what the model said onto an accepted value, or None.
 
-    The model's job is to *read* the meeting — which value each signal takes.
-    The arithmetic that follows (points per signal, their sum, the qualification
-    band, the probability) is a fixed lookup, and letting a language model do
-    arithmetic it does not need to do is how outputs come to contradict
-    themselves. So the values are the model's; every number is recomputed here.
-
-    Returns the output unchanged when fewer than all five signals parse — a
-    malformed reply is left intact for validation to catch rather than being
-    half-corrected into something that looks trustworthy.
+    Exact, then case-insensitive, then containment -- enough to absorb
+    "positive" and "High intent" without pretending "Excellent" is a value the
+    rule table knows how to weigh.
     """
-    signals = parse_signals(output)
-    if len(signals) != len(ORDERED):
-        return output
-
-    score = score_for(signals)
-    qualification, priority = qualification_for(score)
-    probability = qualification_probability(signals)
-
-    output = SCORE_RE.sub(f"Updated Lead Score: {score}/100", output)
-    output = re.sub(r"(Qualification:\n)[^\n]+", rf"\g<1>{qualification}", output)
-    output = re.sub(r"(Priority:\n)[^\n]+", rf"\g<1>{priority}", output)
-    output = PROBABILITY_RE.sub(f"Qualification Probability: {probability}", output)
-
-    # Rewrite each signal bullet with the points its value actually earns.
-    def _fix(match):
-        name = _LABEL_TO_NAME.get(match.group("label").strip().lower())
-        value = signals.get(name)
-        if name is None or value is None:
-            return match.group(0)
-        points = PARAMETER_POINTS[name][value]
-        return f"• {DISPLAY_NAMES[name]} — {value}, contributing {points} points."
-
-    return SIGNAL_RE.sub(_fix, output)
+    allowed = ALLOWED_VALUES.get(field)
+    if allowed is None or raw is None:
+        return None
+    value = _normalise(raw)
+    if not value:
+        return None
+    for candidate in allowed:
+        if _normalise(candidate) == value:
+            return candidate
+    best = None
+    for candidate in allowed:
+        c = _normalise(candidate)
+        if c in value or value in c:
+            if best is None or len(candidate) > len(best):
+                best = candidate
+    return best
 
 
-def build_output(parameters: dict, summary: str, action: str) -> str:
-    """Render a complete, self-consistent training target."""
-    score = score_for(parameters)
-    qualification, priority = qualification_for(score)
-    bullets = "\n".join(
-        f"• {DISPLAY_NAMES[name]} — {parameters[name]}, "
-        f"contributing {PARAMETER_POINTS[name][parameters[name]]} points."
-        for name in ORDERED
-    )
-    return (
-        f"Updated Lead Score: {score}/100\n\n"
-        f"Qualification:\n{qualification}\n\n"
-        f"Priority:\n{priority}\n\n"
-        f"Summary:\n{summary}\n\n"
-        f"Signals:\n{bullets}\n\n"
-        f"Qualification Probability: {qualification_probability(parameters)}\n\n"
-        f"Recommended Action:\n{action}"
-    )
+def coerce(raw: dict):
+    """Force a reply into a complete, scoreable signal set.
+
+    Returns (signals, repairs). `repairs` names every field imputed or snapped --
+    log it. A reading that needed three repairs and one that needed none produce
+    equally confident scores, and only this list tells them apart.
+    """
+    raw = raw or {}
+    signals, repairs = {}, []
+    for field in FIELD_ORDER:
+        value = raw.get(field)
+        snapped = snap(field, value)
+        if snapped is None:
+            snapped = DEFAULTS[field]
+            repairs.append(f"{field}={value!r}->default {snapped!r}")
+        elif _normalise(value) != _normalise(snapped):
+            repairs.append(f"{field}={value!r}->{snapped!r}")
+        signals[field] = snapped
+    return signals, repairs

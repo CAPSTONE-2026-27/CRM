@@ -41,6 +41,36 @@ public final class LeadSpecifications {
         return (root, query, cb) -> cb.equal(cb.lower(root.get("status")), value.toLowerCase());
     }
 
+    public static Specification<Lead> productContains(String value) {
+        return likeField("product", value);
+    }
+
+    public static Specification<Lead> qualificationStatusEquals(String value) {
+        return (root, query, cb) -> cb.equal(cb.upper(root.get("qualificationStatus")), value.toUpperCase());
+    }
+
+    public static Specification<Lead> contactStatusEquals(String value) {
+        return (root, query, cb) -> cb.equal(cb.upper(root.get("contactStatus")), value.toUpperCase());
+    }
+
+    /** A lead with no score at all is not "50 and above" — an unscored lead is
+     *  unknown, not low — so a null aiScore falls outside every bound. */
+    public static Specification<Lead> scoreAtLeast(int min) {
+        return (root, query, cb) -> cb.and(
+                cb.isNotNull(root.get("aiScore")),
+                cb.greaterThanOrEqualTo(root.get("aiScore"), min));
+    }
+
+    public static Specification<Lead> scoreAtMost(int max) {
+        return (root, query, cb) -> cb.and(
+                cb.isNotNull(root.get("aiScore")),
+                cb.lessThanOrEqualTo(root.get("aiScore"), max));
+    }
+
+    public static Specification<Lead> unassigned() {
+        return (root, query, cb) -> cb.isNull(root.get("assignedToId"));
+    }
+
     public static Specification<Lead> sourceChannelEquals(String value) {
         return (root, query, cb) -> cb.equal(cb.lower(root.get("sourceChannel")), value.toLowerCase());
     }

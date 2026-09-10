@@ -31,6 +31,21 @@ def _state(**overrides):
     return state
 
 
+class _FakeTokenizer:
+    """Just enough tokenizer for the request path.
+
+    serve.py renders prompts through the tokenizer's chat template rather than
+    building the string by hand, so a bare object() is no longer sufficient —
+    it must at least answer apply_chat_template. Deliberately NOT the real
+    template: these tests assert routing and coercion, and loading the real
+    tokenizer would make them need the 16GB model directory on disk.
+    """
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+        rendered = "".join(f"<{m['role']}>{m['content']}" for m in messages)
+        return rendered + ("<assistant>" if add_generation_prompt else "")
+
+
 @pytest.fixture
 def client(monkeypatch):
     """A service whose weights are 'loaded' but whose generation is stubbed."""
@@ -41,7 +56,7 @@ def client(monkeypatch):
         return captured.get("reply", json.dumps(captured.get("state", _state())))
 
     monkeypatch.setattr(serve, "model", object())
-    monkeypatch.setattr(serve, "tokenizer", object())
+    monkeypatch.setattr(serve, "tokenizer", _FakeTokenizer())
     monkeypatch.setattr(serve, "adapter_loaded", True)
     monkeypatch.setattr(serve, "_generate", fake_generate)
 
@@ -207,6 +222,23 @@ class TestIsolationFromLeadScoring:
             for banned in ("import prompt_format", "from prompt_format",
                            "import main", "from main import"):
                 assert banned not in source, f"{script.name} imports from Llama3_CRM"
+
+    def test_train_and_serve_install_the_same_chat_template(self):
+        """Both must call fmt.apply_chat_template, and neither may hand-build.
+
+        This is the failure that produced 16 broken tests: serve.py moved from a
+        hand-built prompt to the tokenizer's template, and everything downstream
+        silently assumed the old shape. Worse in production than in tests — the
+        adapter was trained with {% generation %} markers and no date preamble,
+        so inferring through the stock template would infer on a different
+        prompt than training used, degrading output in a way eval_loss never
+        reveals.
+        """
+        for name in ("train.py", "serve.py", "evaluate.py"):
+            source = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+            assert "apply_chat_template(tokenizer)" in source, (
+                f"{name} does not install the project chat template"
+            )
 
     def test_base_model_is_only_ever_read(self):
         # Shared weights on disk: a write from here would corrupt the running

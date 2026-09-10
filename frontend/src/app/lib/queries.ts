@@ -69,6 +69,16 @@ export type LeadSearchParams = {
   sort?: string;
   page?: number;
   size?: number;
+
+  // Per-column filters from the lead list header row. These are applied by the
+  // API against every lead, not against the loaded page — so a filter never
+  // hides matches sitting on page 2.
+  product?: string;
+  qualificationStatus?: string;
+  contactStatus?: string;
+  scoreMin?: number;
+  scoreMax?: number;
+  unassigned?: string;
 };
 
 // Polls only while the CURRENT page has an unscored (e.g. CSV-imported) row,
@@ -135,7 +145,21 @@ export function useBulkDeleteLeads() {
   });
 }
 
-/* ---- Lead Output: post-meeting records ---- */
+/* ---- Qualification: the sales executive's manual verdict ---- */
+
+// The score is the model's, the verdict is the human's. This is the only way
+// qualificationStatus ever changes — re-scoring a lead deliberately leaves it
+// alone. Invalidating ["leads"] refreshes the list, the badge and the stats.
+export function useQualifyLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, qualified, note }: { leadId: string; qualified: boolean; note?: string }) =>
+      api.post<unknown>(`/leads/${leadId}/qualify`, { qualified, note }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
+/* ---- Meeting: post-meeting records ---- */
 
 export type MeetingFormInput = { meetingDate: string; meetingTime: string; meetingOutput: string };
 export type SaveMeetingInput = MeetingFormInput & {

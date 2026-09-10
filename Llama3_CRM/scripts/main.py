@@ -54,7 +54,7 @@ import threading
 import time
 import traceback
 import uuid
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from typing import Iterator, List, Optional
 
@@ -71,6 +71,7 @@ from transformers import (
 from peft import PeftModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import meeting_prompt_format as meeting_fmt  # noqa: E402
 from prompt_format import (  # noqa: E402
     QUALIFICATION_BY_SCORE,
     SYSTEM_PROMPT,
@@ -97,7 +98,26 @@ ADAPTER_PATH = Path(
     os.getenv("CRM_ADAPTER_PATH", PROJECT_ROOT / "outputs" / "lead_management_llama3_lora")
 )
 
+# The qualification-meeting extraction adapter (scripts/train_meeting.py).
+# Separate from the capture-time scorer above: different task, different
+# training data, independently retrainable. Both attach to one base model.
+MEETING_ADAPTER_PATH = Path(
+    os.getenv("CRM_MEETING_ADAPTER_PATH", PROJECT_ROOT / "outputs" / "lead_meeting_llama3_lora")
+)
+
+# PEFT adapter names, used with set_adapter() to switch per request.
+LEAD_SCORING_ADAPTER = "lead_scoring"
+MEETING_ADAPTER = "meeting_extraction"
+
+# Set at load time. Read by the router so a request can fall back to the base
+# model rather than failing when the adapter is absent.
+MEETING_ADAPTER_READY = False
+
 SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
+
+# A 5-field JSON object is ~60 tokens; 200 leaves room for a stray preamble
+# without letting a runaway generation hold the inference lock.
+MEETING_MAX_NEW_TOKENS = int(os.getenv("CRM_MEETING_MAX_NEW_TOKENS", "200"))
 
 # Deal analysis asks for 14 parameters, each with a value, confidence and an
 # explanation — roughly 900 tokens of JSON. Capping lower silently truncates the
@@ -175,11 +195,36 @@ def load_model() -> None:
 
         # Not merged: merging would require dequantising to fp16 first, undoing
         # the memory saving above. Kept attached and toggled per request instead.
-        peft_model = PeftModel.from_pretrained(base_model, str(ADAPTER_PATH))
+        peft_model = PeftModel.from_pretrained(
+            base_model, str(ADAPTER_PATH), adapter_name=LEAD_SCORING_ADAPTER)
+
+        # The second adapter: qualification-meeting extraction. Loaded onto the
+        # same base weights rather than into a second process, because a LoRA is
+        # a few dozen MB of low-rank deltas while the base is ~6.5GB quantised —
+        # two processes would not fit on a 16GB card, two adapters barely
+        # register.
+        #
+        # Optional on purpose. Before this adapter was trained the server had to
+        # keep working, and it still must if someone clones the repo without it:
+        # meeting extraction then falls through to the base model, which does the
+        # task poorly but does not take lead scoring down with it.
+        if (MEETING_ADAPTER_PATH / "adapter_config.json").exists():
+            peft_model.load_adapter(str(MEETING_ADAPTER_PATH), adapter_name=MEETING_ADAPTER)
+            meeting_adapter_loaded = True
+            log.info("Meeting extraction adapter attached.")
+        else:
+            meeting_adapter_loaded = False
+            log.warning(
+                "No meeting adapter at %s — extraction requests will run the "
+                "BASE model and read meetings poorly. Train it with "
+                "scripts/train_meeting.py.", MEETING_ADAPTER_PATH)
+
         peft_model.eval()
         model = peft_model
+        globals()["MEETING_ADAPTER_READY"] = meeting_adapter_loaded
 
-        log.info("Adapter attached. Server ready.")
+        log.info("Adapters attached: lead-scoring%s. Server ready.",
+                 ", meeting-extraction" if meeting_adapter_loaded else "")
     except Exception as exc:  # noqa: BLE001 - startup diagnostics
         _load_error = f"{type(exc).__name__}: {exc}"
         log.error("Model load failed: %s", _load_error)
@@ -198,6 +243,14 @@ def load_model() -> None:
 
 LEAD_SCORING_MARKER = "you are a crm lead-scoring assistant"
 
+# The qualification-meeting extraction prompt, from
+# LeadMeetingExtractionClient.SYSTEM_PROMPT in the Java source and
+# meeting_prompt_format.SYSTEM_PROMPT here — all three must stay identical.
+# Same fragility as the marker above: reword the Java prompt without rewording
+# this and extraction silently falls back to the base model, which produces
+# plausible-looking values it did not read from the notes.
+MEETING_EXTRACTION_MARKER = "you are a crm lead qualification analyst"
+
 # Prompts that demand machine-readable output get greedy decoding: sampling buys
 # nothing when the reply must match a fixed schema, and costs determinism.
 JSON_MARKERS = ("only strict json", "respond with only strict json", "return them as json")
@@ -205,6 +258,10 @@ JSON_MARKERS = ("only strict json", "respond with only strict json", "return the
 
 def is_lead_scoring(system_text: str) -> bool:
     return LEAD_SCORING_MARKER in system_text.lower()
+
+
+def is_meeting_extraction(system_text: str) -> bool:
+    return MEETING_EXTRACTION_MARKER in system_text.lower()
 
 
 def wants_json(system_text: str) -> bool:
@@ -513,16 +570,38 @@ def _generation_kwargs(max_new_tokens: int, temperature: float) -> dict:
     return kwargs
 
 
-def _adapter_context(use_adapter: bool):
-    """Enable the LoRA for the task it was trained on, bypass it otherwise.
+@contextmanager
+def _adapter_context(adapter: Optional[str]):
+    """Select the LoRA for the task, or bypass all of them.
 
-    disable_adapter() mutates the shared module tree, so this is only ever
-    entered while INFERENCE_LOCK is held.
+    Three states now that a second adapter exists: lead scoring, meeting
+    extraction, or base. `adapter=None` means base.
+
+    Both set_adapter() and disable_adapter() mutate the shared module tree, so
+    this is only ever entered while INFERENCE_LOCK is held — two overlapping
+    requests would otherwise leave the wrong adapter active for whichever
+    finished second, and the reply would look entirely plausible.
+
+    The active adapter is restored on exit rather than left where the last
+    request put it, so a failure mid-generation cannot strand the model in
+    another task's weights.
     """
-    return nullcontext() if use_adapter else model.disable_adapter()
+    if adapter is None:
+        with model.disable_adapter():
+            yield
+        return
+
+    previous = getattr(model, "active_adapter", LEAD_SCORING_ADAPTER)
+    model.set_adapter(adapter)
+    try:
+        yield
+    finally:
+        if previous and previous != adapter:
+            model.set_adapter(previous)
 
 
-def generate_text(prompt: str, *, use_adapter: bool, max_new_tokens: int, temperature: float) -> str:
+def generate_text(prompt: str, *, adapter: Optional[str], max_new_tokens: int,
+                  temperature: float) -> str:
     """Blocking generation. Raises on failure so the caller can return HTTP 5xx."""
     start = time.time()
     with INFERENCE_LOCK:
@@ -530,25 +609,20 @@ def generate_text(prompt: str, *, use_adapter: bool, max_new_tokens: int, temper
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
         prompt_len = inputs["input_ids"].shape[-1]
 
-        with _adapter_context(use_adapter), torch.no_grad():
+        with _adapter_context(adapter), torch.no_grad():
             outputs = model.generate(**inputs, **_generation_kwargs(max_new_tokens, temperature))
 
-        # Slice off the prompt by token count rather than string-splitting on
-        # header markers — the latter breaks whenever a reply legitimately
-        # contains one.
         completion = tokenizer.decode(outputs[0][prompt_len:], skip_special_tokens=True)
 
-    log.info(
-        "generate: adapter=%s tokens=%d in %.2fs",
-        "on" if use_adapter else "off",
-        len(outputs[0]) - prompt_len,
-        time.time() - start,
-    )
+    log.info("generate: adapter=%s tokens=%d in %.2fs",
+             adapter or "base", len(outputs[0]) - prompt_len, time.time() - start)
     return completion.strip()
 
 
+
+
 def stream_text(
-    prompt: str, *, use_adapter: bool, max_new_tokens: int, temperature: float
+    prompt: str, *, adapter: Optional[str], max_new_tokens: int, temperature: float
 ) -> Iterator[str]:
     """Yield the reply chunk by chunk as the model produces it."""
     with INFERENCE_LOCK:
@@ -561,7 +635,7 @@ def stream_text(
 
         def run() -> None:
             try:
-                with _adapter_context(use_adapter), torch.no_grad():
+                with _adapter_context(adapter), torch.no_grad():
                     model.generate(
                         **inputs, streamer=streamer, **_generation_kwargs(max_new_tokens, temperature)
                     )
@@ -626,10 +700,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="CRM Local LLM Server", lifespan=lifespan)
 
 
-def _plan(request: ChatCompletionRequest) -> tuple[str, bool, int, float, Optional[tuple]]:
+def _plan(request: ChatCompletionRequest) -> tuple[str, Optional[str], int, float, Optional[tuple]]:
     """Decide how to answer one request.
 
-    Returns (prompt, use_adapter, max_new_tokens, temperature, lead_context),
+    Returns (prompt, adapter, max_new_tokens, temperature, lead_context),
     where lead_context is non-None only for the lead-scoring route and carries
     what the JSON bridge needs afterwards.
     """
@@ -641,8 +715,34 @@ def _plan(request: ChatCompletionRequest) -> tuple[str, bool, int, float, Option
         lead_input, present = build_lead_input(crm_fields)
         prompt = build_llama3_prompt(SYSTEM_PROMPT, build_user_turn(lead_input))
         max_new = request.max_tokens or LEAD_SCORING_MAX_NEW_TOKENS
-        log.info("route=lead-scoring adapter=on factors=%s", present or "none")
-        return prompt, True, max_new, 0.0, (lead_input, present)
+        log.info("route=lead-scoring adapter=%s factors=%s",
+                 LEAD_SCORING_ADAPTER, present or "none")
+        return prompt, LEAD_SCORING_ADAPTER, max_new, 0.0, (lead_input, present)
+
+    if is_meeting_extraction(system_text):
+        # Rendered through the extraction task's own chat template — the same
+        # one train_meeting.py installed, carrying {% generation %} markers and
+        # no date preamble. Rendering through the tokenizer's stock template
+        # instead would infer on a measurably different prompt than the adapter
+        # was trained on, and the replies would stay well-formed while quietly
+        # getting worse.
+        prompt = meeting_fmt.build_llama3_prompt(
+            meeting_fmt.SYSTEM_PROMPT,
+            "\n".join(m.content for m in request.messages if m.role == "user"))
+        max_new = request.max_tokens or MEETING_MAX_NEW_TOKENS
+        # Falls back to the base model when the adapter was never trained, so a
+        # fresh clone still answers rather than 500s. It reads meetings badly —
+        # hence the warning, which is the only signal that would explain a
+        # sudden drop in extraction quality.
+        adapter = MEETING_ADAPTER if MEETING_ADAPTER_READY else None
+        if adapter is None:
+            log.warning("route=meeting-extraction adapter=BASE (untrained) — "
+                        "values will be unreliable")
+        else:
+            log.info("route=meeting-extraction adapter=%s", adapter)
+        # Greedy: the reply is five values from closed vocabularies, so sampling
+        # buys nothing and costs the determinism the audit trail depends on.
+        return prompt, adapter, max_new, 0.0, None
 
     prompt = build_prompt_from_messages(request.messages)
     max_new = request.max_tokens or DEFAULT_MAX_NEW_TOKENS
@@ -651,7 +751,7 @@ def _plan(request: ChatCompletionRequest) -> tuple[str, bool, int, float, Option
     else:
         temperature = 0.0 if wants_json(system_text) else CHAT_TEMPERATURE
     log.info("route=base adapter=off json=%s temp=%.2f", wants_json(system_text), temperature)
-    return prompt, False, max_new, temperature, None
+    return prompt, None, max_new, temperature, None
 
 
 def _not_ready() -> Optional[JSONResponse]:
@@ -686,7 +786,7 @@ def chat_completions(request: ChatCompletionRequest):
         return unavailable
 
     try:
-        prompt, use_adapter, max_new, temperature, lead_context = _plan(request)
+        prompt, adapter, max_new, temperature, lead_context = _plan(request)
     except Exception as exc:  # noqa: BLE001
         log.error("Request planning failed: %s", exc)
         traceback.print_exc()
@@ -697,14 +797,14 @@ def chat_completions(request: ChatCompletionRequest):
 
     if request.stream:
         return StreamingResponse(
-            _sse_chunks(completion_id, created, prompt, use_adapter, max_new, temperature, lead_context),
+            _sse_chunks(completion_id, created, prompt, adapter, max_new, temperature, lead_context),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
         text = generate_text(
-            prompt, use_adapter=use_adapter, max_new_tokens=max_new, temperature=temperature
+            prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
         )
         if lead_context is not None:
             text = lead_scoring_json(text, *lead_context)
@@ -728,7 +828,7 @@ def _sse_chunks(
     completion_id: str,
     created: int,
     prompt: str,
-    use_adapter: bool,
+    adapter: Optional[str],
     max_new: int,
     temperature: float,
     lead_context,
@@ -753,12 +853,12 @@ def _sse_chunks(
             # in practice — only the deal coach streams, and it takes the base
             # path below.
             text = generate_text(
-                prompt, use_adapter=use_adapter, max_new_tokens=max_new, temperature=temperature
+                prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
             )
             yield envelope({"content": lead_scoring_json(text, *lead_context)})
         else:
             for chunk in stream_text(
-                prompt, use_adapter=use_adapter, max_new_tokens=max_new, temperature=temperature
+                prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
             ):
                 yield envelope({"content": chunk})
         yield envelope({}, finish="stop")
@@ -786,7 +886,7 @@ def generate(request: GenerateRequest):
     try:
         text = generate_text(
             request.prompt,
-            use_adapter=False,
+            adapter=None,
             max_new_tokens=request.max_tokens or DEFAULT_MAX_NEW_TOKENS,
             temperature=request.temperature if request.temperature is not None else 0.0,
         )
@@ -806,7 +906,7 @@ def stream(request: GenerateRequest):
     return StreamingResponse(
         stream_text(
             request.prompt,
-            use_adapter=False,
+            adapter=None,
             max_new_tokens=request.max_tokens or DEFAULT_MAX_NEW_TOKENS,
             temperature=request.temperature if request.temperature is not None else 0.0,
         ),

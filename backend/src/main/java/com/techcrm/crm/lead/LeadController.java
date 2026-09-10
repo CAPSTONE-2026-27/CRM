@@ -99,12 +99,19 @@ public class LeadController {
             @RequestParam(required = false) String industry,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdTo,
+            @RequestParam(required = false) String product,
+            @RequestParam(required = false) String qualificationStatus,
+            @RequestParam(required = false) String contactStatus,
+            @RequestParam(required = false) Integer scoreMin,
+            @RequestParam(required = false) Integer scoreMax,
+            @RequestParam(required = false) Boolean unassigned,
             @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         LeadSearchCriteria criteria = LeadSearchCriteria.of(
-                q, fullName, company, email, phone, status, assignedToId, sourceChannel, industry, createdFrom, createdTo);
+                q, fullName, company, email, phone, status, assignedToId, sourceChannel, industry, createdFrom, createdTo,
+                product, qualificationStatus, contactStatus, scoreMin, scoreMax, unassigned);
 
         int clampedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         PageRequest pageable = PageRequest.of(Math.max(page, 0), clampedSize, resolveSort(sort));
@@ -186,10 +193,17 @@ public class LeadController {
                        @RequestParam(required = false) Long assignedToId,
                        @RequestParam(required = false) String sourceChannel,
                        @RequestParam(required = false) String industry,
+                       @RequestParam(required = false) String product,
+                       @RequestParam(required = false) String qualificationStatus,
+                       @RequestParam(required = false) String contactStatus,
+                       @RequestParam(required = false) Integer scoreMin,
+                       @RequestParam(required = false) Integer scoreMax,
+                       @RequestParam(required = false) Boolean unassigned,
                        HttpServletResponse response) throws IOException {
 
         LeadSearchCriteria criteria = LeadSearchCriteria.of(
-                q, null, null, null, null, status, assignedToId, sourceChannel, industry, null, null);
+                q, null, null, null, null, status, assignedToId, sourceChannel, industry, null, null,
+                product, qualificationStatus, contactStatus, scoreMin, scoreMax, unassigned);
 
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=\"leads.csv\"");

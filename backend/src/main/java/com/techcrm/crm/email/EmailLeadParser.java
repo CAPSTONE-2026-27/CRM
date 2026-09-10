@@ -44,20 +44,26 @@ public class EmailLeadParser {
 
     private LeadRequest build(String fullName, String email, String subject, String body) {
         String notes = buildNotes(subject, body);
+        // Positional, and long enough that the labels earn their keep: this
+        // constructor gained two parameters in V17 and the mismatch was a
+        // compile error rather than a silent misalignment only because the new
+        // fields are not String.
         return new LeadRequest(
                 fullName,
-                null,
-                null,
-                null,
+                null,            // company        — not derivable from an email
+                null,            // industry
+                null,            // employeeCount
                 email,
-                null,
-                null,
-                null,
-                "Email",
-                "EMAIL_PARSING",
+                null,            // phone
+                null,            // product
+                null,            // estimatedDealValue
+                null,            // productQuantity   — a rep fills these in later
+                null,            // purchaseTimeline
+                "Email",         // sourceChannel
+                "EMAIL_PARSING", // captureMethod
                 notes,
-                null,
-                null
+                null,            // status
+                null             // assignedToId
         );
     }
 

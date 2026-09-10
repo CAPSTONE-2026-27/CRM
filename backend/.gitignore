@@ -35,3 +35,7 @@ build/
 ### Local secrets (never commit) ###
 application-local.yml
 .env
+/.apt_generated_tests/
+
+# Local diagnostic logs
+logs/

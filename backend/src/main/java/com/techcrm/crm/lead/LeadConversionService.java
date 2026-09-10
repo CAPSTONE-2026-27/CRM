@@ -36,9 +36,6 @@ public class LeadConversionService {
     /** Contact outcomes that mean the customer is willing to meet. Only these
      *  convert — "No Response" becoming an opportunity would make the pipeline
      *  a list of hopes rather than of deals. */
-    private static final List<String> CONVERTIBLE_CONTACT_STATUSES =
-            List.of("MEETING_SCHEDULED", "INTERESTED");
-
     private final LeadRepository leadRepository;
     private final DealRepository dealRepository;
     private final AccountRepository accountRepository;
@@ -66,15 +63,14 @@ public class LeadConversionService {
                     "This lead has already been converted to opportunity " + lead.getConvertedDealId());
         }
 
+        // Qualification is the only gate. Conversion used to also require a
+        // contact status of MEETING_SCHEDULED or INTERESTED, but the UI that set
+        // contact status was removed along with flow step 5 — keeping the check
+        // would have made every lead permanently unconvertible, since they all
+        // sit at NOT_CONTACTED with no way to move them.
         if ("UNQUALIFIED".equals(lead.getQualificationStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Only qualified leads can become opportunities.");
-        }
-
-        if (!CONVERTIBLE_CONTACT_STATUSES.contains(lead.getContactStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "The customer has not agreed to a meeting yet. Set the contact status to "
-                            + "Meeting scheduled or Interested first.");
         }
 
         AccountLookup account = findOrCreateAccount(lead, caller.organizationId());

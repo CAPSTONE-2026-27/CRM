@@ -27,6 +27,18 @@ spring:
   #   # Neon's free tier suspends compute when idle, so the first connection
   #   # after a pause can fail before the instance is awake.
   #   connect-retries: 5
+  #   # The Neon instance is shared with the rest of the team, so it carries
+  #   # migrations from branches that are not merged yet -- V19 (contracts) and
+  #   # V20 (contract drafting status) were applied against it on 5 and 8 Sep
+  #   # from work that has not been pushed. Without this, Flyway refuses to
+  #   # start the moment a local migration is numbered above theirs, because
+  #   # the applied versions then fall inside the range it validates.
+  #   #
+  #   # Scoped to this local profile deliberately: "missing" means Flyway stops
+  #   # objecting to applied migrations whose files are absent, which is right
+  #   # for a shared development database and wrong for production, where a
+  #   # missing file means someone deleted history. Remove once V19/V20 land.
+  #   ignore-migration-patterns: "*:missing"
   # jpa:
   #   properties:
   #     hibernate:
@@ -51,7 +63,55 @@ spring:
 #   api-key: your-api-key
 #   request-timeout-ms: 30000
 
+# ---------------------------------------------------------------------------
+# OAuth (Google / Microsoft sign-in)
+#
+# Spring Boot 4 validates every declared registration at startup and refuses to
+# boot on a blank client-id ("Client id of registration 'google' must not be
+# empty"). application.yml declares both providers, so both need SOME value even
+# when SSO is unused.
+#
+# The placeholders below are enough to start the application. Email/password
+# login via POST /api/auth/login works normally; only the "Sign in with Google"
+# and "Sign in with Microsoft" buttons will fail. Replace with real values from
+# the Google Cloud and Azure consoles if you need SSO.
+#
+# Redirect URIs are registered against http://localhost:8080/login/oauth2/code/*
+# — if you run the backend on another port or host, add the matching URI in both
+# consoles, or sign-in fails AFTER the user has already authenticated, which
+# looks like a backend bug rather than a configuration one.
+#
+# MICROSOFT_TENANT_ID must match how the Azure app registration is set up. It is
+# interpolated into the authorize, token and JWKS URLs together:
+#
+#   consumers   personal Microsoft accounts only (outlook.com, hotmail, live)
+#   organizations   work and school accounts only
+#   common      both
+#   <tenant GUID>   one specific organization
+#
+# Get this wrong and Microsoft still shows its sign-in page, then rejects the
+# token exchange afterwards with AADSTS9002331 — the user lands back on the
+# login screen and the app looks broken. TechCRM's registration is personal
+# accounts only, so "consumers" is the value that matches it. It is set at the
+# bottom of this file, outside the "spring:" block, because that is the name
+# application.yml interpolates.
+# ---------------------------------------------------------------------------
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: local-dev-placeholder
+            client-secret: local-dev-placeholder
+          azure:
+            client-id: local-dev-placeholder
+            client-secret: local-dev-placeholder
+
 app:
   jwt:
     # Generate with: openssl rand -hex 32
     access-secret: replace-me-with-a-long-random-secret
+
+# Which Microsoft accounts may sign in. See the OAuth notes above for the other
+# values; this must match the Azure app registration's supported account types.
+MICROSOFT_TENANT_ID: consumers

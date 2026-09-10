@@ -640,6 +640,7 @@ export function Row({
   sub,
   time,
   badge,
+  onClick,
 }: {
   avatar?: string;
   avatarColor?: string;
@@ -647,15 +648,36 @@ export function Row({
   sub?: string;
   time?: string;
   badge?: { label: string; variant: BadgeVariant };
+  /** Makes the row activate — pointer, hover tint, and keyboard-reachable. */
+  onClick?: () => void;
 }) {
   return (
     <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      onMouseEnter={onClick ? (e) => (e.currentTarget.style.background = colors.bgSecondary) : undefined}
+      onMouseLeave={onClick ? (e) => (e.currentTarget.style.background = "transparent") : undefined}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 10,
-        padding: "8px 0",
+        padding: onClick ? "8px 6px" : "8px 0",
         borderBottom: `0.5px solid ${colors.border}`,
+        cursor: onClick ? "pointer" : undefined,
+        borderRadius: onClick ? 5 : undefined,
+        background: "transparent",
+        outline: "none",
       }}
     >
       {time && (

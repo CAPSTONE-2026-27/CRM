@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/** Lead Output module — meeting records logged against a lead. */
+/** Meeting module — meeting records logged against a lead. */
 @RestController
 @RequestMapping("/api/leads/{leadId}/meetings")
 public class LeadMeetingController {

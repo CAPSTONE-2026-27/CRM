@@ -1,3 +1,5 @@
+import type { BadgeVariant } from "../tokens";
+
 export type Role = "ADMIN" | "MANAGER" | "SALES_REP" | "SUPPORT_AGENT" | "MARKETING";
 
 // Mirrors UserResponse from the API. Adding a field that the API does not
@@ -101,18 +103,47 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
   NOT_INTERESTED: "Not interested",
 };
 
+/**
+ * How a lead's qualification reads on screen.
+ *
+ * Shared rather than local to one screen: the lead list, the detail header and
+ * the Qualify control all have to agree, and a lead showing "Qualified" in one
+ * place and "Pending" in another would be a real bug, not a cosmetic one.
+ */
+export function qualificationLabel(lead: Lead): string {
+  // The verdict only — the model's probability is shown beside it on the lead
+  // detail panel, where there is room to explain what the number means.
+  if (lead.qualificationStatus === "QUALIFIED") return "Qualified";
+  return lead.qualificationStatus === "UNQUALIFIED" ? "Unqualified" : "Pending";
+}
+
+export function qualificationVariant(lead: Lead): BadgeVariant {
+  if (lead.qualificationStatus === "QUALIFIED") return "green";
+  return lead.qualificationStatus === "UNQUALIFIED" ? "red" : "amber";
+}
+
 /** Only these two mean the customer is willing to meet, so only these convert.
  *  Mirrors CONVERTIBLE_CONTACT_STATUSES in LeadConversionService. */
 export const CONVERTIBLE_CONTACT_STATUSES: ContactStatus[] = ["MEETING_SCHEDULED", "INTERESTED"];
 
+// Mirrors AccountDtos.AccountResponse. The list and detail endpoints return the
+// same shape, so everything here is available without a second fetch.
 export type Account = {
   id: string;
   name: string;
   industry?: string | null;
+  annualRevenue?: string | number | null;
   employeeCount?: string | null;
+  billingAddress?: string | null;
+  parentAccountId?: string | null;
+  ownerId?: string | null;
   relationshipValue?: string | number | null;
   aiSentimentScore?: number | null;
+  emailIntegrationEnabled?: boolean;
+  telephonyIntegrationEnabled?: boolean;
+  docRepoSyncEnabled?: boolean;
   createdAt: string;
+  updatedAt?: string | null;
 };
 
 export type Contact = {
@@ -398,7 +429,7 @@ export type AuditLogEntry = {
   occurredAt: string;
 };
 
-// Lead Output module — one record per customer meeting, permanently linked to
+// Meeting module — one record per customer meeting, permanently linked to
 // its lead. History is append-only; a new meeting never replaces an older one.
 export type LeadMeeting = {
   id: string;

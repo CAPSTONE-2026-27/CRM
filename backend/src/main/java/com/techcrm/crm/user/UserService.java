@@ -6,6 +6,7 @@ import com.techcrm.crm.user.dto.ResetPasswordResponse;
 import com.techcrm.crm.user.dto.UserRequest;
 import com.techcrm.crm.user.dto.UserResponse;
 import com.techcrm.crm.user.dto.UserStatusRequest;
+import com.techcrm.crm.user.dto.SelfUpdateRequest;
 import com.techcrm.crm.user.dto.UserUpdateRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -102,6 +103,35 @@ public class UserService {
 
         User saved = userRepository.save(user);
         auditLogService.record(caller.organizationId(), caller.userId(), "USER_UPDATED", "User", String.valueOf(id), null);
+        return toResponse(saved);
+    }
+
+    /**
+     * A user editing their own profile.
+     *
+     * Separate from {@link #update} rather than a permission check inside it,
+     * because the two differ in what may be changed, not just in who may call
+     * them. update() accepts role and permissions; this must never touch either,
+     * or any authenticated user could promote themselves. SelfUpdateRequest has
+     * no field for them, so that is enforced by the type rather than by a
+     * conditional someone could later remove.
+     *
+     * Looks the user up by the caller's own id, so there is no path parameter to
+     * tamper with.
+     */
+    @Transactional
+    public UserResponse updateSelf(AuthenticatedUser caller, SelfUpdateRequest request) {
+        User user = getOrThrow(caller, caller.userId());
+
+        if (request.fullName() != null) user.setFullName(request.fullName());
+        if (request.jobTitle() != null) user.setJobTitle(request.jobTitle());
+        if (request.phone() != null) user.setPhone(request.phone());
+        if (request.department() != null) user.setDepartment(request.department());
+        if (request.avatarUrl() != null) user.setAvatarUrl(request.avatarUrl());
+
+        User saved = userRepository.save(user);
+        auditLogService.record(caller.organizationId(), caller.userId(), "USER_SELF_UPDATED",
+                "User", String.valueOf(caller.userId()), null);
         return toResponse(saved);
     }
 

@@ -40,6 +40,8 @@ export function Topbar({
   userRole?: string;
   avatarUrl?: string | null;
   onViewProfile?: () => void;
+  /** Omitted for roles with nowhere to go — the item hides rather than
+   *  navigating somewhere that duplicates View profile. */
   onOpenSettings?: () => void;
   onLogout?: () => void;
 }) {
@@ -105,10 +107,12 @@ export function Topbar({
             <User size={14} />
             View profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onOpenSettings}>
-            <Settings size={14} />
-            Settings
-          </DropdownMenuItem>
+          {onOpenSettings && (
+            <DropdownMenuItem onClick={onOpenSettings}>
+              <Settings size={14} />
+              Settings
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onLogout} variant="destructive">
             <LogOut size={14} />

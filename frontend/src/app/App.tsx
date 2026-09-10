@@ -140,7 +140,14 @@ export default function App() {
           userInitials={initials(user.fullName)}
           avatarUrl={user.avatarUrl}
           onViewProfile={() => navigate("profile")}
-          onOpenSettings={() => navigate(user.role === "ADMIN" || user.role === "MANAGER" ? "security" : "profile")}
+          // Settings is the route to Security & audit, which is where users are
+          // added — POST /api/users is hasRole('ADMIN'). Managers keep it too,
+          // since they already reach that screen from the sidebar. Everyone else
+          // gets no item at all: it used to send them to their own profile,
+          // duplicating the entry directly above it.
+          onOpenSettings={
+            user.role === "ADMIN" || user.role === "MANAGER" ? () => navigate("security") : undefined
+          }
           onLogout={logout}
         />
         <main style={{ flex: 1, overflowY: "auto", padding: 20, background: colors.bgPrimary }}>

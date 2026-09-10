@@ -40,7 +40,9 @@ public class LeadService {
         applyAiScore(lead);
         // Assignment follows qualification, not creation: an unqualified lead
         // landing in a rep's queue is exactly the noise the qualification step
-        // exists to remove.
+        // exists to remove. A brand-new lead is PENDING, so this is a no-op
+        // unless the caller named an assignee explicitly — the real trigger is
+        // the executive pressing Qualify.
         autoAssignIfQualified(lead, caller.organizationId());
         return toResponse(leadRepository.save(lead));
     }
@@ -130,6 +132,16 @@ public class LeadService {
         if (criteria.industry() != null) spec = spec.and(LeadSpecifications.industryEquals(criteria.industry()));
         if (criteria.createdFrom() != null) spec = spec.and(LeadSpecifications.createdFrom(criteria.createdFrom()));
         if (criteria.createdTo() != null) spec = spec.and(LeadSpecifications.createdTo(criteria.createdTo()));
+        if (criteria.product() != null) spec = spec.and(LeadSpecifications.productContains(criteria.product()));
+        if (criteria.qualificationStatus() != null) {
+            spec = spec.and(LeadSpecifications.qualificationStatusEquals(criteria.qualificationStatus()));
+        }
+        if (criteria.contactStatus() != null) {
+            spec = spec.and(LeadSpecifications.contactStatusEquals(criteria.contactStatus()));
+        }
+        if (criteria.scoreMin() != null) spec = spec.and(LeadSpecifications.scoreAtLeast(criteria.scoreMin()));
+        if (criteria.scoreMax() != null) spec = spec.and(LeadSpecifications.scoreAtMost(criteria.scoreMax()));
+        if (Boolean.TRUE.equals(criteria.unassigned())) spec = spec.and(LeadSpecifications.unassigned());
 
         // assignedToId is intentionally allowed even for a scoped-down caller:
         // ANDed against their own forced assignedToId above, so filtering by
@@ -410,8 +422,12 @@ public class LeadService {
     /** Least-busy-agent assignment: pick the SALES_REP in this org currently
      *  carrying the fewest leads. Runs only for a qualified, still-unassigned
      *  lead, and leaves it unassigned if the org has no sales reps yet (e.g. a
-     *  brand-new org's first lead). */
-    private void autoAssignIfQualified(Lead lead, Long organizationId) {
+     *  brand-new org's first lead).
+     *
+     *  Public because the trigger now lives outside this class: qualification
+     *  is a human decision made through POST /api/leads/{id}/qualify, and that
+     *  is the moment a lead becomes assignable. */
+    public void autoAssignIfQualified(Lead lead, Long organizationId) {
         if (!"QUALIFIED".equals(lead.getQualificationStatus()) || lead.getAssignedToId() != null) {
             return;
         }
@@ -448,7 +464,12 @@ public class LeadService {
             lead.setAiScoreLabel(result.label());
             lead.setAiScoreReason(result.reason());
 
-            lead.setQualificationStatus(result.qualificationStatus());
+            // The model advises, it does not decide: probability and reasoning are
+            // recorded so the executive has something to judge, but the verdict
+            // itself stays PENDING until a human presses Qualify/Disqualify in
+            // the UI (POST /api/leads/{id}/qualify). Scoring a lead again must
+            // never silently overturn a decision a person already made, so the
+            // status field is left alone here in every case.
             lead.setQualificationProbability(result.qualificationProbability());
             lead.setQualificationReasoning(result.qualificationReasoning());
 

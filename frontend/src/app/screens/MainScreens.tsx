@@ -18,10 +18,13 @@ import {
 } from "../components/crm/ui";
 import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
 import { LeadOutputModal } from "../components/crm/LeadOutputModal";
+import { ConvertLeadModal } from "../components/crm/ConvertLeadModal";
+import { AccountDetailModal } from "../components/crm/AccountDetailModal";
+import { QualifyControl } from "../components/crm/QualifyControl";
 import { DealWorkspace } from "../components/crm/DealWorkspace";
 import { LeadFlowPanel } from "../components/crm/LeadFlowPanel";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
-import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, X } from "lucide-react";
+import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, Pencil, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
 import {
   useDashboardSummary,
@@ -44,7 +47,6 @@ import {
   useDeleteUser,
   useSetUserStatus,
   useResetUserPassword,
-  useDeleteLead,
   useBulkDeleteLeads,
   useDeleteRpaBot,
   useImportLeads,
@@ -53,7 +55,16 @@ import {
   type LeadImportResult,
 } from "../lib/queries";
 import { streamCopilotChat, downloadFile, type CopilotMessage } from "../lib/apiClient";
-import { CONTACT_STATUS_LABELS, DEAL_STAGE_LABELS, type Lead, type RpaBotRun, type UserRow } from "../lib/types";
+import {
+  CONTACT_STATUS_LABELS,
+  DEAL_STAGE_LABELS,
+  qualificationLabel,
+  qualificationVariant,
+  type Account,
+  type Lead,
+  type RpaBotRun,
+  type UserRow,
+} from "../lib/types";
 import { useAuth } from "../lib/auth";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS, type Role } from "../components/crm/Sidebar";
 
@@ -90,7 +101,9 @@ function Table({ headers, cols, children }: { headers: React.ReactNode[]; cols: 
     <div>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, padding: "0 0 8px", borderBottom: `0.5px solid ${colors.border}` }}>
         {headers.map((h, i) => (
-          <span key={i} style={{ fontSize: 11, fontWeight: 600, color: colors.textSecondary }}>{h}</span>
+          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: colors.textSecondary, minWidth: 0, alignSelf: "end" }}>
+            {h}
+          </div>
         ))}
       </div>
       <TableContext.Provider value={cols}>{children}</TableContext.Provider>
@@ -334,27 +347,105 @@ export const scoreVariant = (score: number | null | undefined): BadgeVariant => 
   return "amber";
 };
 
-// Qualification is the model's "is this worth working" verdict — deliberately
-// separate from `status`, which is the Hot/Warm/Cold temperature.
-const qualificationLabel = (lead: Lead): string =>
-  lead.qualificationStatus === "QUALIFIED"
-    ? lead.qualificationProbability != null
-      ? `Qualified ${lead.qualificationProbability.toFixed(0)}%`
-      : "Qualified"
-    : lead.qualificationStatus === "UNQUALIFIED"
-      ? "Unqualified"
-      : "Pending";
-
-const qualificationVariant = (lead: Lead): BadgeVariant =>
-  lead.qualificationStatus === "QUALIFIED" ? "green" : lead.qualificationStatus === "UNQUALIFIED" ? "red" : "amber";
-
 const LEADS_PAGE_SIZE = 20;
+
+// Score filtering is offered as bands rather than a min/max pair: two number
+// boxes in a table header is more control than anyone wants mid-triage, and the
+// bands match the colours the score badge already uses.
+const SCORE_BANDS: { value: string; label: string; min?: number; max?: number }[] = [
+  { value: "", label: "Any score" },
+  { value: "hot", label: "80 and above", min: 80 },
+  { value: "mid", label: "50 to 79", min: 50, max: 79 },
+  { value: "low", label: "Below 50", max: 49 },
+];
+
+/* A column heading with its own filter underneath. Kept to one control per
+   column: the header row is a filter surface, not a form. */
+function ColumnHead({ label, children }: { label: string; children?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: colors.textSecondary }}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+const columnControl: React.CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+  border: `0.5px solid ${colors.border}`,
+  borderRadius: 5,
+  padding: "3px 5px",
+  fontSize: 10.5,
+  color: colors.textPrimary,
+  background: "#FFFFFF",
+  outline: "none",
+  fontFamily: "inherit",
+};
+
+function ColumnSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const active = value !== "";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        ...columnControl,
+        // An applied filter is tinted, so it is obvious at a glance why the list
+        // is short — the commonest confusion with per-column filtering.
+        borderColor: active ? colors.primary : colors.border,
+        color: active ? colors.primary : colors.textSecondary,
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ColumnText({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const active = value !== "";
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={{
+        ...columnControl,
+        borderColor: active ? colors.primary : colors.border,
+        fontWeight: active ? 600 : 400,
+      }}
+    />
+  );
+}
 
 export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [status, setStatus] = useState("All statuses");
   const [page, setPage] = useState(0);
+
+  // Per-column filters. Every one of these is sent to the API rather than
+  // applied to the loaded page, so a filter can never hide a match sitting on
+  // page 2 while the row count says otherwise.
+  const [status, setStatus] = useState("");
+  const [product, setProduct] = useState("");
+  const [debouncedProduct, setDebouncedProduct] = useState("");
+  const [scoreBand, setScoreBand] = useState("");
+  const [qualification, setQualification] = useState("");
+  const [contact, setContact] = useState("");
+  const [assigned, setAssigned] = useState("");
 
   // Search debounces 300ms before becoming a query param — dropdown filters
   // (status) apply immediately since they're a single click, not typing.
@@ -363,15 +454,28 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
     return () => clearTimeout(t);
   }, [query]);
 
+  // Product is the only free-text column filter, so it debounces too.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedProduct(product.trim()), 300);
+    return () => clearTimeout(t);
+  }, [product]);
+
   // Any filter change invalidates the current page position.
   useEffect(() => {
     setPage(0);
-  }, [debouncedQuery, status]);
+  }, [debouncedQuery, status, debouncedProduct, scoreBand, qualification, contact, assigned]);
 
-  const statusParam = status === "All statuses" ? undefined : status.toUpperCase();
+  const band = SCORE_BANDS.find((b) => b.value === scoreBand);
   const { data: leadsPage, isLoading } = useLeads({
     q: debouncedQuery || undefined,
-    status: statusParam,
+    status: status || undefined,
+    product: debouncedProduct || undefined,
+    scoreMin: band?.min,
+    scoreMax: band?.max,
+    qualificationStatus: qualification || undefined,
+    contactStatus: contact || undefined,
+    assignedToId: assigned && assigned !== "UNASSIGNED" ? assigned : undefined,
+    unassigned: assigned === "UNASSIGNED" ? "true" : undefined,
     page,
     size: LEADS_PAGE_SIZE,
   });
@@ -384,12 +488,12 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [outputLead, setOutputLead] = useState<Lead | null>(null);
+  const [convertLead, setConvertLead] = useState<Lead | null>(null);
   // Mirrors the backend rule in guardLeadAssignment — only these roles may
   // change lead ownership; everyone else can still edit the lead's details.
   const { user: currentUser } = useAuth();
   const canAssignLeads = currentUser?.role === "ADMIN" || currentUser?.role === "MANAGER";
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const deleteLead = useDeleteLead();
   const bulkDeleteLeads = useBulkDeleteLeads();
   const importLeads = useImportLeads();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -457,12 +561,19 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
     });
   };
 
-  const handleRemove = (id: string, name: string) => {
-    if (!window.confirm(`Remove lead "${name}"? This can't be undone.`)) return;
-    deleteLead.mutate(id, {
-      onError: (err) => toast.error("Failed to remove lead", { description: err instanceof Error ? err.message : undefined }),
-      onSuccess: () => toast.success(`${name} removed`),
-    });
+  // Editing is a single-record operation, so it only makes sense on one row.
+  // Offered from the same selection as Remove rather than as a per-row link:
+  // one way to choose a lead, not two.
+  const handleEditSelected = () => {
+    if (selectedIds.size !== 1) {
+      toast.error("Select exactly one lead to edit", {
+        description: `${selectedIds.size} leads are selected. Editing changes one record at a time.`,
+      });
+      return;
+    }
+    const [id] = Array.from(selectedIds);
+    const lead = rows.find((r) => r.id === id);
+    if (lead) setEditingLead(lead);
   };
 
   return (
@@ -470,9 +581,15 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", gap: 8 }}>
           <SearchInput value={query} onChange={setQuery} placeholder="Search name, company, product…" />
-          <FilterSelect value={status} onChange={setStatus} options={["All statuses", "Hot", "Warm", "Cold", "New"]} />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <Button
+              label={selectedIds.size === 1 ? "Edit selected" : `Edit selected (${selectedIds.size})`}
+              icon={Pencil}
+              onClick={handleEditSelected}
+            />
+          )}
           {selectedIds.size > 0 && (
             <Button
               label={bulkDeleteLeads.isPending ? "Removing…" : `Remove selected (${selectedIds.size})`}
@@ -517,9 +634,63 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
         <Table
           headers={[
             <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} style={{ cursor: "pointer" }} />,
-            "Name / Company", "Product", "AI Score", "Status", "Qualification", "Contact", "Assigned", "",
+            <ColumnHead label="Name / Company" />,
+            <ColumnHead label="Product">
+              <ColumnText value={product} onChange={setProduct} placeholder="Any product" />
+            </ColumnHead>,
+            <ColumnHead label="AI Score">
+              <ColumnSelect value={scoreBand} onChange={setScoreBand} options={SCORE_BANDS} />
+            </ColumnHead>,
+            <ColumnHead label="Status">
+              <ColumnSelect
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: "", label: "Any status" },
+                  { value: "HOT", label: "Hot" },
+                  { value: "WARM", label: "Warm" },
+                  { value: "COLD", label: "Cold" },
+                  { value: "NEW", label: "New" },
+                ]}
+              />
+            </ColumnHead>,
+            <ColumnHead label="Qualification">
+              <ColumnSelect
+                value={qualification}
+                onChange={setQualification}
+                options={[
+                  { value: "", label: "Any" },
+                  { value: "PENDING", label: "Pending" },
+                  { value: "QUALIFIED", label: "Qualified" },
+                  { value: "UNQUALIFIED", label: "Unqualified" },
+                ]}
+              />
+            </ColumnHead>,
+            <ColumnHead label="Contact">
+              <ColumnSelect
+                value={contact}
+                onChange={setContact}
+                options={[
+                  { value: "", label: "Any" },
+                  ...Object.entries(CONTACT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
+                ]}
+              />
+            </ColumnHead>,
+            <ColumnHead label="Assigned">
+              <ColumnSelect
+                value={assigned}
+                onChange={setAssigned}
+                options={[
+                  { value: "", label: "Anyone" },
+                  { value: "UNASSIGNED", label: "Unassigned" },
+                  ...(users ?? []).map((u) => ({ value: u.id, label: u.fullName })),
+                ]}
+              />
+            </ColumnHead>,
+            <ColumnHead label="Meeting" />,
+            <ColumnHead label="Conversion" />,
           ]}
-          cols="0.4fr 1.8fr 1.1fr 0.7fr 0.7fr 1fr 1.1fr 1fr 1.5fr"
+          cols="0.35fr 1.5fr 1fr 0.85fr 0.85fr 1fr 1fr 1fr 0.7fr 0.9fr"
         >
           {rows.map((r) => (
             <TableRow key={r.id} onClick={() => setSelectedLead(r)}>
@@ -545,44 +716,46 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
               <Cell>{r.aiScore != null ? <Badge label={String(r.aiScore)} variant={scoreVariant(r.aiScore)} /> : "—"}</Cell>
               <Cell><Badge label={r.status} variant={leadStatusVariant[r.status] ?? "blue"} /></Cell>
               <Cell>
-                <Badge label={qualificationLabel(r)} variant={qualificationVariant(r)} />
+                <QualifyControl lead={r} compact />
               </Cell>
-              <Cell muted>
-                {r.convertedDealId
-                  ? "Converted"
-                  : (CONTACT_STATUS_LABELS[r.contactStatus] ?? r.contactStatus)}
-              </Cell>
+              {/* Contact shows the contact status only — whether the lead became a
+                  deal is the Conversion column's job now, not something to read
+                  out of two places at once. */}
+              <Cell muted>{CONTACT_STATUS_LABELS[r.contactStatus] ?? r.contactStatus}</Cell>
               <Cell muted>{r.assignedToId ? (usersById.get(r.assignedToId)?.fullName ?? "Assigned") : "Unassigned"}</Cell>
               <Cell>
-                <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOutputLead(r);
+                  }}
+                  style={{
+                    border: `0.5px solid ${colors.aiPurple}55`, background: colors.aiLight, color: colors.aiPurple,
+                    fontSize: 11, fontWeight: 500, borderRadius: 5, padding: "3px 9px", cursor: "pointer",
+                    whiteSpace: "nowrap", fontFamily: "inherit",
+                  }}
+                >
+                  Schedule
+                </button>
+              </Cell>
+              <Cell>
+                {r.convertedDealId ? (
+                  <Badge label="Converted" variant="green" />
+                ) : (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setEditingLead(r);
+                      setConvertLead(r);
                     }}
-                    style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOutputLead(r);
+                    style={{
+                      border: `0.5px solid ${colors.primary}`, background: colors.primaryLight, color: colors.primary,
+                      fontSize: 11, fontWeight: 500, borderRadius: 5, padding: "3px 10px", cursor: "pointer",
+                      whiteSpace: "nowrap", fontFamily: "inherit",
                     }}
-                    style={{ border: "none", background: "transparent", color: colors.aiPurple, fontSize: 12, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
                   >
-                    Lead output
+                    Convert
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(r.id, r.fullName);
-                    }}
-                    style={{ border: "none", background: "transparent", color: colors.danger, fontSize: 12, cursor: "pointer", padding: 0 }}
-                  >
-                    Remove
-                  </button>
-                </div>
+                )}
               </Cell>
             </TableRow>
           ))}
@@ -624,6 +797,12 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
         />
       )}
       {outputLead && <LeadOutputModal lead={outputLead} onClose={() => setOutputLead(null)} />}
+      {convertLead && (
+        <ConvertLeadModal
+          lead={rows.find((r) => r.id === convertLead.id) ?? convertLead}
+          onClose={() => setConvertLead(null)}
+        />
+      )}
     </Stack>
   );
 }
@@ -1076,6 +1255,13 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
 export function Accounts({ onNavigate }: { onNavigate: Nav }) {
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: contacts, isLoading: contactsLoading } = useContacts();
+  const { data: users } = useUsers();
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+
+  // Owner and parent are stored as ids; resolve them to names here so the modal
+  // stays a presentation component and does its own lookups nowhere.
+  const usersById = new Map((users ?? []).map((u) => [String(u.id), u]));
+  const accountsById = new Map((accounts ?? []).map((a) => [String(a.id), a]));
 
   return (
     <Stack>
@@ -1090,6 +1276,7 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
               name={a.name}
               sub={`${a.industry ?? "—"}${a.relationshipValue ? " · " + formatCurrency(a.relationshipValue) : ""}`}
               badge={a.aiSentimentScore != null ? { label: `Sentiment ${a.aiSentimentScore}%`, variant: a.aiSentimentScore >= 50 ? "green" : "amber" } : undefined}
+              onClick={() => setSelectedAccount(a)}
             />
           ))}
         {!accountsLoading && (accounts ?? []).length === 0 && <EmptyState message="No accounts yet. Add an account to get started." />}
@@ -1108,6 +1295,20 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
           ))}
         {!contactsLoading && (contacts ?? []).length === 0 && <EmptyState message="No contacts yet" />}
       </Card>
+      {selectedAccount && (
+        <AccountDetailModal
+          // Re-read from the list so the modal reflects the latest fetch rather
+          // than the row captured at click time.
+          account={accountsById.get(String(selectedAccount.id)) ?? selectedAccount}
+          ownerName={selectedAccount.ownerId ? usersById.get(String(selectedAccount.ownerId))?.fullName : undefined}
+          parentName={
+            selectedAccount.parentAccountId
+              ? accountsById.get(String(selectedAccount.parentAccountId))?.name
+              : undefined
+          }
+          onClose={() => setSelectedAccount(null)}
+        />
+      )}
     </Stack>
   );
 }

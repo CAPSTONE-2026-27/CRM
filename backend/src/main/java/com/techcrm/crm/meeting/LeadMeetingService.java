@@ -3,6 +3,7 @@ package com.techcrm.crm.meeting;
 import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.lead.Lead;
 import com.techcrm.crm.lead.LeadRepository;
+import com.techcrm.crm.lead.score.LeadScoreService;
 import com.techcrm.crm.meeting.MeetingAnalysisClient.MeetingAnalysisRequest;
 import com.techcrm.crm.meeting.MeetingAnalysisClient.MeetingAnalysisResult;
 import com.techcrm.crm.meeting.MeetingDtos.MeetingAnalysisResponse;
@@ -26,15 +27,18 @@ public class LeadMeetingService {
     private final LeadMeetingRepository meetingRepository;
     private final LeadRepository leadRepository;
     private final MeetingAnalysisClient analysisClient;
+    private final LeadScoreService leadScoreService;
     private final String modelVersion;
 
     public LeadMeetingService(LeadMeetingRepository meetingRepository,
                               LeadRepository leadRepository,
                               MeetingAnalysisClient analysisClient,
+                              LeadScoreService leadScoreService,
                               @Value("${ai.model-name:unknown}") String modelVersion) {
         this.meetingRepository = meetingRepository;
         this.leadRepository = leadRepository;
         this.analysisClient = analysisClient;
+        this.leadScoreService = leadScoreService;
         this.modelVersion = modelVersion;
     }
 
@@ -52,31 +56,46 @@ public class LeadMeetingService {
     public MeetingAnalysisResponse analyze(AuthenticatedUser caller, Long leadId, MeetingInput input) {
         Lead lead = requireLead(caller, leadId);
 
-        MeetingAnalysisResult result = analysisClient.analyze(new MeetingAnalysisRequest(
-                lead.getFullName(), lead.getCompany(), lead.getIndustry(), lead.getProduct(),
-                lead.getEstimatedDealValue(), lead.getNotes(), lead.getAiScore(),
-                input.meetingDate().toString(), input.meetingTime(), input.meetingOutput()));
+        // Extraction + rule engine, the same path save() takes. The preview must
+        // show the number the save will actually produce; a preview computed a
+        // different way would let the two disagree, and the rep would rightly
+        // stop trusting either.
+        //
+        // The reasons list now carries the per-parameter breakdown rather than
+        // the model's prose. It is a better answer to "why did it move" — each
+        // line is a signal, its value, and the points it earned out of its
+        // maximum, which the rep can check against their own notes.
+        int meetingNumber = 1 + (int) meetingRepository
+                .countByLeadIdAndOrganizationId(leadId, caller.organizationId());
+        var outcome = leadScoreService.analyse(
+                lead, input.meetingOutput(), meetingNumber, input.meetingDate());
+        var score = outcome.score();
 
-        Integer previous = lead.getAiScore();
-        if (result == null || result.score() == null) {
-            // Model unavailable — hand back the rep's own notes as the starting
-            // summary and leave the score unchanged for them to set by hand.
-            return new MeetingAnalysisResponse(
-                    String.valueOf(lead.getId()), lead.getFullName(),
-                    input.meetingDate(), input.meetingTime(), input.meetingOutput(),
-                    input.meetingOutput(), previous, previous == null ? 0 : previous, 0,
-                    labelForScore(previous == null ? 0 : previous),
-                    List.of("AI analysis unavailable — review the score manually"));
-        }
+        List<String> reasons = score.contributions().stream()
+                .map(c -> "%s: %s (%d/%d)".formatted(
+                        readable(c.parameter()), c.value(), c.points(), c.maxPoints()))
+                .toList();
 
-        int updated = clampScore(result.score());
+        // The rep's own notes seed the summary field, which they then edit
+        // before saving. The extraction model is not asked to write prose --
+        // it was trained to read five signals, and asking it for a summary as
+        // well would be a second task it never saw.
         return new MeetingAnalysisResponse(
                 String.valueOf(lead.getId()), lead.getFullName(),
                 input.meetingDate(), input.meetingTime(), input.meetingOutput(),
-                result.summary() == null ? input.meetingOutput() : result.summary(),
-                previous, updated, updated - (previous == null ? updated : previous),
-                normaliseLabel(result.label(), updated),
-                result.reasons() == null ? List.of() : result.reasons());
+                input.meetingOutput(),
+                score.previousScore(), score.updatedScore(), score.scoreDifference(),
+                labelForScore(score.updatedScore()),
+                reasons);
+    }
+
+    private String readable(String parameter) {
+        StringBuilder out = new StringBuilder();
+        for (String word : parameter.split("_")) {
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return out.toString();
     }
 
     /** Save step: appends a history row and rolls the lead's live score forward. */
@@ -84,12 +103,11 @@ public class LeadMeetingService {
     public MeetingResponse save(AuthenticatedUser caller, Long leadId, SaveMeetingRequest request) {
         Lead lead = requireLead(caller, leadId);
 
-        // Snapshotted from the lead rather than trusted from the request, so a
-        // crafted payload can't rewrite the scoring trail.
         Integer previousScore = lead.getAiScore();
-        int updatedScore = clampScore(request.updatedScore());
-        String label = normaliseLabel(request.scoreLabel(), updatedScore);
 
+        // The meeting row is written first so the analysis and history rows can
+        // reference it. Its score columns are filled in below, once the engine
+        // has produced them.
         LeadMeeting meeting = new LeadMeeting();
         meeting.setOrganizationId(caller.organizationId());
         meeting.setLeadId(lead.getId());
@@ -99,16 +117,33 @@ public class LeadMeetingService {
         meeting.setMeetingOutput(request.meetingOutput());
         meeting.setAiSummary(request.aiSummary());
         meeting.setPreviousScore(previousScore);
-        meeting.setUpdatedScore(updatedScore);
-        meeting.setScoreChangeReason(request.scoreChangeReason());
         meeting.setAiModelVersion(modelVersion);
         LeadMeeting saved = meetingRepository.save(meeting);
 
-        lead.setAiScore(updatedScore);
+        // The score is computed here, from the notes that were actually saved.
+        //
+        // request.updatedScore() is deliberately ignored. It used to be written
+        // straight through, which meant the number on a lead was whatever the
+        // client sent -- editable in the UI, and forgeable by anyone who could
+        // call the API. The field is still accepted so the existing frontend
+        // does not start failing validation, but nothing reads it.
+        //
+        // LeadScoreService re-reads the notes rather than trusting the preview:
+        // the rep may have edited them between previewing and saving, and the
+        // stored reading must describe the text that was stored.
+        var outcome = leadScoreService.recordMeeting(
+                caller, lead, saved.getId(), request.meetingOutput(), request.meetingDate());
+
+        var score = outcome.score();
+        saved.setUpdatedScore(score.updatedScore());
+        saved.setScoreChangeReason(score.changeReason());
+        saved = meetingRepository.save(saved);
+
+        // recordMeeting already set aiScore, leadPriority, qualificationProbability
+        // and aiScoreReason. Only the Hot/Warm/Cold temperature is this service's
+        // to own, since it drives the existing status column and filters.
+        String label = labelForScore(score.updatedScore());
         lead.setAiScoreLabel(label + " lead");
-        lead.setAiScoreReason(request.scoreChangeReason() == null || request.scoreChangeReason().isBlank()
-                ? truncate(request.aiSummary())
-                : request.scoreChangeReason());
         lead.setStatus(label.toUpperCase());
         leadRepository.save(lead);
 
