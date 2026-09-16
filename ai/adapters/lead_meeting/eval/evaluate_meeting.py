@@ -36,9 +36,9 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import meeting_prompt_format as fmt  # noqa: E402
-from train_meeting import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import prompt_format as fmt  # noqa: E402
+from train import (  # noqa: E402
     DATA_PATH, EVAL_FRACTION, MODEL_PATH, OUTPUT_DIR, SEED, _is_valid, apply_chat_template,
 )
 

@@ -54,23 +54,24 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTConfig, SFTTrainer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import deal_state_format as fmt  # noqa: E402,F401
+import prompt_format as fmt  # noqa: E402,F401
 
 
 # --------------------------------------------------------------------------
 # PATHS
 # --------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ADAPTER_DIR = Path(__file__).resolve().parent
+AI_ROOT = ADAPTER_DIR.parent.parent
 
 # Base weights are shared with the lead-scoring project rather than duplicated:
 # 16GB of safetensors is not worth a second copy, and both adapters must train
 # against identical weights or they cannot be served from one loaded model.
 MODEL_PATH = Path(
-    os.getenv("CRM_BASE_MODEL", PROJECT_ROOT.parent / "Llama3_CRM" / "models" / "Llama-3.1-8B-Instruct")
+    os.getenv("CRM_BASE_MODEL", AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct")
 )
-DATA_PATH = PROJECT_ROOT / "data" / "train.jsonl"
-OUTPUT_DIR = PROJECT_ROOT / "outputs" / "deal_state_llama3_lora"
-LOG_DIR = PROJECT_ROOT / "outputs" / "logs"
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
+OUTPUT_DIR = ADAPTER_DIR / "weights"
+LOG_DIR = ADAPTER_DIR / "logs"
 
 SEED = 42
 EVAL_FRACTION = 0.10

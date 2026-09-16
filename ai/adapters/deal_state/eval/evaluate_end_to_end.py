@@ -30,12 +30,13 @@ from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import deal_state_format as fmt  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import prompt_format as fmt  # noqa: E402
 from evaluate import generate, held_out_rows, load  # noqa: E402
 from train import OUTPUT_DIR  # noqa: E402
 
-XGBOOST_DIR = Path(__file__).resolve().parent.parent.parent / "XgBoost"
+# eval/ -> deal_state/ -> adapters/ -> ai/ -> repo root
+XGBOOST_DIR = Path(__file__).resolve().parents[4] / "xgboost"
 
 
 def load_scorer():

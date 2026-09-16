@@ -1,11 +1,13 @@
-# Serving dependencies for scripts/main.py — the local LLM server the CRM
+# Serving dependencies for server/main.py — the local LLM server the CRM
 # backend calls in place of Groq. Pinned to the versions the adapter in
-# outputs/lead_management_llama3_lora was trained and validated against.
+# adapters/lead_scoring/weights was trained and validated against.
 #
-# Install:
+# Training and evaluation need more (trl, datasets): see ../requirements-train.txt.
+#
+# Install (from ai/):
 #   python -m venv venv
 #   venv/Scripts/activate          # Windows
-#   pip install -r requirements.txt
+#   pip install -r server/requirements.txt
 #
 # torch is CUDA-specific and is deliberately not pinned to a CPU wheel here.
 # For the +cu126 build this project uses:

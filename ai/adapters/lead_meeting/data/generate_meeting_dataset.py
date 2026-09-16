@@ -44,12 +44,13 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import meeting_prompt_format as fmt  # noqa: E402
+ADAPTER_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ADAPTER_DIR))
+import prompt_format as fmt  # noqa: E402
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"
-OUT_PATH = PROJECT_ROOT / "data" / "meeting_train.jsonl"
+AI_ROOT = ADAPTER_DIR.parent.parent
+MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
+OUT_PATH = ADAPTER_DIR / "data" / "meeting_train.jsonl"
 SEED = 42
 
 MIN_WORDS, MAX_WORDS = 150, 250

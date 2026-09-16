@@ -70,9 +70,12 @@ from transformers import (
 )
 from peft import PeftModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import meeting_prompt_format as meeting_fmt  # noqa: E402
-from prompt_format import (  # noqa: E402
+# ai/ on the path, so each adapter's prompt module imports as a package
+# (adapters.<name>.prompt_format) — the three share a filename.
+AI_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AI_ROOT))
+from adapters.lead_meeting import prompt_format as meeting_fmt  # noqa: E402
+from adapters.lead_scoring.prompt_format import (  # noqa: E402
     QUALIFICATION_BY_SCORE,
     SYSTEM_PROMPT,
     build_llama3_prompt,
@@ -91,18 +94,16 @@ log = logging.getLogger("crm-llm")
 # CONFIGURATION
 # ============================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-MODEL_PATH = Path(os.getenv("CRM_MODEL_PATH", PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"))
+MODEL_PATH = Path(os.getenv("CRM_MODEL_PATH", AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"))
 ADAPTER_PATH = Path(
-    os.getenv("CRM_ADAPTER_PATH", PROJECT_ROOT / "outputs" / "lead_management_llama3_lora")
+    os.getenv("CRM_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_scoring" / "weights")
 )
 
 # The qualification-meeting extraction adapter (scripts/train_meeting.py).
 # Separate from the capture-time scorer above: different task, different
 # training data, independently retrainable. Both attach to one base model.
 MEETING_ADAPTER_PATH = Path(
-    os.getenv("CRM_MEETING_ADAPTER_PATH", PROJECT_ROOT / "outputs" / "lead_meeting_llama3_lora")
+    os.getenv("CRM_MEETING_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_meeting" / "weights")
 )
 
 # The deal-state adapter, trained in ../DealIntelligence_CRM. Third adapter on
@@ -118,7 +119,7 @@ MEETING_ADAPTER_PATH = Path(
 DEAL_STATE_ADAPTER_PATH = Path(
     os.getenv(
         "CRM_DEAL_STATE_ADAPTER_PATH",
-        PROJECT_ROOT.parent / "DealIntelligence_CRM" / "outputs" / "deal_state_llama3_lora",
+        AI_ROOT / "adapters" / "deal_state" / "weights",
     )
 )
 
@@ -128,21 +129,14 @@ DEAL_STATE_ADAPTER_PATH = Path(
 #
 # Optional. A clone without that project still serves lead scoring and meeting
 # extraction; only the deal-state route disappears.
-_DEAL_STATE_SCRIPTS = Path(
-    os.getenv(
-        "CRM_DEAL_STATE_SCRIPTS",
-        PROJECT_ROOT.parent / "DealIntelligence_CRM" / "scripts",
-    )
-)
+_DEAL_STATE_DIR = AI_ROOT / "adapters" / "deal_state"
 try:
-    if str(_DEAL_STATE_SCRIPTS) not in sys.path:
-        sys.path.insert(0, str(_DEAL_STATE_SCRIPTS))
-    import deal_state_format as deal_fmt
+    from adapters.deal_state import prompt_format as deal_fmt
 except ImportError as _deal_import_error:  # noqa: BLE001 - optional dependency
     deal_fmt = None
     log.warning(
         "deal_state_format not importable from %s (%s) — /v1/deal-state will be unavailable.",
-        _DEAL_STATE_SCRIPTS, _deal_import_error,
+        _DEAL_STATE_DIR, _deal_import_error,
     )
 
 # PEFT adapter names, used with set_adapter() to switch per request.
@@ -887,7 +881,7 @@ def deal_state(request: DealStateRequest):
     if deal_fmt is None:
         return JSONResponse(
             status_code=503,
-            content={"error": f"deal_state_format not importable from {_DEAL_STATE_SCRIPTS}"},
+            content={"error": f"deal_state_format not importable from {_DEAL_STATE_DIR}"},
         )
     unavailable = _not_ready()
     if unavailable is not None:

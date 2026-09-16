@@ -45,11 +45,12 @@ from prompt_format import SYSTEM_PROMPT, build_llama3_prompt  # noqa: E402
 # --------------------------------------------------------------------------
 # 1. PATHS
 # --------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"
-DATA_PATH = PROJECT_ROOT / "data" / "train.jsonl"
-OUTPUT_DIR = PROJECT_ROOT / "outputs" / "lead_management_llama3_lora"
-LOG_DIR = PROJECT_ROOT / "outputs" / "logs"
+ADAPTER_DIR = Path(__file__).resolve().parent
+AI_ROOT = ADAPTER_DIR.parent.parent
+MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
+OUTPUT_DIR = ADAPTER_DIR / "weights"
+LOG_DIR = ADAPTER_DIR / "logs"
 
 SEED = 42
 

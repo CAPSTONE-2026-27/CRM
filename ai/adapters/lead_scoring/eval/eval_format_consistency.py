@@ -39,13 +39,14 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+ADAPTER_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ADAPTER_DIR))
 from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn, reconcile_output  # noqa: E402
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"
-ADAPTER_PATH = PROJECT_ROOT / "outputs" / "lead_management_llama3_lora"
-DATA_PATH = PROJECT_ROOT / "data" / "train.jsonl"
+AI_ROOT = ADAPTER_DIR.parent.parent
+MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
+ADAPTER_PATH = ADAPTER_DIR / "weights"
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
 
 PRIORITY_BY_QUALIFICATION = {"Hot": "High", "Warm": "Medium", "Cold": "Low"}
 

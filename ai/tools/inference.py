@@ -21,19 +21,18 @@ from transformers import (
 
 from peft import PeftModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn, reconcile_output  # noqa: E402
+AI_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AI_ROOT))
+from adapters.lead_scoring.prompt_format import SYSTEM_PROMPT, build_llama3_prompt, build_user_turn, reconcile_output  # noqa: E402
 
 
 # ============================================================
 # PATHS
 # ============================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
 
-MODEL_PATH = PROJECT_ROOT / "models" / "Llama-3.1-8B-Instruct"
-
-ADAPTER_PATH = PROJECT_ROOT / "outputs" / "lead_management_llama3_lora"
+ADAPTER_PATH = AI_ROOT / "adapters" / "lead_scoring" / "weights"
 
 
 # ============================================================

@@ -38,11 +38,12 @@ import random
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import deal_state_format as fmt  # noqa: E402
+ADAPTER_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ADAPTER_DIR))
+import prompt_format as fmt  # noqa: E402
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-OUT_PATH = PROJECT_ROOT / "data" / "train.jsonl"
+REPO_ROOT = ADAPTER_DIR.parents[2]
+OUT_PATH = ADAPTER_DIR / "data" / "train.jsonl"
 SEED = 42
 
 
@@ -596,7 +597,7 @@ def validate(examples: list) -> int:
     try:
         import joblib
         import pandas as pd
-        xgboost_dir = PROJECT_ROOT.parent / "XgBoost"
+        xgboost_dir = REPO_ROOT / "xgboost"
         sys.path.insert(0, str(xgboost_dir))
         from deal_score_pipeline import transform_for_inference
 
