@@ -7,7 +7,7 @@ Exercises the real services on their real ports, in the order a deal actually
 moves through them:
 
     :8001  Lead Scoring LLM        lead profile      -> lead score
-    :8002  Deal Intelligence LLM   state + meeting   -> updated state
+    :8001  Deal Intelligence LLM   state + meeting   -> updated state
     :8000  XGBoost deal scorer     state             -> deal score
 
 Every other test in these projects calls the model in-process. This one goes
@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapters.deal_state import prompt_format as fmt  # noqa: E402
 
 LEAD_URL = "http://localhost:8001/v1/chat/completions"
-DEAL_URL = "http://localhost:8002/v1/deal-state"
+DEAL_URL = "http://localhost:8001/v1/deal-state"
 SCORE_URL = "http://localhost:8000/score"
 
 
@@ -100,7 +100,7 @@ def test_lead_scoring() -> tuple:
 
 
 # ============================================================
-# 2 + 3. DEAL INTELLIGENCE -> XGBOOST  (:8002 -> :8000)
+# 2 + 3. DEAL INTELLIGENCE -> XGBOOST  (:8001 -> :8000)
 # ============================================================
 # A multi-meeting journey: state carried forward meeting to meeting, exactly as
 # production would. Tests the thing unit tests cannot — that the JSON one
@@ -125,7 +125,7 @@ JOURNEY = [
 
 
 def test_deal_chain() -> tuple:
-    print("2. DEAL INTELLIGENCE -> XGBOOST  (:8002 -> :8000)")
+    print("2. DEAL INTELLIGENCE -> XGBOOST  (:8001 -> :8000)")
     print("-" * 62)
     state = None
     scores = []
@@ -179,7 +179,7 @@ def main() -> int:
     print("=" * 62 + "\n")
 
     for name, url in [("lead scoring", "http://localhost:8001/health"),
-                      ("deal intelligence", "http://localhost:8002/health"),
+                      ("deal intelligence", "http://localhost:8001/health"),
                       ("xgboost scorer", "http://localhost:8000/health")]:
         try:
             with urllib.request.urlopen(url, timeout=10) as response:

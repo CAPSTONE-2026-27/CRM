@@ -16,18 +16,13 @@ import java.util.List;
 /**
  * Reads a qualification meeting and reports five business signals. Nothing else.
  *
- * Replaces the score-producing behaviour of {@code MeetingAnalysisClient}, which
- * asked the model for a summary AND a 0-100 score AND a label in one call. That
+ * Replaced the former MeetingAnalysisClient (since removed), which asked the
+ * model for a summary AND a 0-100 score AND a label in one call. That
  * arrangement has a failure mode with no remedy: the model can return a score
  * its own summary does not support, and afterwards nothing can say which of the
  * two was wrong. Here the model commits to five values in writing and
  * {@link LeadScoreFluctuationEngine} does the arithmetic, so any score can be
  * recomputed from the stored reading and challenged.
- *
- * The existing MeetingAnalysisClient is left in place and untouched: it still
- * serves the older meeting-analysis screen. Two clients rather than a rewrite
- * because the two have different contracts, and changing the old one in place
- * would break a working screen for no benefit.
  *
  * Returns null when the model is unreachable or its reply unusable. The caller
  * falls back to a neutral reading rather than failing the save — a rep who has

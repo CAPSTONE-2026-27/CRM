@@ -2,7 +2,7 @@
 smoke_test.py
 =============
 
-Fires the four CRM AI modules' real prompts at the local LLM server and checks
+Fires the three CRM AI modules' real prompts at the local LLM server and checks
 each reply the same way the Java code will.
 
 This exists because the CRM fails *silently* when a model reply is unusable:
@@ -15,7 +15,7 @@ Run (server must already be up):
     python scripts/smoke_test.py
     python scripts/smoke_test.py --url http://localhost:8001
 
-Exit code is 0 only if all four modules pass.
+Exit code is 0 only if all three modules pass.
 """
 
 from __future__ import annotations
@@ -52,26 +52,6 @@ Product interest: CRM Suite
 Estimated deal value: 15409421.00
 Source channel: Website
 Notes from sales executive: Ready to buy, only finalizing the vendor choice."""
-
-MEETING_SYSTEM = (
-    "You are a CRM assistant supporting a sales representative after a customer meeting. "
-    "You will be given a lead's profile, its previous AI score, and the rep's raw meeting notes. "
-    "Do two things: (1) write a concise 2-4 sentence summary of what happened in the meeting, "
-    "(2) re-score the lead from 0-100 based on the buying signals in those notes. "
-    "Respond with ONLY strict JSON, no prose, no markdown fences: "
-    '{"summary": "<2-4 sentences>", "score": <0-100>, "label": "Hot"|"Warm"|"Cold", '
-    '"reasons": ["<short phrase>", "..."]}. Give 2-5 reasons.'
-)
-
-MEETING_USER = """Contact: Priya Menon
-Company: Pioneer Hospitality K.K.
-Previous AI score: 62
-
-Meeting held on 2026-08-04 at 14:00.
-Rep's meeting notes:
-CFO joined and confirmed budget of 1.5 crore is approved for this quarter. They want to go
-live before the festive season, so the timeline is tight. Still evaluating one competitor
-on price. Agreed to a technical deep-dive next Tuesday."""
 
 DEAL_SYSTEM = (
     "You are a B2B sales analyst. You will be given a sales executive's structured write-up "
@@ -167,7 +147,7 @@ def check(name: str, base: str, system: str, user: str, required: list) -> bool:
 
 
 def check_stream(base: str) -> bool:
-    print("\n--- 4. Deal coach (SSE stream) " + "-" * 29)
+    print("\n--- 3. Deal coach (SSE stream) " + "-" * 29)
     started = time.time()
     chunks, saw_done = [], False
     try:
@@ -242,11 +222,7 @@ def main() -> int:
              "qualificationReasoning", "reason"],
         ),
         check(
-            "2. Meeting analysis (base)", base, MEETING_SYSTEM, MEETING_USER,
-            ["summary", "score", "label", "reasons"],
-        ),
-        check(
-            "3. Deal analysis (base)", base, DEAL_SYSTEM, DEAL_USER,
+            "2. Deal analysis (base)", base, DEAL_SYSTEM, DEAL_USER,
             ["customer_sentiment", "buying_intent", "budget_clarity"],
         ),
         check_stream(base),
@@ -254,9 +230,9 @@ def main() -> int:
 
     passed = sum(results)
     print("\n" + "=" * 62)
-    print(f"{passed}/4 modules passed")
+    print(f"{passed}/{len(results)} modules passed")
     print("=" * 62)
-    return 0 if passed == 4 else 1
+    return 0 if passed == len(results) else 1
 
 
 if __name__ == "__main__":
