@@ -2,8 +2,8 @@ import json
 import re
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = PROJECT_ROOT / "data" / "train.jsonl"
+ADAPTER_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
 
 REQUIRED_FIELDS = [
     "instruction",

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import train  # noqa: E402
 from train import DATA_PATH, MODEL_PATH, formatting_func  # noqa: E402
 

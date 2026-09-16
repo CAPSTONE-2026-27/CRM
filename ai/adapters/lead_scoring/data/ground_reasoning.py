@@ -37,9 +37,9 @@ import re
 import shutil
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = PROJECT_ROOT / "data" / "train.jsonl"
-BACKUP_PATH = PROJECT_ROOT / "data" / "train.jsonl.bak_pre_grounding"
+ADAPTER_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
+BACKUP_PATH = ADAPTER_DIR / "data" / "train.jsonl.bak_pre_grounding"
 
 BULLET_RE = re.compile(r"^• (.+?) contributed (\d+) points\.$", re.MULTILINE)
 

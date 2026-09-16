@@ -29,8 +29,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import deal_state_format as fmt  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from adapters.deal_state import prompt_format as fmt  # noqa: E402
 
 LEAD_URL = "http://localhost:8001/v1/chat/completions"
 DEAL_URL = "http://localhost:8002/v1/deal-state"

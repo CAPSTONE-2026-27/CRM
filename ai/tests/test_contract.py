@@ -24,16 +24,20 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+# ai/tests -> ai; the deal-state adapter supplies the prompt module and, via
+# data/, the dataset generator.
+AI_ROOT = Path(__file__).resolve().parent.parent
+DEAL_STATE_DIR = AI_ROOT / "adapters" / "deal_state"
+sys.path.insert(0, str(DEAL_STATE_DIR / "data"))
+sys.path.insert(0, str(DEAL_STATE_DIR))
 
-import deal_state_format as fmt  # noqa: E402
+import prompt_format as fmt  # noqa: E402
 
-XGBOOST_DIR = ROOT.parent / "XgBoost"
+XGBOOST_DIR = AI_ROOT.parent / "xgboost"
 PIPELINE = XGBOOST_DIR / "deal_score_pipeline.py"
 DATASET = XGBOOST_DIR / "deal_score_dataset_200 .csv"
 SERVE_API = XGBOOST_DIR / "serve_api.py"
-TRAIN_JSONL = ROOT / "data" / "train.jsonl"
+TRAIN_JSONL = DEAL_STATE_DIR / "data" / "train.jsonl"
 
 needs_xgboost_project = pytest.mark.skipif(
     not PIPELINE.exists(), reason="XgBoost project not present"
