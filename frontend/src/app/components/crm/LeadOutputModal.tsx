@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Badge, Button, Field } from "./ui";
+import { SquarePen } from "lucide-react";
 import { useAnalyzeMeeting, useLeadMeetings, useSaveMeeting } from "../../lib/queries";
 import type { Lead, MeetingAnalysis } from "../../lib/types";
 
@@ -327,6 +328,7 @@ export function LeadOutputModal({ lead, onClose }: { lead: Lead; onClose: () => 
           />
           <Button
             label={saveMeeting.isPending ? "Saving…" : "Save meeting record"}
+            icon={SquarePen}
             variant="primary"
             onClick={handleSave}
             disabled={busy || !analysis}

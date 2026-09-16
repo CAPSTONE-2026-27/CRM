@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Badge, Button } from "./ui";
+import { SquarePen } from "lucide-react";
 import { useConvertLead, useLeadMeetings } from "../../lib/queries";
 import { qualificationLabel, qualificationVariant, type Lead } from "../../lib/types";
 
@@ -234,6 +235,7 @@ export function ConvertLeadModal({
           <Button label="Cancel" onClick={onClose} disabled={convert.isPending} />
           <Button
             label={convert.isPending ? "Converting…" : "Convert to opportunity"}
+            icon={SquarePen}
             variant="primary"
             onClick={handleConvert}
             disabled={blocked || convert.isPending}

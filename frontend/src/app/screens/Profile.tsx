@@ -4,6 +4,7 @@ import { colors } from "../tokens";
 import { Card, Stack, Button, Avatar } from "../components/crm/ui";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/apiClient";
+import { Pencil } from "lucide-react";
 
 function EditableField({
   label,
@@ -68,7 +69,7 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
       <EditableField label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} />
       <EditableField label="New password (min 8 characters)" type="password" value={newPassword} onChange={setNewPassword} />
       <div style={{ display: "flex", gap: 8 }}>
-        <Button label={busy ? "Saving…" : "Update password"} variant="primary" onClick={submit} />
+        <Button label={busy ? "Saving…" : "Update password"} icon={Pencil} variant="primary" onClick={submit} />
         <Button label="Cancel" onClick={onDone} />
       </div>
     </Stack>
@@ -167,7 +168,7 @@ export function Profile() {
             Role is managed by an admin, not editable here.
           </div>
           <div>
-            <Button label={saving ? "Saving…" : "Save changes"} variant="primary" onClick={handleSave} />
+            <Button label={saving ? "Saving…" : "Save changes"} icon={Pencil} variant="primary" onClick={handleSave} />
           </div>
         </Stack>
       </Card>
@@ -182,7 +183,7 @@ export function Profile() {
             changingPassword ? (
               <ChangePasswordForm onDone={() => setChangingPassword(false)} />
             ) : (
-              <Button label="Change password" onClick={() => setChangingPassword(true)} />
+              <Button label="Change password" icon={Pencil} onClick={() => setChangingPassword(true)} />
             )
           ) : (
             <div style={{ fontSize: 11, color: colors.textSecondary }}>

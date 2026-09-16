@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Badge, Button } from "./ui";
+import { SquarePen } from "lucide-react";
 import { useReviewDeal } from "../../lib/queries";
 import { formatWhen } from "./DealScoreCard";
 import type { DealPrediction, ManagerDecision, ManagerReview } from "../../lib/types";
@@ -146,6 +147,7 @@ export function ManagerReviewPanel({
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10, marginBottom: 18 }}>
             <Button
               label={review.isPending ? "Recording…" : "Record decision"}
+              icon={SquarePen}
               variant="primary"
               onClick={submit}
               disabled={review.isPending}

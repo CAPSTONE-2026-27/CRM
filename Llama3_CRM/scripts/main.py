@@ -105,13 +105,60 @@ MEETING_ADAPTER_PATH = Path(
     os.getenv("CRM_MEETING_ADAPTER_PATH", PROJECT_ROOT / "outputs" / "lead_meeting_llama3_lora")
 )
 
+# The deal-state adapter, trained in ../DealIntelligence_CRM. Third adapter on
+# the same base weights: a LoRA is ~160MB of low-rank deltas against a ~6.5GB
+# quantised base, so attaching it here costs almost nothing, while running its
+# own server would mean a second full copy of the base model — two processes do
+# not fit on a 16GB card.
+#
+# This is the only direction the two projects may depend on each other. That
+# project's tests assert it imports nothing from here (it must stay runnable
+# standalone); nothing forbids the reverse, and the reverse is what lets one
+# process serve all three tasks.
+DEAL_STATE_ADAPTER_PATH = Path(
+    os.getenv(
+        "CRM_DEAL_STATE_ADAPTER_PATH",
+        PROJECT_ROOT.parent / "DealIntelligence_CRM" / "outputs" / "deal_state_llama3_lora",
+    )
+)
+
+# Its vocabulary, prompt and coercion layer. Imported rather than duplicated:
+# the values are verified against the XGBoost bundle, and a second copy here
+# would drift from that verification the first time either changed.
+#
+# Optional. A clone without that project still serves lead scoring and meeting
+# extraction; only the deal-state route disappears.
+_DEAL_STATE_SCRIPTS = Path(
+    os.getenv(
+        "CRM_DEAL_STATE_SCRIPTS",
+        PROJECT_ROOT.parent / "DealIntelligence_CRM" / "scripts",
+    )
+)
+try:
+    if str(_DEAL_STATE_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_DEAL_STATE_SCRIPTS))
+    import deal_state_format as deal_fmt
+except ImportError as _deal_import_error:  # noqa: BLE001 - optional dependency
+    deal_fmt = None
+    log.warning(
+        "deal_state_format not importable from %s (%s) — /v1/deal-state will be unavailable.",
+        _DEAL_STATE_SCRIPTS, _deal_import_error,
+    )
+
 # PEFT adapter names, used with set_adapter() to switch per request.
 LEAD_SCORING_ADAPTER = "lead_scoring"
 MEETING_ADAPTER = "meeting_extraction"
+DEAL_STATE_ADAPTER = "deal_state"
 
 # Set at load time. Read by the router so a request can fall back to the base
 # model rather than failing when the adapter is absent.
 MEETING_ADAPTER_READY = False
+DEAL_STATE_ADAPTER_READY = False
+
+# A full 17-field state is ~450 tokens; 768 leaves room for longer objection
+# lists without letting a runaway generation hold the inference lock. Matches
+# DEAL_INTEL_MAX_NEW_TOKENS in that project's serve.py.
+DEAL_STATE_MAX_NEW_TOKENS = int(os.getenv("CRM_DEAL_STATE_MAX_NEW_TOKENS", "768"))
 
 SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
 
@@ -219,12 +266,40 @@ def load_model() -> None:
                 "BASE model and read meetings poorly. Train it with "
                 "scripts/train_meeting.py.", MEETING_ADAPTER_PATH)
 
+        # The third adapter: deal state. Same reasoning as the second — optional,
+        # so a clone without ../DealIntelligence_CRM still serves the other two
+        # tasks. Unlike meeting extraction there is no base-model fallback: the
+        # deal-state contract is a 17-field JSON state the XGBoost scorer accepts
+        # verbatim, and an untrained model does not produce that reliably. The
+        # route returns 503 instead, which a caller can act on.
+        if deal_fmt is not None and (DEAL_STATE_ADAPTER_PATH / "adapter_config.json").exists():
+            peft_model.load_adapter(str(DEAL_STATE_ADAPTER_PATH), adapter_name=DEAL_STATE_ADAPTER)
+            deal_state_adapter_loaded = True
+            log.info("Deal-state adapter attached.")
+        else:
+            deal_state_adapter_loaded = False
+            log.warning(
+                "No deal-state adapter at %s — /v1/deal-state will return 503. "
+                "Train it with ../DealIntelligence_CRM/scripts/train.py.",
+                DEAL_STATE_ADAPTER_PATH)
+
+        # Leave the lead-scoring adapter active: load_adapter() makes the most
+        # recently loaded one current, and every route sets what it needs via
+        # _adapter_context anyway — but a predictable resting state makes the
+        # "previous adapter" it restores on exit predictable too.
+        peft_model.set_adapter(LEAD_SCORING_ADAPTER)
+
         peft_model.eval()
         model = peft_model
         globals()["MEETING_ADAPTER_READY"] = meeting_adapter_loaded
+        globals()["DEAL_STATE_ADAPTER_READY"] = deal_state_adapter_loaded
 
-        log.info("Adapters attached: lead-scoring%s. Server ready.",
-                 ", meeting-extraction" if meeting_adapter_loaded else "")
+        attached = ["lead-scoring"]
+        if meeting_adapter_loaded:
+            attached.append("meeting-extraction")
+        if deal_state_adapter_loaded:
+            attached.append("deal-state")
+        log.info("Adapters attached: %s. Server ready.", ", ".join(attached))
     except Exception as exc:  # noqa: BLE001 - startup diagnostics
         _load_error = f"{type(exc).__name__}: {exc}"
         log.error("Model load failed: %s", _load_error)
@@ -556,10 +631,11 @@ def build_prompt_from_messages(messages: List["ChatMessage"]) -> str:
         return build_llama3_prompt(system, user)
 
 
-def _generation_kwargs(max_new_tokens: int, temperature: float) -> dict:
+def _generation_kwargs(max_new_tokens: int, temperature: float,
+                       repetition_penalty: float = 1.05) -> dict:
     kwargs = {
         "max_new_tokens": max_new_tokens,
-        "repetition_penalty": 1.05,
+        "repetition_penalty": repetition_penalty,
         "eos_token_id": tokenizer.eos_token_id,
         "pad_token_id": tokenizer.eos_token_id,
     }
@@ -601,7 +677,7 @@ def _adapter_context(adapter: Optional[str]):
 
 
 def generate_text(prompt: str, *, adapter: Optional[str], max_new_tokens: int,
-                  temperature: float) -> str:
+                  temperature: float, repetition_penalty: float = 1.05) -> str:
     """Blocking generation. Raises on failure so the caller can return HTTP 5xx."""
     start = time.time()
     with INFERENCE_LOCK:
@@ -610,7 +686,9 @@ def generate_text(prompt: str, *, adapter: Optional[str], max_new_tokens: int,
         prompt_len = inputs["input_ids"].shape[-1]
 
         with _adapter_context(adapter), torch.no_grad():
-            outputs = model.generate(**inputs, **_generation_kwargs(max_new_tokens, temperature))
+            outputs = model.generate(
+                **inputs,
+                **_generation_kwargs(max_new_tokens, temperature, repetition_penalty))
 
         completion = tokenizer.decode(outputs[0][prompt_len:], skip_special_tokens=True)
 
@@ -773,7 +851,131 @@ def health():
         "device": DEVICE,
         "model": SERVED_MODEL_NAME,
         "adapter": str(ADAPTER_PATH),
+        "adapters": {
+            "lead_scoring": model is not None,
+            "meeting_extraction": MEETING_ADAPTER_READY,
+            "deal_state": DEAL_STATE_ADAPTER_READY,
+        },
         "error": _load_error,
+    }
+
+
+# ============================================================
+# DEAL STATE
+# ============================================================
+#
+# Mirrors POST /v1/deal-state in ../DealIntelligence_CRM/scripts/serve.py, so a
+# caller moves between the two by changing a base URL and nothing else. That
+# service stays runnable standalone — it is the reference implementation and the
+# thing its test suite exercises; this route exists so the task can be served
+# from the same process as the other two adapters instead of a second copy of
+# the base model.
+#
+# Kept as its own route rather than folded into /v1/chat/completions: the
+# request is a previous state plus notes, not a message list, and the reply has
+# to carry changed_fields and repairs. Forcing that through the chat schema
+# would mean encoding structure in prose and parsing it back out.
+
+
+class DealStateRequest(BaseModel):
+    previous_state: Optional[dict] = None
+    meeting_notes: str
+
+
+@app.post("/v1/deal-state")
+def deal_state(request: DealStateRequest):
+    if deal_fmt is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"deal_state_format not importable from {_DEAL_STATE_SCRIPTS}"},
+        )
+    unavailable = _not_ready()
+    if unavailable is not None:
+        return unavailable
+    if not DEAL_STATE_ADAPTER_READY:
+        # No base-model fallback here, unlike meeting extraction: the contract is
+        # a state the XGBoost scorer accepts verbatim, and an untrained model
+        # does not produce that reliably. A 503 a caller can act on beats a
+        # plausible state that quietly scores wrong.
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"deal-state adapter not loaded (looked in {DEAL_STATE_ADAPTER_PATH})"},
+        )
+    if not request.meeting_notes or not request.meeting_notes.strip():
+        return JSONResponse(status_code=422, content={"error": "meeting_notes must not be empty"})
+
+    started = time.time()
+
+    # Coerced even when supplied: a caller replaying an older state could hand us
+    # a vocabulary this contract no longer accepts.
+    previous, previous_repairs = deal_fmt.coerce_state(request.previous_state or {})
+    if request.previous_state is None:
+        previous["total_meetings"] = 0
+        previous_repairs = []
+
+    # Hand-built rather than routed through tokenizer.apply_chat_template.
+    #
+    # serve.py installs this project's own template onto its tokenizer and
+    # renders through that. Doing the same here would mutate the tokenizer the
+    # lead-scoring and meeting routes share. It is unnecessary anyway: that
+    # template emits bos + header/content/eot per message with content trimmed,
+    # which is exactly what build_llama3_prompt produces — the date preamble its
+    # docstring warns about comes from Llama 3.1's STOCK template, not this one.
+    # Hence the explicit .strip() on both turns, which is the template's | trim.
+    messages = deal_fmt.build_messages(previous, request.meeting_notes)
+    prompt = deal_fmt.build_llama3_prompt(
+        messages[0]["content"].strip(), messages[1]["content"].strip())
+
+    try:
+        # Greedy, and repetition_penalty 1.02 to match serve.py: the output is a
+        # fixed schema over a closed vocabulary, and the contract promises
+        # deterministic output.
+        reply = generate_text(
+            prompt,
+            adapter=DEAL_STATE_ADAPTER,
+            max_new_tokens=DEAL_STATE_MAX_NEW_TOKENS,
+            temperature=0.0,
+            repetition_penalty=1.02,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.error("Deal-state generation failed: %s", exc)
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+    raw = deal_fmt.extract_state(reply)
+    if raw is None:
+        # Carry the previous state forward with the meeting counted. Losing an
+        # opportunity's whole state because one generation was malformed is
+        # worse than a state that did not move, and the empty changed_fields
+        # plus the repair note make it obvious which happened.
+        log.warning("Deal-state reply held no JSON object: %.200s", reply)
+        state = dict(previous)
+        state["total_meetings"] = previous["total_meetings"] + 1
+        repairs = previous_repairs + ["reply-not-json: previous state carried forward"]
+    else:
+        state, repairs = deal_fmt.coerce_state(raw)
+        repairs = previous_repairs + repairs
+
+    changed = [
+        field for field in deal_fmt.FIELD_ORDER
+        if str(previous.get(field)) != str(state.get(field))
+    ]
+    latency_ms = int((time.time() - started) * 1000)
+
+    log.info("deal-state: meetings=%s changed=%d repairs=%d %dms",
+             state["total_meetings"], len(changed), len(repairs), latency_ms)
+    if repairs:
+        # An unrepaired bad one-hot value scores as zero rather than raising, so
+        # this list is the only thing separating a clean state from a patched one.
+        log.warning("deal-state repairs applied: %s", "; ".join(repairs))
+
+    return {
+        "state": state,
+        "changed_fields": changed,
+        "repairs": repairs,
+        "adapter": True,
+        "model_version": deal_fmt.CONTRACT_VERSION,
+        "latency_ms": latency_ms,
     }
 
 

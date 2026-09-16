@@ -87,10 +87,7 @@ public class FeatureEngineeringService {
                 }
             }
 
-            // competitor_mentions is this layer's name; the model calls the same
-            // thing competitor_mention. Renaming it here keeps the mismatch in
-            // one place instead of leaking into the prompt or the database.
-            modelInputs.put(modelKeyFor(parameter), snapped);
+            modelInputs.put(DealParameters.modelKey(parameter), snapped);
             features.put(parameter, DealParameters.encode(snapped));
         }
 
@@ -127,10 +124,6 @@ public class FeatureEngineeringService {
         features.put("engagement_score", engagement);
 
         return new EngineeredFeatures(features, modelInputs, imputed, meanConfidence(extracted, imputed));
-    }
-
-    private String modelKeyFor(String parameter) {
-        return DealParameters.COMPETITOR_MENTIONS.equals(parameter) ? "competitor_mention" : parameter;
     }
 
     /**

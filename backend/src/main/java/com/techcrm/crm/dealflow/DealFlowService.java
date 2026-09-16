@@ -20,8 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Orchestrates the deal analysis pipeline: meeting output -> LLM extraction ->
@@ -50,6 +53,7 @@ public class DealFlowService {
     private final DealPredictionRepository predictionRepository;
     private final ManagerReviewRepository reviewRepository;
 
+    private final DealStateClient dealStateClient;
     private final DealAnalysisClient analysisClient;
     private final HeuristicMeetingAnalyzer heuristicAnalyzer;
     private final FeatureEngineeringService featureEngineering;
@@ -64,6 +68,7 @@ public class DealFlowService {
                            FeatureSetRepository featureSetRepository,
                            DealPredictionRepository predictionRepository,
                            ManagerReviewRepository reviewRepository,
+                           DealStateClient dealStateClient,
                            DealAnalysisClient analysisClient,
                            HeuristicMeetingAnalyzer heuristicAnalyzer,
                            FeatureEngineeringService featureEngineering,
@@ -77,6 +82,7 @@ public class DealFlowService {
         this.featureSetRepository = featureSetRepository;
         this.predictionRepository = predictionRepository;
         this.reviewRepository = reviewRepository;
+        this.dealStateClient = dealStateClient;
         this.analysisClient = analysisClient;
         this.heuristicAnalyzer = heuristicAnalyzer;
         this.featureEngineering = featureEngineering;
@@ -145,12 +151,15 @@ public class DealFlowService {
         return meetingOutputRepository.save(meeting);
     }
 
-    /** Steps 5-8, persisted stage by stage. */
+    /**
+     * Steps 5-8, persisted stage by stage.
+     *
+     * Three readings are tried in order, each a weaker reading of the same
+     * meeting. Only the first carries what earlier meetings established; the
+     * other two see this write-up alone and default everything it doesn't
+     * mention, which is the behaviour that predates the deal-state service.
+     */
     private DealAnalysis runAnalysis(AuthenticatedUser caller, Deal deal, MeetingOutput meeting) {
-        Integer leadScore = deal.getLeadScore() == null ? null : (int) Math.round(deal.getLeadScore());
-        AnalysisResult result = analysisClient.analyze(meeting, deal.getName(), leadScore);
-
-        Map<String, ExtractedValue> extracted;
         DealAnalysis analysis = new DealAnalysis();
         analysis.setOrganizationId(caller.organizationId());
         analysis.setDealId(deal.getId());
@@ -158,19 +167,53 @@ public class DealFlowService {
         analysis.setLeadId(deal.getLeadId());
         analysis.setMeetingOutputId(meeting.getId());
 
-        if (result == null) {
+        Map<String, ExtractedValue> extracted = null;
+
+        /* ---- First choice: stateful extraction ---- */
+        Map<String, Object> previousState = previousStateFor(caller, deal);
+        DealStateClient.DealStateResult state = dealStateClient.update(previousState, meeting);
+        if (state != null) {
+            extracted = fromDealState(state, previousState, meeting.getVersion());
+            analysis.setStatus(state.adapterLoaded() ? DealAnalysis.SUCCEEDED : DealAnalysis.DEGRADED);
+            analysis.setModelVersion("deal-state/"
+                    + (state.modelVersion() == null ? "unknown" : state.modelVersion()));
+            analysis.setLatencyMs((int) Math.min(state.latencyMs(), Integer.MAX_VALUE));
+            analysis.setRawResponse(state.rawResponse());
+
+            if (!state.adapterLoaded()) {
+                analysis.setErrorMessage("The deal-state service answered from base weights — no trained adapter "
+                        + "was loaded, so these values are not production output.");
+            } else if (!state.repairs().isEmpty()) {
+                // Surfaced rather than only logged: a repaired one-hot value is
+                // the failure the scorer accepts silently, so the record has to
+                // say it happened or nothing downstream ever can.
+                analysis.setErrorMessage(state.repairs().size()
+                        + " value(s) were repaired to fit the scorer's vocabulary: "
+                        + String.join("; ", state.repairs()));
+            }
+        }
+
+        /* ---- Second: single-meeting extraction, the pre-deal-state path ---- */
+        if (extracted == null) {
+            Integer leadScore = deal.getLeadScore() == null ? null : (int) Math.round(deal.getLeadScore());
+            AnalysisResult result = analysisClient.analyze(meeting, deal.getName(), leadScore);
+            if (result != null) {
+                extracted = result.parameters();
+                analysis.setStatus(DealAnalysis.SUCCEEDED);
+                analysis.setModelVersion(llmModelVersion);
+                analysis.setLatencyMs((int) Math.min(result.latencyMs(), Integer.MAX_VALUE));
+                analysis.setRawResponse(result.rawResponse());
+            }
+        }
+
+        /* ---- Last resort: keyword match ---- */
+        if (extracted == null) {
             extracted = heuristicAnalyzer.analyze(meeting);
             analysis.setStatus(DealAnalysis.DEGRADED);
             analysis.setModelVersion("heuristic-fallback");
             analysis.setErrorMessage("The analysis model was unavailable or returned an unusable reply; "
                     + "parameters were derived by keyword match.");
             log.warn("Deal analysis degraded to heuristics for deal {} meeting {}", deal.getId(), meeting.getId());
-        } else {
-            extracted = result.parameters();
-            analysis.setStatus(DealAnalysis.SUCCEEDED);
-            analysis.setModelVersion(llmModelVersion);
-            analysis.setLatencyMs((int) Math.min(result.latencyMs(), Integer.MAX_VALUE));
-            analysis.setRawResponse(result.rawResponse());
         }
 
         DealAnalysis saved = analysisRepository.save(analysis);
@@ -180,6 +223,79 @@ public class DealFlowService {
         predictAndPersist(caller, deal, saved, engineered);
 
         return saved;
+    }
+
+    /**
+     * The model inputs from this deal's most recent analysed meeting — the state
+     * the new one starts from. Null on the first meeting, which the deal-state
+     * service reads as "no prior state" and answers from its own defaults.
+     */
+    private Map<String, Object> previousStateFor(AuthenticatedUser caller, Deal deal) {
+        return featureSetRepository
+                .findFirstByDealIdAndOrganizationIdOrderByIdDesc(deal.getId(), caller.organizationId())
+                .map(FeatureSet::getModelInputs)
+                .orElse(null);
+    }
+
+    /**
+     * Maps the seventeen-field state onto the fourteen parameters the rest of
+     * the chain reads.
+     *
+     * The other three — total_meetings, lead_score and engagement_score — are
+     * deliberately dropped here. They are arithmetic rather than judgement, the
+     * CRM computes them exactly, and the adapter's own provenance records 40%
+     * field accuracy on lead_score. {@link FeatureEngineeringService} puts the
+     * correct values back.
+     */
+    private Map<String, ExtractedValue> fromDealState(DealStateClient.DealStateResult result,
+                                                      Map<String, Object> previousState,
+                                                      int meetingVersion) {
+        Map<String, Object> state = result.state();
+        Set<String> repaired = repairedFields(result.repairs());
+        boolean firstMeeting = previousState == null || previousState.isEmpty();
+
+        Map<String, ExtractedValue> extracted = new LinkedHashMap<>();
+        for (String parameter : DealParameters.ORDERED) {
+            String key = DealParameters.modelKey(parameter);
+            Object value = state.get(key);
+            if (value == null) continue;
+
+            // No confidence. This model reports what it changed, not how sure it
+            // is — inventing a number would put a meter on screen that means
+            // nothing, and the UI already hides the meter when it is absent.
+            extracted.put(parameter, new ExtractedValue(
+                    String.valueOf(value),
+                    null,
+                    explain(firstMeeting, result.changedFields().contains(key),
+                            meetingVersion, repaired.contains(key))));
+        }
+        return extracted;
+    }
+
+    /** Where a value came from, in place of a confidence the model doesn't report. */
+    private String explain(boolean firstMeeting, boolean changed, int meetingVersion, boolean repaired) {
+        String provenance;
+        if (firstMeeting) {
+            provenance = "Read from this meeting.";
+        } else if (changed) {
+            provenance = "Updated by this meeting.";
+        } else {
+            provenance = "Carried forward from meeting " + (meetingVersion - 1) + ".";
+        }
+        return repaired
+                ? provenance + " The value was repaired to fit the scorer's vocabulary."
+                : provenance;
+    }
+
+    /** Repairs arrive as "field=old->new"; the field name is everything before
+     *  the first '='. */
+    private Set<String> repairedFields(List<String> repairs) {
+        Set<String> fields = new LinkedHashSet<>();
+        for (String repair : repairs) {
+            int separator = repair.indexOf('=');
+            fields.add(separator > 0 ? repair.substring(0, separator) : repair);
+        }
+        return fields;
     }
 
     private void persistParameters(AuthenticatedUser caller, Deal deal, DealAnalysis analysis,

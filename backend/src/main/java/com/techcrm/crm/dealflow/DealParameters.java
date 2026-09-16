@@ -116,6 +116,17 @@ public final class DealParameters {
             Map.entry(IMPLEMENTATION_READINESS, READINESS_VALUES),
             Map.entry(UPSELL_OPPORTUNITY, YES_NO_VALUES));
 
+    /**
+     * This layer's name for a parameter, as the scoring bundle spells it.
+     *
+     * One disagreement, kept in one place: we call it competitor_mentions, the
+     * bundle calls it competitor_mention. Renaming either side would mean
+     * touching the prompt or a migration, so the translation lives here instead.
+     */
+    public static String modelKey(String parameter) {
+        return COMPETITOR_MENTIONS.equals(parameter) ? "competitor_mention" : parameter;
+    }
+
     /** Used when the model omits a parameter or returns something unmappable.
      *  Every default is the neutral or most conservative option, so a missing
      *  reading pulls the score toward the middle rather than inventing a

@@ -24,7 +24,7 @@ import { QualifyControl } from "../components/crm/QualifyControl";
 import { DealWorkspace } from "../components/crm/DealWorkspace";
 import { LeadFlowPanel } from "../components/crm/LeadFlowPanel";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
-import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, Pencil, X } from "lucide-react";
+import { Filter, Search, Send, Brain, Zap, Upload, Download, Trash2, Pencil, SquarePen, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
 import {
   useDashboardSummary,
@@ -618,7 +618,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
             icon={Download}
             onClick={handleExportCsv}
           />
-          <Button label="Add lead" icon={Plus} variant="primary" onClick={() => onNavigate("F03")} />
+          <Button label="Add lead" icon={SquarePen} variant="primary" onClick={() => onNavigate("F03")} />
         </div>
       </div>
       {lastImportResult && (
@@ -730,11 +730,13 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
                     setOutputLead(r);
                   }}
                   style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
                     border: `0.5px solid ${colors.aiPurple}55`, background: colors.aiLight, color: colors.aiPurple,
                     fontSize: 11, fontWeight: 500, borderRadius: 5, padding: "3px 9px", cursor: "pointer",
                     whiteSpace: "nowrap", fontFamily: "inherit",
                   }}
                 >
+                  <SquarePen size={11} color={colors.aiPurple} />
                   Schedule
                 </button>
               </Cell>
@@ -748,11 +750,13 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
                       setConvertLead(r);
                     }}
                     style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
                       border: `0.5px solid ${colors.primary}`, background: colors.primaryLight, color: colors.primary,
                       fontSize: 11, fontWeight: 500, borderRadius: 5, padding: "3px 10px", cursor: "pointer",
                       whiteSpace: "nowrap", fontFamily: "inherit",
                     }}
                   >
+                    <SquarePen size={11} color={colors.primary} />
                     Convert
                   </button>
                 )}
@@ -990,7 +994,7 @@ function EditLeadModal({
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <Button label="Cancel" onClick={onClose} />
-          <Button label={updateLead.isPending ? "Saving…" : "Save changes"} variant="primary" onClick={save} />
+          <Button label={updateLead.isPending ? "Saving…" : "Save changes"} icon={Pencil} variant="primary" onClick={save} />
         </div>
       </div>
     </div>
@@ -1095,7 +1099,7 @@ function LeadDetailModal({
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button label="Close" onClick={onClose} />
-          <Button label="Edit lead" variant="primary" onClick={onEdit} />
+          <Button label="Edit lead" icon={Pencil} variant="primary" onClick={onEdit} />
         </div>
       </div>
     </div>
@@ -1188,7 +1192,7 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
 
   return (
     <Stack>
-      <ActionBar left={[]} right={[{ label: "New deal", icon: Plus, variant: "primary", onClick: () => onNavigate("F07") }]} />
+      <ActionBar left={[]} right={[{ label: "New deal", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F07") }]} />
       {isLoading ? (
         <LoadingState />
       ) : (
@@ -1265,7 +1269,7 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
 
   return (
     <Stack>
-      <ActionBar left={[]} right={[{ label: "Add account", icon: Plus, variant: "primary", onClick: () => onNavigate("F04") }]} />
+      <ActionBar left={[]} right={[{ label: "Add account", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F04") }]} />
       <Card title={`Accounts (${accounts?.length ?? 0})`}>
         {accountsLoading && <LoadingState />}
         {!accountsLoading &&
@@ -1367,7 +1371,7 @@ export function Workflow({ onNavigate }: { onNavigate: Nav }) {
 
   return (
     <Stack>
-      <ActionBar left={[]} right={[{ label: "New workflow", icon: Plus, variant: "primary", onClick: () => onNavigate("F05") }]} />
+      <ActionBar left={[]} right={[{ label: "New workflow", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F05") }]} />
       <Card title={`Saved workflows (${rows.length})`}>
         {isLoading && <LoadingState />}
         {!isLoading &&
@@ -1442,7 +1446,7 @@ export function RPA({ onNavigate }: { onNavigate: Nav }) {
           canManageBots
             ? [
                 { label: "Deploy bot", icon: Zap, onClick: () => onNavigate("F06") },
-                { label: "Create bot", icon: Plus, variant: "primary", onClick: () => onNavigate("F01") },
+                { label: "Create bot", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F01") },
               ]
             : []
         }
@@ -1637,7 +1641,7 @@ export function Marketing({ onNavigate }: { onNavigate: Nav }) {
           <SearchInput value={query} onChange={setQuery} placeholder="Search campaign, segment…" />
           <FilterSelect value={status} onChange={setStatus} options={["All statuses", "Active", "Scheduled", "Draft"]} />
         </div>
-        <Button label="New campaign" icon={Plus} variant="primary" onClick={() => onNavigate("F08")} />
+        <Button label="New campaign" icon={SquarePen} variant="primary" onClick={() => onNavigate("F08")} />
       </div>
       <MetricGrid columns={4}>
         <MetricCard label="Active campaigns" value={isLoading ? "—" : String(activeCampaigns)} />
@@ -1798,7 +1802,7 @@ function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           <Button label="Cancel" onClick={onClose} />
-          <Button label={updateUser.isPending ? "Saving…" : "Save changes"} variant="primary" onClick={save} />
+          <Button label={updateUser.isPending ? "Saving…" : "Save changes"} icon={Pencil} variant="primary" onClick={save} />
         </div>
       </div>
     </div>
@@ -1884,7 +1888,7 @@ export function Security({ onNavigate }: { onNavigate: Nav }) {
 
   return (
     <Stack>
-      <ActionBar left={[]} right={canAddUsers ? [{ label: "Add user", icon: Plus, variant: "primary", onClick: () => onNavigate("F02") }] : []} />
+      <ActionBar left={[]} right={canAddUsers ? [{ label: "Add user", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F02") }] : []} />
       <MetricGrid columns={4}>
         <MetricCard label="Audit events (24h)" value={summaryLoading ? "—" : String(summary?.auditEvents24h ?? 0)} />
         <MetricCard label="Failed logins" value={summaryLoading ? "—" : String(summary?.failedLogins24h ?? 0)} />
@@ -1911,8 +1915,9 @@ export function Security({ onNavigate }: { onNavigate: Nav }) {
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button
                       onClick={() => setEditingUser(u)}
-                      style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
                     >
+                      <Pencil size={12} color={colors.primary} />
                       Edit
                     </button>
                     {u.id !== user?.id && (

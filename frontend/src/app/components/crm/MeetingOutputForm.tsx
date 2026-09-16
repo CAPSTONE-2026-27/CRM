@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Button, Field } from "./ui";
+import { SquarePen } from "lucide-react";
 import { useSubmitMeetingOutput, type MeetingOutputInput } from "../../lib/queries";
 import type { MeetingOutputDetail } from "../../lib/types";
 
@@ -201,6 +202,7 @@ export function MeetingOutputForm({
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button
           label={submit.isPending ? "Analysing…" : "Submit and analyse"}
+          icon={SquarePen}
           variant="primary"
           onClick={handleSubmit}
           disabled={submit.isPending}

@@ -88,6 +88,29 @@ ai:
   # tokens of JSON in one reply — at 30s that call times out mid-generation and
   # every deal silently falls through to the heuristic analyser.
   request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:180000}
+# The XGBoost deal scorer (XgBoost/serve_api.py). Previously undeclared here and
+# left to the client's own @Value defaults, which made the port invisible to
+# anyone reading this file.
+deal-scoring:
+  base-url: ${DEAL_SCORING_BASE_URL:http://127.0.0.1:8000}
+  # A tree model answers in milliseconds; this only has to cover a cold start.
+  request-timeout-ms: ${DEAL_SCORING_TIMEOUT_MS:10000}
+# The stateful deal-state model (DealIntelligence_CRM/scripts/serve.py).
+#
+# BLANK BY DEFAULT, and blank means off. With no URL the deal flow keeps its
+# previous behaviour — each meeting read on its own — instead of failing every
+# submission on an installation that hasn't started the service.
+#
+# Set it to http://127.0.0.1:8002 once `python DealIntelligence_CRM/scripts/serve.py`
+# is running. That turns on carry-forward: fields an earlier meeting established
+# survive a later meeting that doesn't mention them, rather than reverting to a
+# neutral default. Two of those fields are one-hot columns the scorer accepts
+# silently, so the difference shows up as a wrong score, not an error.
+#
+# Timeout matches ai.request-timeout-ms: same 8B model, same generation cost.
+deal-state:
+  base-url: ${DEAL_STATE_BASE_URL:}
+  request-timeout-ms: ${DEAL_STATE_TIMEOUT_MS:180000}
 app:
   # Where OAuth sends the browser back to once sign-in completes.
   frontend-url: ${FRONTEND_URL:http://localhost:5173}

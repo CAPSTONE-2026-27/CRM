@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { Pencil } from "lucide-react";
 import { badgeVariants, colors } from "../../tokens";
 import { useQualifyLead } from "../../lib/queries";
 import { qualificationLabel, qualificationVariant, type Lead } from "../../lib/types";
@@ -71,6 +72,9 @@ export function QualifyControl({ lead, compact }: { lead: Lead; compact?: boolea
         handleClick();
       }}
       style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
         background: tone.bg,
         color: tone.text,
         // A hairline border is what separates this from the read-only badges in
@@ -87,6 +91,7 @@ export function QualifyControl({ lead, compact }: { lead: Lead; compact?: boolea
         opacity: qualify.isPending ? 0.55 : 1,
       }}
     >
+      <Pencil size={compact ? 10 : 11} color={tone.text} />
       {qualify.isPending ? "Saving…" : label}
     </button>
   );

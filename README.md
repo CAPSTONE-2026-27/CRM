@@ -8,19 +8,52 @@ lead scoring and post-meeting analysis driven by an LLM.
 
 ```
 .
-├── frontend/   React 18 + Vite + TypeScript single-page app
-├── backend/    Spring Boot REST API (Java 21)
-├── ml/         Llama-3 fine-tuning for CRM lead scoring
-└── docs/       Setup and reference documentation
+├── frontend/               React 18 + Vite + TypeScript single-page app
+├── backend/                Spring Boot REST API (Java 21)
+├── Llama3_CRM/             Llama-3 fine-tunes: lead scoring + meeting extraction
+├── DealIntelligence_CRM/   Llama-3 fine-tune: stateful deal state
+├── XgBoost/                Deal-score regressor
+└── docs/                   Setup and reference documentation
 ```
 
 | Directory | Stack | Runs on |
 |---|---|---|
 | [`frontend/`](frontend/) | React, Vite, TanStack Query | `http://localhost:5173` |
 | [`backend/`](backend/) | Spring Boot 4, JPA, Flyway, Spring Security | `http://localhost:8080` |
-| [`ml/`](ml/) | Python, PyTorch/PEFT | offline training |
+| [`XgBoost/`](XgBoost/) | Python, XGBoost, FastAPI | `http://127.0.0.1:8000` |
+| [`Llama3_CRM/`](Llama3_CRM/) | Python, PyTorch/PEFT, FastAPI | `http://127.0.0.1:8001` |
+| [`DealIntelligence_CRM/`](DealIntelligence_CRM/) | Python, PyTorch/PEFT, FastAPI | `http://127.0.0.1:8002` |
 
 The API serves everything under `/api`, e.g. `http://localhost:8080/api/leads`.
+
+The backend degrades rather than fails when a model service is down: a deal
+keeps its previous score, and a meeting write-up is always saved even if nothing
+downstream of it succeeds.
+
+### Stateful deal analysis (opt-in)
+
+`DealIntelligence_CRM` is **off by default**. Without it, each meeting write-up
+is read on its own, so a field an earlier meeting established but this one does
+not repeat falls back to a neutral default — and two of those fields are one-hot
+columns the scorer accepts silently rather than rejecting, so the cost shows up
+as a wrong score rather than an error.
+
+To turn it on:
+
+```bash
+python DealIntelligence_CRM/scripts/serve.py      # :8002
+export DEAL_STATE_BASE_URL=http://127.0.0.1:8002  # then restart the backend
+```
+
+With it set, the deal flow sends the previous state alongside the new notes and
+carries unchanged fields forward. `total_meetings`, `lead_score` and
+`engagement_score` are always recomputed by the backend and never taken from the
+model — they are arithmetic, and the adapter's own provenance records 40% field
+accuracy on `lead_score`.
+
+Note it holds a second copy of the 8B base model in VRAM alongside
+`Llama3_CRM`. If the card cannot fit both, leave `DEAL_STATE_BASE_URL` unset and
+the previous behaviour applies.
 
 ## Getting started
 

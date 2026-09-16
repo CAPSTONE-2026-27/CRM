@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Button } from "./ui";
+import { Pencil } from "lucide-react";
 import { QualifyControl } from "./QualifyControl";
 import { useAssignLead } from "../../lib/queries";
 import { useAuth } from "../../lib/auth";
@@ -102,6 +103,7 @@ export function LeadFlowPanel({ lead, users }: { lead: Lead; users: UserRow[] })
             </select>
             <Button
               label={assign.isPending ? "Assigning…" : "Assign"}
+              icon={Pencil}
               onClick={handleAssign}
               disabled={assign.isPending || !qualified}
             />

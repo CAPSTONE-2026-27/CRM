@@ -63,6 +63,7 @@ import {
   Shuffle,
   Clock,
   UserCheck,
+  SquarePen,
 } from "lucide-react";
 
 export type WizardId = "F01" | "F02" | "F03" | "F04" | "F05" | "F06" | "F07" | "F08";
@@ -114,7 +115,7 @@ function F01({ onCancel }: { onCancel: () => void }) {
   const createBot = useCreateRpaBot();
 
   const primaryLabel = step < 4 ? `Next: ${F01_STEPS[step + 1]}` : "Create bot";
-  const primaryIcon = step === 4 ? Bot : undefined;
+  const primaryIcon = step === 4 ? SquarePen : undefined;
 
   const handlePrimary = async () => {
     if (step === 0 && !botName.trim()) {
@@ -355,7 +356,7 @@ function F02({ onCancel }: { onCancel: () => void }) {
     setPermissions((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
 
   const primaryLabel = step < 3 ? `Next: ${F02_STEPS[step + 1]}` : "Create user";
-  const primaryIcon = step === 3 ? Check : undefined;
+  const primaryIcon = step === 3 ? SquarePen : undefined;
 
   const handlePrimary = async () => {
     if (step === 0 && (!form.fullName.trim() || !form.email.trim())) {
@@ -616,7 +617,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
 
   const primaryLabel =
     step === 0 ? "Next: Lead details" : step === 1 ? "Create lead" : isPending ? "Scoring…" : "Done";
-  const primaryIcon = step === 2 && !isPending ? Check : undefined;
+  const primaryIcon = step === 1 ? SquarePen : step === 2 && !isPending ? Check : undefined;
 
   const submitLead = async () => {
     setStep(2);
@@ -924,7 +925,7 @@ function F04({ onCancel }: { onCancel: () => void }) {
   const createAccount = useCreateAccount();
 
   const primaryLabel = step < 2 ? `Next: ${F04_STEPS[step + 1]}` : "Create account";
-  const primaryIcon = step === 2 ? Check : undefined;
+  const primaryIcon = step === 2 ? SquarePen : undefined;
 
   const handlePrimary = async () => {
     if (step === 0 && !form.name.trim()) {
@@ -1503,7 +1504,7 @@ function F07({ onCancel }: { onCancel: () => void }) {
     step < 2 ? `Next: ${F07_STEPS[step + 1]}`
     : step === 2 ? (createDeal.isPending ? "Scoring…" : "Create & score deal")
     : "Done";
-  const primaryIcon = step === 3 ? Check : undefined;
+  const primaryIcon = step === 2 ? SquarePen : step === 3 ? Check : undefined;
 
   const handlePrimary = async () => {
     if (step === 0 && !form.name.trim()) {
