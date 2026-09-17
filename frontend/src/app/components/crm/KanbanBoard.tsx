@@ -9,7 +9,10 @@ const ITEM_TYPE = "DEAL_CARD";
 export type DealCard = {
   id: string;
   name: string;
+  /** Display text for the deal value, e.g. "₹2,34,567". */
   value: string;
+  /** The same value as a number, so column totals never re-parse display text. */
+  amount: number;
   probability: string;
   variant: BadgeVariant;
 };
@@ -20,15 +23,9 @@ export type Column = {
   cards: DealCard[];
 };
 
-function parseValue(v: string): number {
-  // "₹42K" -> 42 ; "₹5K" -> 5 ; "Won" -> 0
-  const m = v.match(/([\d.]+)/);
-  return m ? parseFloat(m[1]) : 0;
-}
-
 function formatValue(total: number): string {
-  if (total === 0) return "₹0";
-  return `₹${Number.isInteger(total) ? total : total.toFixed(1)}K`;
+  // Same en-IN lakh/crore grouping as the cards, so a total reads like its parts.
+  return `₹${total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 function Card({ card, columnId }: { card: DealCard; columnId: string }) {
@@ -129,7 +126,7 @@ function ColumnView({
     collect: (monitor) => ({ isOver: monitor.isOver() }),
   }), [column.id]);
 
-  const total = column.cards.reduce((sum, c) => sum + parseValue(c.value), 0);
+  const total = column.cards.reduce((sum, c) => sum + c.amount, 0);
 
   return (
     <div
