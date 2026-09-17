@@ -135,6 +135,4 @@ degrade rather than fail.
 ## Documentation
 
 - [Database setup](docs/DATABASE-SETUP.md)
-- [Design guidelines](docs/DESIGN-GUIDELINES.md)
-- [Backend migration history](docs/BACKEND-MIGRATION.md)
 - [Attributions](docs/ATTRIBUTIONS.md)
