@@ -37,3 +37,6 @@ venv/
 .pytest_cache/
 hf_cache/
 .ipynb_checkpoints/
+
+# Deal scorer audit log — appended on every /score call, local runtime output.
+xgboost/outputs/prediction_log.jsonl
