@@ -19,13 +19,18 @@ The metrics below score what actually matters:
   changed_recall      of the fields that SHOULD have moved, how many did
   unchanged_precision of the fields that should NOT have moved, how many stayed
 
+By default the state is scored as server/main.py serves it: coerced, then the
+four derived numerics recomputed by fmt.apply_derived_fields(). --raw scores
+the adapter's own values for those fields instead, which is what to watch when
+retraining.
+
 The last two are the real test. A model that copies the previous state verbatim
 scores ~90% field accuracy — most fields do not move in a given meeting — while
 being useless. changed_recall catches exactly that: it would be 0.
 
 Run (after training):
-    python scripts/evaluate.py
-    python scripts/evaluate.py --limit 40 --adapter outputs/deal_state_llama3_lora/checkpoint-150
+    python adapters/deal_state/eval/evaluate.py
+    python adapters/deal_state/eval/evaluate.py --limit 40 --adapter adapters/deal_state/weights/checkpoint-150
 """
 
 from __future__ import annotations
@@ -83,6 +88,15 @@ def held_out_rows(limit: int | None):
     return rows[:limit] if limit else rows
 
 
+def served_state(messages, raw: dict, raw_numerics: bool = False) -> tuple:
+    """(previous, state, repairs) exactly as /v1/deal-state would produce them."""
+    previous, _ = fmt.coerce_state(fmt.extract_state(messages[1]["content"]))
+    state, repairs = fmt.coerce_state(raw)
+    if not raw_numerics:
+        state, _ = fmt.apply_derived_fields(previous, state)
+    return previous, state, repairs
+
+
 def generate(tokenizer, model, messages) -> str:
     prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
@@ -107,6 +121,9 @@ def main() -> int:
     parser.add_argument("--adapter", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--limit", type=int, default=None,
                         help="evaluate only the first N held-out rows")
+    parser.add_argument("--raw", action="store_true",
+                        help="score the adapter's own derived numerics instead of the "
+                             "recomputed values the server returns")
     args = parser.parse_args()
 
     if not (args.adapter / "adapter_config.json").exists():
@@ -138,11 +155,10 @@ def main() -> int:
             continue
         totals["json_valid"] += 1
 
-        _, repairs = fmt.coerce_state(raw)
+        _, actual, repairs = served_state(messages, raw, raw_numerics=args.raw)
         if not repairs:
             totals["scoreable"] += 1
 
-        actual, _ = fmt.coerce_state(raw)
         if all(str(actual[f]) == str(expected[f]) for f in fmt.FIELD_ORDER):
             totals["exact_state"] += 1
 

@@ -5,15 +5,15 @@ QLoRA supervised fine-tuning of Llama 3.1 8B Instruct for CRM Deal Intelligence:
 (previous deal state + meeting notes) -> updated deal state.
 
 Hardware target : NVIDIA RTX A4000 (16GB VRAM), Windows 11, CUDA 12.6
-Base weights    : shared with ../Llama3_CRM — this project trains only an adapter
+Base weights    : ai/base-model, shared with the other two adapters — this trains only an adapter
 
 Run:
-    python scripts/generate_dataset.py --rows 800 --validate   # first
-    python scripts/train.py
-    python scripts/train.py --resume                           # after a crash
+    python adapters/deal_state/data/generate_dataset.py --rows 800 --validate   # first
+    python adapters/deal_state/train.py
+    python adapters/deal_state/train.py --resume                           # after a crash
 
-Differences from ../Llama3_CRM/scripts/train.py, and why
--------------------------------------------------------
+Differences from adapters/lead_scoring/train.py, and why
+--------------------------------------------------------
 That script trains a different task on the same base model, and most of its
 configuration transfers unchanged (4-bit NF4, r=16 LoRA, paged AdamW, gradient
 checkpointing) — those were tuned against this exact GPU and are not worth
@@ -106,7 +106,7 @@ def formatting_func(example: dict) -> str:
 
     NOT used for training — the trainer consumes the `messages` column directly
     so the tokenizer's chat template applies and assistant_only_loss can mask
-    the prompt. This exists for scripts/check_lengths.py, which needs a single
+    the prompt. This exists for adapters/deal_state/data/check_lengths.py, which needs a single
     string to tokenise, and it deliberately goes through the same chat template
     rather than a hand-built prompt so the lengths it reports are the real ones.
     """
@@ -140,7 +140,7 @@ def load_and_prepare_dataset():
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"No training data at {DATA_PATH}. Run:\n"
-            "    python scripts/generate_dataset.py --rows 800 --validate"
+            "    python adapters/deal_state/data/generate_dataset.py --rows 800 --validate"
         )
 
     dataset = load_dataset("json", data_files=str(DATA_PATH), split="train")
@@ -285,7 +285,7 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         bf16=bf16_ok,
         fp16=not bf16_ok,
         # Measured max over the generated set is 1144 tokens (p99 1110), so this
-        # never truncates. Verify with scripts/check_lengths.py after changing
+        # never truncates. Verify with adapters/deal_state/data/check_lengths.py after changing
         # the state schema or the note templates.
         max_length=2048,
         packing=False,        # separate examples keep the loss signal per-record

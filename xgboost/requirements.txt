@@ -14,9 +14,17 @@ numpy==2.4.6
 scikit-learn==1.9.0
 xgboost==3.3.0
 joblib==1.5.3
+# deal_score_service imports deal_score_pipeline, which imports matplotlib at
+# module level - so serving cannot start without it, even though it only draws
+# training plots.
+matplotlib==3.11.1
+
+# --- HTTP API (serve_api.py, the service the CRM backend calls on :8000) -----
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
 
 # --- training only (not required by deal_score_service) --------------------
-matplotlib==3.11.1
 shap==0.52.0
 
 # --- development -----------------------------------------------------------

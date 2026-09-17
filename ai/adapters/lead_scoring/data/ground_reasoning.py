@@ -29,7 +29,7 @@ points tier):
                           Within 1 Month->15  Within 15 Days->20  Immediately->20
 
 Run:
-    python scripts/ground_reasoning.py
+    python adapters/lead_scoring/data/ground_reasoning.py
 """
 
 import json

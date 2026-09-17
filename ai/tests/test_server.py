@@ -1,5 +1,5 @@
 """
-Wire-format tests for scripts/main.py.
+Wire-format tests for server/main.py.
 
 The CRM's AiChatClient parses two specific shapes: `choices[0].message.content`
 for a blocking call and `data: {...}` lines carrying `choices[0].delta.content`
@@ -68,10 +68,10 @@ def client(monkeypatch):
     """A server whose weights are 'loaded' but whose generation is stubbed."""
     calls = {}
 
-    def fake_generate(prompt, *, adapter, max_new_tokens, temperature):
+    def fake_generate(prompt, *, adapter, max_new_tokens, temperature, repetition_penalty=None):
         calls.update(
             prompt=prompt, adapter=adapter, max_new_tokens=max_new_tokens,
-            temperature=temperature,
+            temperature=temperature, repetition_penalty=repetition_penalty,
         )
         return FINE_TUNE_OUTPUT if adapter == main.LEAD_SCORING_ADAPTER else "The base model's answer."
 
@@ -177,6 +177,18 @@ class TestRouting:
         monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
         _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
         assert client.calls["temperature"] == 0.0
+
+    def test_meeting_extraction_decodes_as_evaluated(self, client, monkeypatch):
+        # evaluate_meeting.py measures the adapter at repetition_penalty 1.02.
+        # Serving it at the generic 1.05 would ship a decoder nobody measured,
+        # one that penalises the repeated labels this reply legitimately contains.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
+        assert client.calls["repetition_penalty"] == main.MEETING_REPETITION_PENALTY == 1.02
+
+    def test_other_routes_keep_the_default_repetition_penalty(self, client):
+        _chat(client, LEAD_SYSTEM_PROMPT, "Company: Acme")
+        assert client.calls["repetition_penalty"] is None
 
     def test_lead_scoring_and_extraction_do_not_collide(self, client, monkeypatch):
         # Both markers are matched against the same system text. If either

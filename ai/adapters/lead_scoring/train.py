@@ -10,7 +10,7 @@ Library versions: transformers==5.14.1, trl==1.8.0, peft==0.19.1,
                    bitsandbytes==0.49.2, torch==2.13.0+cu126
 
 Run:
-    python scripts/train.py
+    python adapters/lead_scoring/train.py
 """
 
 import os
@@ -406,7 +406,7 @@ def main():
         # Left as True it is a trap — with no checkpoint in OUTPUT_DIR the run
         # aborts before the first step, and with a *stale* one it silently
         # resumes someone else's trajectory. Resuming is now opt-in:
-        #     python scripts/train.py --resume
+        #     python adapters/lead_scoring/train.py --resume
         resume = "--resume" in sys.argv
         if resume and not any(OUTPUT_DIR.glob("checkpoint-*")):
             raise FileNotFoundError(

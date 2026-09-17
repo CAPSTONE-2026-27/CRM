@@ -26,7 +26,7 @@ be perfectly well-formed and still predict the wrong Qualification):
   - Lead Score exact-match rate, and within +/-5 / +/-10 points
 
 Run (after training has finished and freed the GPU):
-    python scripts/eval_format_consistency.py [--n 50]
+    python adapters/lead_scoring/eval/eval_format_consistency.py [--n 50]
 """
 
 import argparse

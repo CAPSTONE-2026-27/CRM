@@ -55,7 +55,7 @@ BULLET_POINTS_RE = re.compile(r"contributing (\d+) points")
 
 # Point tiers for the 4 scoring factors that turned out (verified by scanning
 # every (value, points) pair actually used in data/train.jsonl -- see
-# scripts/ground_reasoning.py's docstring) to be deterministic range lookups,
+# adapters/lead_scoring/data/ground_reasoning.py's docstring) to be deterministic range lookups,
 # not judgment calls. Only Customer Requirement requires reading free text,
 # so only its bullet is left to the model. Each tuple is (upper bound
 # inclusive, points); cutoffs sit at the midpoint of the gap between two

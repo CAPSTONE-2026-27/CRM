@@ -1,5 +1,5 @@
 """
-Tests for the lead-scoring bridge in scripts/main.py.
+Tests for the lead-scoring bridge in server/main.py.
 
 These cover the part of the migration that can silently rot: the mapping from
 the CRM's field names onto the trained input shape, and the conversion of the

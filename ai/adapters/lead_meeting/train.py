@@ -5,9 +5,9 @@ QLoRA fine-tune for lead qualification-meeting extraction:
 meeting notes (free text) -> five business signals (JSON).
 
 Trains a SECOND adapter. The capture-time lead scorer in
-outputs/lead_management_llama3_lora is not touched, retrained or replaced --
+adapters/lead_scoring/weights is not touched, retrained or replaced --
 it works, and it stays exactly as it is. Both adapters attach to the same base
-weights and are toggled per request by scripts/main.py, so serving two
+weights and are toggled per request by server/main.py, so serving two
 fine-tuned behaviours costs one model in VRAM.
 
 The model never produces a score. It reads the meeting and names five values;
@@ -17,9 +17,9 @@ what makes a score recomputable -- and challengeable -- from stored signals
 months later, and lets the weights be retuned without retraining anything.
 
 Run:
-    python scripts/generate_meeting_dataset.py --rows 500   # first
-    python scripts/train_meeting.py
-    python scripts/train_meeting.py --resume                # after a crash
+    python adapters/lead_meeting/data/generate_meeting_dataset.py --rows 500   # first
+    python adapters/lead_meeting/train.py
+    python adapters/lead_meeting/train.py --resume                # after a crash
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def set_seed(seed: int = SEED) -> None:
 #      injects one; a date that shifts between training and serving is silent
 #      prompt drift that makes a model perform worse than its eval loss says.
 #
-# scripts/main.py must install this same template when serving this adapter.
+# server/main.py must install this same template when serving this adapter.
 CHAT_TEMPLATE = (
     "{{- bos_token }}"
     "{%- for message in messages %}"
@@ -148,7 +148,7 @@ def load_and_prepare_dataset():
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"No training data at {DATA_PATH}. Run:\n"
-            "    python scripts/generate_meeting_dataset.py --rows 500"
+            "    python adapters/lead_meeting/data/generate_meeting_dataset.py --rows 500"
         )
 
     dataset = load_dataset("json", data_files=str(DATA_PATH), split="train")
@@ -255,7 +255,8 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         fp16=not bf16_ok,
         # A 250-word note plus the system prompt is comfortably under 1024;
         # 1536 leaves headroom without padding cost, since packing is off and
-        # batch size is 1. Verify with scripts/check_meeting_lengths.py.
+        # batch size is 1. adapters/deal_state/data/check_lengths.py shows how to
+        # verify this; the meeting adapter has no equivalent script.
         max_length=1536,
         packing=False,
         gradient_checkpointing=True,

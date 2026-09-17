@@ -12,8 +12,8 @@ only reliable way to know the migration is working is to check the replies
 directly — which is what this does.
 
 Run (server must already be up):
-    python scripts/smoke_test.py
-    python scripts/smoke_test.py --url http://localhost:8001
+    python tools/smoke_test.py
+    python tools/smoke_test.py --url http://localhost:8001
 
 Exit code is 0 only if all three modules pass.
 """
@@ -207,7 +207,7 @@ def main() -> int:
             health = json.loads(response.read())
     except Exception as exc:  # noqa: BLE001
         print(f"\nCannot reach the server: {exc}")
-        print("Start it with:  python scripts/main.py")
+        print("Start it with:  python server/main.py")
         return 1
 
     print(f"health: {health['status']}  device={health['device']}  model={health['model']}")

@@ -26,8 +26,8 @@ rows from the same generator and fails on the first real meeting note. Slower,
 but the variety is the point.
 
 Run:
-    python scripts/generate_meeting_dataset.py --rows 500
-    python scripts/generate_meeting_dataset.py --rows 20 --out data/sample.jsonl
+    python adapters/lead_meeting/data/generate_meeting_dataset.py --rows 500
+    python adapters/lead_meeting/data/generate_meeting_dataset.py --rows 20 --out adapters/lead_meeting/data/sample.jsonl
 """
 
 from __future__ import annotations

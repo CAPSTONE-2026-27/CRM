@@ -25,9 +25,9 @@ unchanged fields forward untouched. That only appears in data where most fields
 does not.
 
 Run:
-    python scripts/generate_dataset.py                 # 600 rows
-    python scripts/generate_dataset.py --rows 1000
-    python scripts/generate_dataset.py --validate      # round-trip vs XGBoost
+    python adapters/deal_state/data/generate_dataset.py                 # 600 rows
+    python adapters/deal_state/data/generate_dataset.py --rows 1000
+    python adapters/deal_state/data/generate_dataset.py --validate      # round-trip vs XGBoost
 """
 
 from __future__ import annotations
@@ -314,85 +314,9 @@ def _step(rng, scale, current, up_p, down_p):
 # Each is a fixed function of fields the meeting notes justify, so the target is
 # reachable from the input rather than being noise the model must hallucinate.
 
-# What each ordinal contributes to overall lead quality. Budget and decision
-# maker carry the most weight because they gate whether a deal can close at all;
-# sentiment carries least because a cheerful contact with no authority and no
-# budget is not a good lead.
-_LEAD_WEIGHTS = {
-    "budget_status": 0.22,
-    "decision_maker_involvement": 0.22,
-    "buying_intent": 0.20,
-    "customer_urgency": 0.14,
-    "product_interest_level": 0.12,
-    "customer_sentiment": 0.10,
-}
-
-
-def _position(field: str, value: str) -> float:
-    """Where a value sits on its scale, 0.0 (worst) to 1.0 (best)."""
-    scale = SCALES[field]
-    return scale.index(value) / (len(scale) - 1)
-
-
-def _lead_score(state: dict) -> int:
-    """Overall lead quality, penalised by unresolved objections."""
-    quality = sum(weight * _position(field, state[field])
-                  for field, weight in _LEAD_WEIGHTS.items())
-    objections = 0 if state["main_objections"] == fmt.NO_OBJECTIONS else len(
-        [o for o in state["main_objections"].split(";") if o.strip()]
-    )
-    # 4 points per open objection, capped so a pile of them cannot erase an
-    # otherwise strong deal entirely.
-    return max(0, min(100, round(quality * 100) - min(20, objections * 4)))
-
-
-def _relationship_strength(previous: dict, new: dict) -> float:
-    """Trust accumulates and erodes gradually — it is the one field with memory.
-
-    Moves at most one point per meeting, driven by how the meeting went rather
-    than by where the deal stands, because a warm meeting with a stalled deal
-    still builds the relationship.
-    """
-    delta = 0
-    sentiment = SCALES["customer_sentiment"]
-    if sentiment.index(new["customer_sentiment"]) > sentiment.index(previous["customer_sentiment"]):
-        delta += 1
-    elif sentiment.index(new["customer_sentiment"]) < sentiment.index(previous["customer_sentiment"]):
-        delta -= 1
-
-    if new["meeting_outcome"] in ("Proposal Sent", "Verbal Agreement"):
-        delta += 1
-    elif new["meeting_outcome"] == "No Show / Cancelled":
-        delta -= 1
-
-    if new["decision_maker_involvement"] == "Yes" and previous["decision_maker_involvement"] != "Yes":
-        delta += 1
-
-    delta = max(-1, min(1, delta))
-    return float(max(0, min(10, previous["relationship_strength"] + delta)))
-
-
-def _engagement_score(state: dict) -> int:
-    """How engaged the customer was in THIS meeting.
-
-    Unlike relationship_strength it has no memory: it describes the meeting just
-    held, which is why a cancellation floors it regardless of prior history.
-    """
-    if state["meeting_outcome"] == "No Show / Cancelled":
-        return 5
-    if state["meeting_outcome"] == "Rescheduled":
-        return 25
-
-    base = 40
-    base += round(25 * _position("customer_sentiment", state["customer_sentiment"]))
-    base += round(20 * _position("product_interest_level", state["product_interest_level"]))
-    if state["decision_maker_involvement"] == "Yes":
-        base += 10
-    if state["meeting_outcome"] == "Verbal Agreement":
-        base += 10
-    elif state["meeting_outcome"] == "Proposal Sent":
-        base += 5
-    return max(0, min(100, base))
+# The rules live in prompt_format (lead_score, relationship_strength,
+# engagement_score) so the server recomputes these fields with exactly the
+# functions that generated the targets.
 
 
 def initial_state(rng) -> dict:
@@ -457,8 +381,8 @@ def initial_state(rng) -> dict:
     )
     # Derived from the state above by the same rules every later meeting uses,
     # so meeting 1 is not an exception the model has to learn separately.
-    state["lead_score"] = _lead_score(state)
-    state["engagement_score"] = _engagement_score(state)
+    state["lead_score"] = fmt.lead_score(state)
+    state["engagement_score"] = fmt.engagement_score(state)
     return state
 
 
@@ -544,9 +468,9 @@ def advance(rng, state: dict, trajectory: str, company) -> tuple:
     # invented movement the prompt forbids. Deriving them from signals the notes
     # *do* justify makes all 17 fields learnable.
     new["total_meetings"] = state["total_meetings"] + 1
-    new["lead_score"] = _lead_score(new)
-    new["relationship_strength"] = _relationship_strength(state, new)
-    new["engagement_score"] = _engagement_score(new)
+    new["lead_score"] = fmt.lead_score(new)
+    new["relationship_strength"] = fmt.relationship_strength(state, new)
+    new["engagement_score"] = fmt.engagement_score(new)
 
     # A meeting with no stated evidence would train the model to invent
     # movement from nothing.
@@ -603,7 +527,7 @@ def validate(examples: list) -> int:
 
         bundles = sorted((xgboost_dir / "models").glob("*.pkl"))
         if not bundles:
-            print("  [SKIP] no model bundle in XgBoost/models")
+            print("  [SKIP] no model bundle in xgboost/models")
             return 0
         bundle = joblib.load(bundles[-1])
     except ImportError as exc:

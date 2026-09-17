@@ -1,7 +1,7 @@
 """
 Contract tests: this project's output must be consumable by the XGBoost scorer.
 
-The model's whole job is to emit a feature vector XgBoost/serve_api.py accepts.
+The model's whole job is to emit a feature vector xgboost/serve_api.py accepts.
 Nothing else stops the two projects drifting apart, and drift fails quietly:
 an unrecognised one-hot value (customer_requirements, risk_factors) raises
 nothing — get_dummies makes a column the bundle never saw, reindex drops it, and
@@ -40,7 +40,7 @@ SERVE_API = XGBOOST_DIR / "serve_api.py"
 TRAIN_JSONL = DEAL_STATE_DIR / "data" / "train.jsonl"
 
 needs_xgboost_project = pytest.mark.skipif(
-    not PIPELINE.exists(), reason="XgBoost project not present"
+    not PIPELINE.exists(), reason="xgboost project not present"
 )
 
 
@@ -87,7 +87,7 @@ class TestLiveBundle:
         pytest.importorskip("pandas")
         bundle = _load_bundle()
         if bundle is None:
-            pytest.skip("no model bundle in XgBoost/models")
+            pytest.skip("no model bundle in xgboost/models")
         return bundle
 
     def _state(self, **overrides):
@@ -299,18 +299,14 @@ class TestGeneratedDataset:
             assert repairs == [], f"generator emitted a value needing repair: {repairs}"
 
     def test_lead_score_is_derivable_from_the_state(self, rows):
-        from generate_dataset import _lead_score
-
         for row in rows:
             state = json.loads(row["messages"][2]["content"])
-            assert _lead_score(state) == state["lead_score"]
+            assert fmt.lead_score(state) == state["lead_score"]
 
     def test_engagement_score_is_derivable_from_the_state(self, rows):
-        from generate_dataset import _engagement_score
-
         for row in rows:
             state = json.loads(row["messages"][2]["content"])
-            assert _engagement_score(state) == state["engagement_score"]
+            assert fmt.engagement_score(state) == state["engagement_score"]
 
     def test_total_meetings_always_increments_by_one(self, rows):
         for row in rows:

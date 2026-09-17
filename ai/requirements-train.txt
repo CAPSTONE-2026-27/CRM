@@ -28,16 +28,16 @@ bitsandbytes==0.49.2
 # adapters/deal_state/data/generate_dataset.py --validate and
 # adapters/deal_state/eval/evaluate_end_to_end.py. Everything else runs without them.
 #
-# NOTE: xgboost/requirements.txt pins xgboost==3.3.0, and the saved bundle's
-# provenance records 3.3.0 as the training version — but no such release exists
-# on PyPI (3.2.0 is the highest published). That pin is uninstallable, so the
-# serving environment as written cannot be reproduced. 3.2.0 loads the bundle
-# and validates the schema correctly; it emits a version-mismatch warning and
-# should NOT be trusted for comparing predicted scores.
-xgboost==3.2.0
+# Pinned to match xgboost/requirements.txt and the bundle's recorded training
+# versions: a different XGBoost build can load the pickle yet predict
+# differently, which would make evaluate_end_to_end.py's score deltas meaningless.
+# matplotlib is here because deal_score_pipeline.py imports it at module level;
+# without it every TestLiveBundle test is silently skipped.
+xgboost==3.3.0
 pandas==3.0.5
 scikit-learn==1.9.0
 joblib==1.5.3
+matplotlib==3.11.1
 
 # --- tests ------------------------------------------------------------------
 pytest==9.1.1

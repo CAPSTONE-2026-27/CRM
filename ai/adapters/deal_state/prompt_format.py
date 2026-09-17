@@ -10,11 +10,11 @@ Input : previous CRM Deal State (JSON) + latest meeting notes (free text)
 Output: the updated CRM Deal State (JSON), 17 fields
 
 The model never predicts the deal score. It produces the feature vector that
-XgBoost/serve_api.py consumes; the regressor produces the score.
+xgboost/serve_api.py consumes; the regressor produces the score.
 
 Why this vocabulary and not the one in the spec
 -----------------------------------------------
-XgBoost/deal_score_service.py runs with strict=True, which has two failure
+xgboost/deal_score_service.py runs with strict=True, which has two failure
 modes and only one is loud:
 
   * An ordinal column with an unrecognised value raises SchemaError -> HTTP 400.
@@ -360,6 +360,132 @@ def build_llama3_prompt(system: str, user: str, assistant: str = "") -> str:
 def render_state(state: dict) -> str:
     """Serialise in canonical field order, as the model must emit it."""
     return json.dumps({field: state[field] for field in FIELD_ORDER}, indent=2)
+
+
+# ============================================================
+# DERIVED FIELDS
+# ============================================================
+# Four numeric fields are not readings of the notes but fixed functions of fields
+# that are. The training data was generated with exactly these rules — all 800
+# rows reproduce — yet the adapter lands lead_score only ~39% of the time and
+# engagement_score ~76%: an 8B model does not do reliable multi-term arithmetic.
+# So they are recomputed after generation rather than trusted; see
+# apply_derived_fields(). data/generate_dataset.py builds its targets with these
+# same functions, so the rule trained on and the rule applied cannot drift apart.
+
+DERIVED_FIELDS = ("total_meetings", "lead_score", "relationship_strength", "engagement_score")
+
+# Worst to best. The vocabulary lists above are already in that order.
+_SCALES = {
+    "customer_sentiment": SENTIMENT_VALUES,
+    "buying_intent": INTENT_VALUES,
+    "budget_status": BUDGET_VALUES,
+    "decision_maker_involvement": DECISION_MAKER_VALUES,
+    "customer_urgency": URGENCY_VALUES,
+    "product_interest_level": INTEREST_VALUES,
+    "implementation_readiness": READINESS_VALUES,
+}
+
+# What each ordinal contributes to overall lead quality. Budget and decision
+# maker carry the most weight because they gate whether a deal can close at all;
+# sentiment carries least because a cheerful contact with no authority and no
+# budget is not a good lead.
+LEAD_WEIGHTS = {
+    "budget_status": 0.22,
+    "decision_maker_involvement": 0.22,
+    "buying_intent": 0.20,
+    "customer_urgency": 0.14,
+    "product_interest_level": 0.12,
+    "customer_sentiment": 0.10,
+}
+
+
+def _position(field: str, value: str) -> float:
+    """Where a value sits on its scale, 0.0 (worst) to 1.0 (best)."""
+    scale = _SCALES[field]
+    return scale.index(value) / (len(scale) - 1)
+
+
+def lead_score(state: dict) -> int:
+    """Overall lead quality, penalised by unresolved objections."""
+    quality = sum(weight * _position(field, state[field])
+                  for field, weight in LEAD_WEIGHTS.items())
+    objections = 0 if state["main_objections"] == NO_OBJECTIONS else len(
+        [o for o in state["main_objections"].split(";") if o.strip()]
+    )
+    # 4 points per open objection, capped so a pile of them cannot erase an
+    # otherwise strong deal entirely.
+    return max(0, min(100, round(quality * 100) - min(20, objections * 4)))
+
+
+def relationship_strength(previous: dict, new: dict) -> float:
+    """Trust accumulates and erodes gradually — it is the one field with memory.
+
+    Moves at most one point per meeting, driven by how the meeting went rather
+    than by where the deal stands, because a warm meeting with a stalled deal
+    still builds the relationship.
+    """
+    delta = 0
+    sentiment = _SCALES["customer_sentiment"]
+    if sentiment.index(new["customer_sentiment"]) > sentiment.index(previous["customer_sentiment"]):
+        delta += 1
+    elif sentiment.index(new["customer_sentiment"]) < sentiment.index(previous["customer_sentiment"]):
+        delta -= 1
+
+    if new["meeting_outcome"] in ("Proposal Sent", "Verbal Agreement"):
+        delta += 1
+    elif new["meeting_outcome"] == "No Show / Cancelled":
+        delta -= 1
+
+    if new["decision_maker_involvement"] == "Yes" and previous["decision_maker_involvement"] != "Yes":
+        delta += 1
+
+    delta = max(-1, min(1, delta))
+    return float(max(0, min(10, previous["relationship_strength"] + delta)))
+
+
+def engagement_score(state: dict) -> int:
+    """How engaged the customer was in THIS meeting.
+
+    Unlike relationship_strength it has no memory: it describes the meeting just
+    held, which is why a cancellation floors it regardless of prior history.
+    """
+    if state["meeting_outcome"] == "No Show / Cancelled":
+        return 5
+    if state["meeting_outcome"] == "Rescheduled":
+        return 25
+
+    base = 40
+    base += round(25 * _position("customer_sentiment", state["customer_sentiment"]))
+    base += round(20 * _position("product_interest_level", state["product_interest_level"]))
+    if state["decision_maker_involvement"] == "Yes":
+        base += 10
+    if state["meeting_outcome"] == "Verbal Agreement":
+        base += 10
+    elif state["meeting_outcome"] == "Proposal Sent":
+        base += 5
+    return max(0, min(100, base))
+
+
+def apply_derived_fields(previous: dict, state: dict) -> tuple:
+    """Replace the model's derived numerics with their computed values.
+
+    Both arguments must already have been through coerce_state(), so every
+    categorical is in vocabulary. Returns (state, corrected), where corrected
+    names each field whose generated value was overwritten — the adapter's
+    arithmetic errors, worth logging but not repairs: the result is exact.
+    """
+    derived = dict(state)
+    derived["total_meetings"] = min(NUMERIC_RANGES["total_meetings"][1], previous["total_meetings"] + 1)
+    derived["lead_score"] = lead_score(derived)
+    derived["relationship_strength"] = relationship_strength(previous, derived)
+    derived["engagement_score"] = engagement_score(derived)
+    corrected = [
+        f"{field}={state[field]!r}->{derived[field]!r}"
+        for field in DERIVED_FIELDS
+        if float(state[field]) != float(derived[field])
+    ]
+    return derived, corrected
 
 
 # ============================================================

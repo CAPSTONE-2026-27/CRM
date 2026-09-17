@@ -17,7 +17,7 @@ survived refactoring in one project but not the other. The chain can be correct
 in every component and still be broken end to end.
 
 Run (all three services must be up):
-    python scripts/system_test.py
+    python tools/system_test.py
 """
 
 from __future__ import annotations

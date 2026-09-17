@@ -6,7 +6,7 @@ CRM AI Lead Management Assistant
 Inference Script for Fine-Tuned Llama 3.1 8B (QLoRA)
 
 Run:
-    python scripts/inference.py
+    python tools/inference.py
 """
 import sys
 import time

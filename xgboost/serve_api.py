@@ -102,11 +102,14 @@ def win_probability(deal_score: float) -> float:
 @app.get("/health")
 def health() -> dict[str, Any]:
     provenance = scorer.bundle.get("provenance", {})
+    # Metrics sit at the bundle's top level, beside provenance rather than inside
+    # it — only the .provenance.json sidecar merges the two.
+    metrics = scorer.bundle.get("metrics") or provenance.get("metrics") or {}
     return {
         "status": "UP",
         "model_version": scorer.version,
         "trained_at": provenance.get("trained_at"),
-        "test_r2": provenance.get("metrics", {}).get("r2"),
+        "test_r2": metrics.get("r2"),
     }
 
 

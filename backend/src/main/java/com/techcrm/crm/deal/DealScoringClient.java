@@ -1,5 +1,6 @@
 package com.techcrm.crm.deal;
 
+import com.techcrm.crm.dealflow.DealParameters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +13,19 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
 import java.util.Map;
+
+import static com.techcrm.crm.dealflow.DealParameters.BUDGET_STATUS;
+import static com.techcrm.crm.dealflow.DealParameters.BUYING_INTENT;
+import static com.techcrm.crm.dealflow.DealParameters.COMPETITOR_MENTIONS;
+import static com.techcrm.crm.dealflow.DealParameters.CUSTOMER_REQUIREMENTS;
+import static com.techcrm.crm.dealflow.DealParameters.CUSTOMER_SENTIMENT;
+import static com.techcrm.crm.dealflow.DealParameters.CUSTOMER_URGENCY;
+import static com.techcrm.crm.dealflow.DealParameters.DECISION_MAKER_INVOLVEMENT;
+import static com.techcrm.crm.dealflow.DealParameters.IMPLEMENTATION_READINESS;
+import static com.techcrm.crm.dealflow.DealParameters.MEETING_OUTCOME;
+import static com.techcrm.crm.dealflow.DealParameters.PRODUCT_INTEREST_LEVEL;
+import static com.techcrm.crm.dealflow.DealParameters.RISK_FACTORS;
+import static com.techcrm.crm.dealflow.DealParameters.UPSELL_OPPORTUNITY;
 
 /**
  * Calls the XGBoost deal-scoring service (see XgBoost/serve_api.py).
@@ -73,24 +87,33 @@ public class DealScoringClient {
 
         // Keys are the model's own feature names, which are snake_case and
         // lower-cased by its pipeline on ingest.
+        //
+        // Every categorical falls back to the neutral default the deal flow uses
+        // (DealParameters.DEFAULTS), never to "". The scorer runs in strict mode:
+        // an empty ordinal value is a 400 and the deal is silently left unscored,
+        // and an empty one-hot value scores every requirement/risk feature as zero.
         Map<String, Object> payload = Map.ofEntries(
                 Map.entry("total_meetings", orZero(deal.getTotalMeetings())),
                 Map.entry("lead_score", orZero(deal.getLeadScore())),
-                Map.entry("customer_sentiment", orEmpty(deal.getCustomerSentiment())),
-                Map.entry("buying_intent", orEmpty(deal.getBuyingIntent())),
+                Map.entry("customer_sentiment", categorical(deal.getCustomerSentiment(), CUSTOMER_SENTIMENT)),
+                Map.entry("buying_intent", categorical(deal.getBuyingIntent(), BUYING_INTENT)),
                 Map.entry("relationship_strength", orZero(deal.getRelationshipStrength())),
-                Map.entry("budget_status", orEmpty(deal.getBudgetStatus())),
-                Map.entry("decision_maker_involvement", orEmpty(deal.getDecisionMakerInvolvement())),
-                Map.entry("customer_urgency", orEmpty(deal.getCustomerUrgency())),
+                Map.entry("budget_status", categorical(deal.getBudgetStatus(), BUDGET_STATUS)),
+                Map.entry("decision_maker_involvement",
+                        categorical(deal.getDecisionMakerInvolvement(), DECISION_MAKER_INVOLVEMENT)),
+                Map.entry("customer_urgency", categorical(deal.getCustomerUrgency(), CUSTOMER_URGENCY)),
                 Map.entry("main_objections", orDefault(deal.getMainObjections(), "No Objections")),
-                Map.entry("product_interest_level", orEmpty(deal.getProductInterestLevel())),
-                Map.entry("meeting_outcome", orEmpty(deal.getMeetingOutcome())),
-                Map.entry("customer_requirements", orEmpty(deal.getCustomerRequirements())),
-                Map.entry("risk_factors", orDefault(deal.getRiskFactors(), "No Risk Identified")),
-                Map.entry("competitor_mention", orDefault(deal.getCompetitorMention(), "No")),
+                Map.entry("product_interest_level",
+                        categorical(deal.getProductInterestLevel(), PRODUCT_INTEREST_LEVEL)),
+                Map.entry("meeting_outcome", categorical(deal.getMeetingOutcome(), MEETING_OUTCOME)),
+                Map.entry("customer_requirements",
+                        categorical(deal.getCustomerRequirements(), CUSTOMER_REQUIREMENTS)),
+                Map.entry("risk_factors", categorical(deal.getRiskFactors(), RISK_FACTORS)),
+                Map.entry("competitor_mention", categorical(deal.getCompetitorMention(), COMPETITOR_MENTIONS)),
                 Map.entry("engagement_score", orZero(deal.getEngagementScore())),
-                Map.entry("implementation_readiness", orEmpty(deal.getImplementationReadiness())),
-                Map.entry("upsell_opportunity", orDefault(deal.getUpsellOpportunity(), "No")));
+                Map.entry("implementation_readiness",
+                        categorical(deal.getImplementationReadiness(), IMPLEMENTATION_READINESS)),
+                Map.entry("upsell_opportunity", categorical(deal.getUpsellOpportunity(), UPSELL_OPPORTUNITY)));
 
         return post(payload, "deal '" + deal.getName() + "'");
     }
@@ -141,8 +164,8 @@ public class DealScoringClient {
         return value == null ? 0 : value;
     }
 
-    private String orEmpty(String value) {
-        return value == null ? "" : value;
+    private String categorical(String value, String parameter) {
+        return orDefault(value, DealParameters.DEFAULTS.get(parameter));
     }
 
     private String orDefault(String value, String fallback) {

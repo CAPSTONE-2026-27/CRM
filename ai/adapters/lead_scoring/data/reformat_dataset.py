@@ -24,7 +24,7 @@ from the existing output or derived by a fixed lookup table, so the
 regenerated file is fully deterministic and reproducible.
 
 Run:
-    python scripts/reformat_dataset.py
+    python adapters/lead_scoring/data/reformat_dataset.py
 """
 
 import json

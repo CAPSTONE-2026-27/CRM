@@ -20,8 +20,8 @@ shifts the score by 5 points matters far less than one that moves a lead across
 a band boundary.
 
 Run (after training):
-    python scripts/evaluate_meeting.py
-    python scripts/evaluate_meeting.py --limit 30 --adapter outputs/lead_meeting_llama3_lora/checkpoint-150
+    python adapters/lead_meeting/eval/evaluate_meeting.py
+    python adapters/lead_meeting/eval/evaluate_meeting.py --limit 30 --adapter adapters/lead_meeting/weights/checkpoint-150
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ def generate(tokenizer, model, notes: str) -> str:
     prompt_len = inputs["input_ids"].shape[-1]
     with torch.no_grad():
         out = model.generate(
-            **inputs, max_new_tokens=160, do_sample=False,
+            **inputs, max_new_tokens=200, do_sample=False,
             repetition_penalty=1.02,
             eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.eos_token_id)
     return tokenizer.decode(out[0][prompt_len:], skip_special_tokens=True).strip()

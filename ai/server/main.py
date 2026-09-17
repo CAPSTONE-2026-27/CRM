@@ -11,7 +11,7 @@ speaking that same wire format from this machine. No Java changes.
 
 Two models' worth of behaviour out of one set of weights
 -------------------------------------------------------
-The fine-tuned LoRA in ``outputs/lead_management_llama3_lora`` was trained on
+The fine-tuned LoRA in ``adapters/lead_scoring/weights`` was trained on
 500 examples of exactly one task — lead scoring — emitting a fixed *plain text*
 format ("Lead Score: 85/100 / Qualification: Hot / • five bullets"). It has
 never seen meeting analysis, 14-parameter deal extraction, or open-ended chat,
@@ -39,8 +39,8 @@ Endpoints
   GET  /health                Readiness, including whether weights are loaded.
 
 Run:
-    python scripts/main.py
-    # or: uvicorn scripts.main:app --host 0.0.0.0 --port 8000
+    python server/main.py            # from ai/
+    # or: uvicorn server.main:app --host 0.0.0.0 --port 8001
 """
 
 from __future__ import annotations
@@ -99,23 +99,23 @@ ADAPTER_PATH = Path(
     os.getenv("CRM_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_scoring" / "weights")
 )
 
-# The qualification-meeting extraction adapter (scripts/train_meeting.py).
+# The qualification-meeting extraction adapter (adapters/lead_meeting/train.py).
 # Separate from the capture-time scorer above: different task, different
 # training data, independently retrainable. Both attach to one base model.
 MEETING_ADAPTER_PATH = Path(
     os.getenv("CRM_MEETING_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_meeting" / "weights")
 )
 
-# The deal-state adapter, trained in ../DealIntelligence_CRM. Third adapter on
+# The deal-state adapter (adapters/deal_state/train.py). Third adapter on
 # the same base weights: a LoRA is ~160MB of low-rank deltas against a ~6.5GB
 # quantised base, so attaching it here costs almost nothing, while running its
 # own server would mean a second full copy of the base model — two processes do
 # not fit on a 16GB card.
 #
-# This is the only direction the two projects may depend on each other. That
-# project's tests assert it imports nothing from here (it must stay runnable
-# standalone); nothing forbids the reverse, and the reverse is what lets one
-# process serve all three tasks.
+# Dependency direction is one-way: adapters/deal_state imports nothing from
+# server/ (it must stay trainable and evaluable on its own), while this server
+# imports its prompt module — which is what lets one process serve all three
+# tasks.
 DEAL_STATE_ADAPTER_PATH = Path(
     os.getenv(
         "CRM_DEAL_STATE_ADAPTER_PATH",
@@ -151,7 +151,7 @@ DEAL_STATE_ADAPTER_READY = False
 
 # A full 17-field state is ~450 tokens; 768 leaves room for longer objection
 # lists without letting a runaway generation hold the inference lock. Matches
-# DEAL_INTEL_MAX_NEW_TOKENS in that project's serve.py.
+# the 768 adapters/deal_state/eval/evaluate.py measures the adapter at.
 DEAL_STATE_MAX_NEW_TOKENS = int(os.getenv("CRM_DEAL_STATE_MAX_NEW_TOKENS", "768"))
 
 SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
@@ -159,6 +159,12 @@ SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
 # A 5-field JSON object is ~60 tokens; 200 leaves room for a stray preamble
 # without letting a runaway generation hold the inference lock.
 MEETING_MAX_NEW_TOKENS = int(os.getenv("CRM_MEETING_MAX_NEW_TOKENS", "200"))
+
+# The reply is five values from three-word vocabularies, so the same label
+# ("High", "Medium") legitimately repeats across fields. The generic 1.05 penalty
+# pushes against exactly that. 1.02 is what evaluate_meeting.py measures the
+# adapter at, and what the deal-state route already uses for the same reason.
+MEETING_REPETITION_PENALTY = 1.02
 
 # Deal analysis asks for 14 parameters, each with a value, confidence and an
 # explanation — roughly 900 tokens of JSON. Capping lower silently truncates the
@@ -258,10 +264,10 @@ def load_model() -> None:
             log.warning(
                 "No meeting adapter at %s — extraction requests will run the "
                 "BASE model and read meetings poorly. Train it with "
-                "scripts/train_meeting.py.", MEETING_ADAPTER_PATH)
+                "adapters/lead_meeting/train.py.", MEETING_ADAPTER_PATH)
 
         # The third adapter: deal state. Same reasoning as the second — optional,
-        # so a clone without ../DealIntelligence_CRM still serves the other two
+        # so a clone without the deal-state weights still serves the other two
         # tasks. Unlike meeting extraction there is no base-model fallback: the
         # deal-state contract is a 17-field JSON state the XGBoost scorer accepts
         # verbatim, and an untrained model does not produce that reliably. The
@@ -274,7 +280,7 @@ def load_model() -> None:
             deal_state_adapter_loaded = False
             log.warning(
                 "No deal-state adapter at %s — /v1/deal-state will return 503. "
-                "Train it with ../DealIntelligence_CRM/scripts/train.py.",
+                "Train it with adapters/deal_state/train.py.",
                 DEAL_STATE_ADAPTER_PATH)
 
         # Leave the lead-scoring adapter active: load_adapter() makes the most
@@ -670,6 +676,16 @@ def _adapter_context(adapter: Optional[str]):
             model.set_adapter(previous)
 
 
+def _decoding_overrides(adapter: Optional[str]) -> dict:
+    """Per-adapter decoding that differs from generate_text's defaults.
+
+    Returned as kwargs so a route with nothing to override passes nothing.
+    """
+    if adapter == MEETING_ADAPTER:
+        return {"repetition_penalty": MEETING_REPETITION_PENALTY}
+    return {}
+
+
 def generate_text(prompt: str, *, adapter: Optional[str], max_new_tokens: int,
                   temperature: float, repetition_penalty: float = 1.05) -> str:
     """Blocking generation. Raises on failure so the caller can return HTTP 5xx."""
@@ -858,12 +874,10 @@ def health():
 # DEAL STATE
 # ============================================================
 #
-# Mirrors POST /v1/deal-state in ../DealIntelligence_CRM/scripts/serve.py, so a
-# caller moves between the two by changing a base URL and nothing else. That
-# service stays runnable standalone — it is the reference implementation and the
-# thing its test suite exercises; this route exists so the task can be served
-# from the same process as the other two adapters instead of a second copy of
-# the base model.
+# The deal-state project's standalone serve.py was retired when it moved into
+# adapters/deal_state; this route keeps its request/response contract (pinned
+# on the Java side by DealStateClientTest), so the task is served from the same
+# process as the other two adapters instead of a second copy of the base model.
 #
 # Kept as its own route rather than folded into /v1/chat/completions: the
 # request is a previous state plus notes, not a message list, and the reply has
@@ -949,6 +963,14 @@ def deal_state(request: DealStateRequest):
     else:
         state, repairs = deal_fmt.coerce_state(raw)
         repairs = previous_repairs + repairs
+        # total_meetings, lead_score, relationship_strength and engagement_score
+        # are fixed functions of the other fields — the rules the training
+        # targets were built with — and the adapter's arithmetic on them is the
+        # least reliable thing it emits. Computed, not trusted. Not counted as
+        # repairs: the result is exact, not a guess.
+        state, derived = deal_fmt.apply_derived_fields(previous, state)
+        if derived:
+            log.info("deal-state derived fields recomputed: %s", "; ".join(derived))
 
     changed = [
         field for field in deal_fmt.FIELD_ORDER
@@ -1000,7 +1022,8 @@ def chat_completions(request: ChatCompletionRequest):
 
     try:
         text = generate_text(
-            prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
+            prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature,
+            **_decoding_overrides(adapter),
         )
         if lead_context is not None:
             text = lead_scoring_json(text, *lead_context)
@@ -1117,7 +1140,7 @@ if __name__ == "__main__":
     # One worker deliberately: the model is several GB and every additional
     # worker process would load its own copy.
     #
-    # Port 8001, not 8000 — XgBoost/serve_api.py already owns 8000 and
+    # Port 8001, not 8000 — xgboost/serve_api.py already owns 8000 and
     # DealScoringClient defaults to it. Two servers on one port fails loudly at
     # startup if you are lucky and silently misroutes if you are not.
     uvicorn.run(app, host=os.getenv("CRM_HOST", "0.0.0.0"), port=int(os.getenv("CRM_PORT", "8001")))

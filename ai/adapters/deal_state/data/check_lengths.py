@@ -11,7 +11,7 @@ decoding parameters and the adapter, in roughly that order, before you think to
 check whether the data ever fit.
 
 Run after changing the state schema, the system prompt, or the note templates:
-    python scripts/check_lengths.py
+    python adapters/deal_state/data/check_lengths.py
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ MAX_LENGTH = 2048  # keep in step with build_training_config()
 
 def main() -> int:
     if not DATA_PATH.exists():
-        print(f"No dataset at {DATA_PATH}. Run scripts/generate_dataset.py first.")
+        print(f"No dataset at {DATA_PATH}. Run adapters/deal_state/data/generate_dataset.py first.")
         return 1
 
     tokenizer = AutoTokenizer.from_pretrained(
