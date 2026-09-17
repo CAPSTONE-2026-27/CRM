@@ -241,21 +241,27 @@ def scenario_for(signals: dict, rng: random.Random) -> dict:
         ]),
     }[signals["product_interest_level"]]
 
+    # Each cue states the customer's reaction to US in words a reader cannot
+    # mistake. A 2026-09-17 review of the 50 held-out notes found 11 conveyed no
+    # clear sentiment ("engaged", "keen interest"), and the writer often softened
+    # a sceptical brief into a cordial meeting. writer_prompt() also insists the
+    # reaction survives into the note. Still three cues per label, so the rng
+    # sequence -- and with it the signal plan -- is unchanged.
     mood = {
         "Positive": rng.choice([
-            "The tone throughout was warm and the team were visibly engaged",
-            "They were enthusiastic, particularly after the walkthrough",
-            "The meeting went well; they were open, asked a lot, and were complimentary about the approach",
+            "They were warm towards us throughout and openly enthusiastic about what we showed them",
+            "They were impressed by the walkthrough and said so, complimenting our approach",
+            "The meeting went well; they were visibly pleased with the product and praised how well we understood their needs",
         ]),
         "Neutral": rng.choice([
-            "The tone was businesslike; they listened, took notes and gave little away",
-            "They were courteous but hard to read, working steadily through their own agenda",
-            "Measured throughout, with no strong reaction either way",
+            "Their reaction to us was businesslike and reserved; they listened and took notes but gave no sign of being impressed or unconvinced",
+            "They were courteous but hard to read, and did not say what they thought of our product",
+            "Measured throughout, with no reaction to our pitch either way",
         ]),
         "Negative": rng.choice([
-            "The mood was difficult; they were sceptical from the outset and pushed back repeatedly",
-            "They were visibly frustrated, referring back to a poor experience with a previous supplier",
-            "The session was uncomfortable; they questioned whether this was worth continuing",
+            "They were sceptical of us from the outset and pushed back repeatedly on what we proposed",
+            "They were visibly frustrated, citing a poor experience with a previous supplier and doubting we would be any different",
+            "The session was uncomfortable; they openly questioned whether our product was worth continuing with",
         ]),
     }[signals["customer_sentiment"]]
 
@@ -302,6 +308,11 @@ def writer_prompt(scenario: dict) -> str:
         f"{competitor_line}"
         "\nRules:\n"
         "- Describe what happened. Do NOT label anything.\n"
+        "- Include at least one sentence that plainly describes how they reacted "
+        "to us and our product, exactly as described above. Saying they were "
+        "'engaged' or 'interested' is not enough on its own.\n"
+        "- Keep that reaction as described: do not soften a sceptical or "
+        "frustrated customer into a polite one, or warm up a reserved one.\n"
         "- Never use the words: positive, negative, neutral, high, medium, low, "
         "sentiment, intent, urgency, priority, score, qualified.\n"
         "- Do not write headings, bullet points or a title. Prose only.\n"

@@ -19,6 +19,12 @@ score and priority band land from the truth -- because a wrong signal that
 shifts the score by 5 points matters far less than one that moves a lead across
 a band boundary.
 
+Sentiment is also scored against eval/sentiment_review.json: hand-reviewed
+readings of the same held-out notes. The notes were written by a sampled LLM and
+some do not convey the sentiment they were generated for, so accuracy against
+the dataset label alone understates a model that reads them correctly. Notes
+whose only cue is "engaged" or "keen interest" are marked ambiguous and left out.
+
 Run (after training):
     python adapters/lead_meeting/eval/evaluate_meeting.py
     python adapters/lead_meeting/eval/evaluate_meeting.py --limit 30 --adapter adapters/lead_meeting/weights/checkpoint-150
@@ -41,6 +47,18 @@ import prompt_format as fmt  # noqa: E402
 from train import (  # noqa: E402
     DATA_PATH, EVAL_FRACTION, MODEL_PATH, OUTPUT_DIR, SEED, _is_valid, apply_chat_template,
 )
+
+
+REVIEW_PATH = Path(__file__).resolve().parent / "sentiment_review.json"
+
+
+def load_review() -> tuple[dict, set]:
+    """(meeting_id -> reviewed sentiment, ambiguous meeting_ids), or empty if absent."""
+    if not REVIEW_PATH.exists():
+        return {}, set()
+    review = json.loads(REVIEW_PATH.read_text(encoding="utf-8"))
+    labels = {mid: entry["customer_sentiment"] for mid, entry in review["labels"].items()}
+    return labels, set(review["ambiguous"])
 
 
 def load(adapter: Path):
@@ -112,6 +130,10 @@ def main() -> int:
         for field in fmt.FIELD_ORDER
     }
 
+    reviewed, ambiguous = load_review()
+    reviewed_hits = reviewed_total = 0
+    reviewed_misses = []
+
     correct = collections.Counter()
     confusion = collections.defaultdict(collections.Counter)
     exact = json_valid = repaired = 0
@@ -139,6 +161,14 @@ def main() -> int:
                 confusion[field][f"{expected[field]}->{actual[field]}"] += 1
         if hits == len(fmt.FIELD_ORDER):
             exact += 1
+
+        if row["meeting_id"] in reviewed:
+            reviewed_total += 1
+            if actual["customer_sentiment"] == reviewed[row["meeting_id"]]:
+                reviewed_hits += 1
+            else:
+                reviewed_misses.append(
+                    f"{row['meeting_id']} {reviewed[row['meeting_id']]}->{actual['customer_sentiment']}")
 
         expected_score = fmt.meeting_score(expected)
         actual_score = fmt.meeting_score(actual)
@@ -178,6 +208,14 @@ def main() -> int:
         if confusion[field]:
             worst = confusion[field].most_common(3)
             print(f"\n  {field} mistakes: " + ", ".join(f"{k} x{v}" for k, v in worst))
+
+    if reviewed_total:
+        in_split = sum(1 for r in rows if r["meeting_id"] in ambiguous)
+        print(f"\nSentiment vs hand-reviewed labels ({REVIEW_PATH.name}):")
+        print(f"  {'clear notes correct':26s} {reviewed_hits:4d}/{reviewed_total}  "
+              f"{reviewed_hits / reviewed_total:6.1%}   ({in_split} ambiguous notes excluded)")
+        if reviewed_misses:
+            print("  mistakes: " + ", ".join(reviewed_misses))
 
     if below_floor:
         # The failure this whole script exists to catch: a model that learned

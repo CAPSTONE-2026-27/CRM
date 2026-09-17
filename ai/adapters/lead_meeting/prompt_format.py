@@ -121,6 +121,21 @@ def _vocabulary_block() -> str:
     )
 
 
+# PENDING FOR THE NEXT RETRAIN — do not add to SYSTEM_PROMPT before then.
+#
+# customer_sentiment is the only field without guidance below, and the
+# 2026-09-17 review (eval/sentiment_review.json) traced most of its errors to
+# notes that never state a reaction. The adapter was trained on this exact
+# prompt, so editing it without retraining would infer on a prompt it never saw.
+# When the dataset is next regenerated and the adapter retrained, add this line
+# to the guidance list, and mirror it in LeadMeetingExtractionClient.SYSTEM_PROMPT:
+#
+#   - customer_sentiment is how the customer reacted to us and our product:
+#     Positive when they were warm, enthusiastic, impressed or complimentary;
+#     Negative when they were sceptical of us, pushed back, or questioned whether
+#     to continue; Neutral when businesslike or reserved, or when the notes
+#     describe no reaction. Frustration with their current system is not
+#     negative sentiment.
 SYSTEM_PROMPT = (
     "You are a CRM Lead Qualification Analyst.\n\n"
     "You will be given a sales executive's written notes from a qualification "

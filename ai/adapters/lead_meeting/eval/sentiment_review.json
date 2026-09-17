@@ -1,0 +1,181 @@
+{
+  "purpose": "Hand-reviewed customer_sentiment for the 50 held-out meeting notes. The notes were written by a sampled LLM from a brief, and sometimes do not convey the sentiment they were generated for; evaluate_meeting.py scores sentiment against these readings as well as against the dataset labels.",
+  "reviewed_on": "2026-09-17",
+  "rule": {
+    "Positive": "The note describes explicit favourable affect toward us or our product: enthusiastic, warm, impressed, praised, appreciated, eager.",
+    "Negative": "The note describes explicit scepticism, pushback, questioning whether we are worth it, or frustration with us or a previous supplier.",
+    "Neutral": "The note describes a measured, reserved or businesslike reaction, or describes no reaction at all (interest in features alone is product interest, not sentiment).",
+    "ambiguous": "The only cue is engagement or interest wording (\"engaged\", \"keen interest\", \"seemed receptive\") or mixed signals; excluded from reviewed accuracy."
+  },
+  "labels": {
+    "MTG-00001": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00041": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00047": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00048": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00053": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00055": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00063": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Negative"
+    },
+    "MTG-00085": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00093": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00109": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00137": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00153": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Positive"
+    },
+    "MTG-00157": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00162": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00183": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00187": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00194": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00207": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00226": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00232": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00236": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00293": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00322": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00327": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00329": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00339": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00340": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Positive"
+    },
+    "MTG-00346": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00370": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00373": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00434": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00440": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00455": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00466": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00478": {
+      "customer_sentiment": "Positive",
+      "dataset_label": "Positive"
+    },
+    "MTG-00486": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00490": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    },
+    "MTG-00494": {
+      "customer_sentiment": "Neutral",
+      "dataset_label": "Neutral"
+    },
+    "MTG-00498": {
+      "customer_sentiment": "Negative",
+      "dataset_label": "Negative"
+    }
+  },
+  "ambiguous": [
+    "MTG-00167",
+    "MTG-00182",
+    "MTG-00206",
+    "MTG-00221",
+    "MTG-00277",
+    "MTG-00332",
+    "MTG-00361",
+    "MTG-00367",
+    "MTG-00396",
+    "MTG-00470",
+    "MTG-00495"
+  ]
+}
