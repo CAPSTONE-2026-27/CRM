@@ -1156,27 +1156,35 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
     const column = columns.find((c) => c.id === columnId);
     if (!column) continue;
     const isClosed = deal.stage === "CLOSED_WON" || deal.stage === "CLOSED_LOST";
-    // Prefer the model's deal score over the manually-entered probability —
-    // when a deal has been analysed, that is the number worth reading.
+    // Prefer the model's deal score; before a deal has been analysed, show the
+    // lead score it was converted with. Only a deal with neither falls back to
+    // the manually-entered probability. The qualification probability copied
+    // onto deal.probability at conversion is not a score and is not shown here.
     const score = deal.dealScore;
+    const leadScore = deal.leadScore;
+    const shownScore = score ?? leadScore;
+    const amount = Number(deal.value ?? 0);
     column.cards.push({
       id: deal.id,
       name: deal.name,
       value: formatCurrency(deal.value),
+      amount: Number.isFinite(amount) ? amount : 0,
       probability: isClosed
         ? deal.stage === "CLOSED_WON"
           ? "Won"
           : "Lost"
         : score != null
           ? `Score ${score.toFixed(0)}`
-          : `${deal.probability ?? 0}%`,
+          : leadScore != null
+            ? `Lead ${leadScore.toFixed(0)}`
+            : `${deal.probability ?? 0}%`,
       variant:
-        score != null
-          ? score >= 75
+        shownScore != null
+          ? shownScore >= 75
             ? "green"
-            : score >= 50
+            : shownScore >= 50
               ? "blue"
-              : score >= 25
+              : shownScore >= 25
                 ? "amber"
                 : "red"
           : (deal.probability ?? 0) >= 70
