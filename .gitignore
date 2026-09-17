@@ -18,7 +18,22 @@ Thumbs.db
 .idea/
 
 # Python venv for the deal-scoring model service
-XgBoost/.venv/
-XgBoost/.pytest_cache/
-XgBoost/.ruff_cache/
+xgboost/.venv/
+xgboost/.pytest_cache/
+xgboost/.ruff_cache/
 **/__pycache__/
+
+# AI: base model and trained adapter weights — large binaries, not source.
+# Replaces the former Llama3_CRM/.gitignore and DealIntelligence_CRM/.gitignore.
+ai/base-model/
+ai/adapters/*/weights/
+
+# Carried over from those two files so nothing they hid becomes visible:
+# training logs, local venvs, caches.
+ai/adapters/*/logs/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+hf_cache/
+.ipynb_checkpoints/

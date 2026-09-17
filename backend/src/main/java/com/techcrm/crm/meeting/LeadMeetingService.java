@@ -4,8 +4,6 @@ import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.lead.Lead;
 import com.techcrm.crm.lead.LeadRepository;
 import com.techcrm.crm.lead.score.LeadScoreService;
-import com.techcrm.crm.meeting.MeetingAnalysisClient.MeetingAnalysisRequest;
-import com.techcrm.crm.meeting.MeetingAnalysisClient.MeetingAnalysisResult;
 import com.techcrm.crm.meeting.MeetingDtos.MeetingAnalysisResponse;
 import com.techcrm.crm.meeting.MeetingDtos.MeetingInput;
 import com.techcrm.crm.meeting.MeetingDtos.MeetingResponse;
@@ -26,18 +24,15 @@ public class LeadMeetingService {
 
     private final LeadMeetingRepository meetingRepository;
     private final LeadRepository leadRepository;
-    private final MeetingAnalysisClient analysisClient;
     private final LeadScoreService leadScoreService;
     private final String modelVersion;
 
     public LeadMeetingService(LeadMeetingRepository meetingRepository,
                               LeadRepository leadRepository,
-                              MeetingAnalysisClient analysisClient,
                               LeadScoreService leadScoreService,
                               @Value("${ai.model-name:unknown}") String modelVersion) {
         this.meetingRepository = meetingRepository;
         this.leadRepository = leadRepository;
-        this.analysisClient = analysisClient;
         this.leadScoreService = leadScoreService;
         this.modelVersion = modelVersion;
     }
