@@ -10,16 +10,16 @@ previous CRM Deal State (JSON) + latest meeting notes (text)
         ↓
 updated CRM Deal State (JSON, 17 fields)
         ↓
-   XgBoost/serve_api.py  →  deal score
+   xgboost/serve_api.py  →  deal score
 ```
 
 The model **never predicts the deal score**. It produces the feature vector the
 XGBoost regressor consumes. Separate concerns: the LLM reads unstructured text,
 the regressor does the numeric prediction it was trained for.
 
-Separate from [`../Llama3_CRM`](../Llama3_CRM), which fine-tunes the same base
-model for a different task (initial lead scoring from a lead profile). Two
-tasks, two adapters, one set of base weights.
+One of three adapters under [`ai/adapters/`](..), next to `lead_scoring` (initial
+lead scoring from a lead profile) and `lead_meeting` (qualification-meeting
+extraction). Three tasks, three adapters, one set of base weights.
 
 ## The contract is the hard part
 
@@ -31,7 +31,7 @@ modes and **only one is loud**:
 | Ordinal column, bad value | `SchemaError` → HTTP 400. Loud, safe. |
 | One-hot column, bad value | **Nothing.** `get_dummies` makes a column the bundle never saw, reindex drops it, every requirement/risk feature scores zero. The deal gets a confident score from evidence that vanished. |
 
-So `scripts/deal_state_format.py` takes its vocabulary from the **saved bundle**,
+So `prompt_format.py` takes its vocabulary from the **saved bundle**,
 verified by round-tripping every value through `transform_for_inference`. Five
 differences from a natural reading of the spec were found that way:
 
@@ -50,63 +50,67 @@ actually present in the training CSV, which only ever held Low/Medium/High.
 **The source is aspirational; the bundle is the authority.** Pinned by
 `test_buying_intent_very_high_really_is_rejected`.
 
-## Isolation from Lead Scoring
+## Serving
 
-The lead-scoring system in `../Llama3_CRM` is production and read-only. This
-project shares exactly one thing with it: the base-model directory on disk,
-which neither service writes to.
+There is no separate deal-state server. `ai/server/main.py` loads this adapter
+from `weights/` alongside the other two, onto the same 4-bit base model, and
+serves it on **:8001** — so it costs no extra VRAM.
 
-| | Lead Scoring | Deal Intelligence |
-|---|---|---|
-| Project | `../Llama3_CRM` | `DealIntelligence_CRM` |
-| Port | 8001 | **8002** |
-| Adapter | `lead_management_llama3_lora` | `deal_state_llama3_lora` |
-| Dataset | its own `train.jsonl` | its own `train.jsonl` |
-| Prompt | `prompt_format.py` | `deal_state_format.py` |
-| API | OpenAI chat-completions | `POST /v1/deal-state` |
-| Process | separate | separate |
+| | |
+|---|---|
+| Server | `ai/server/main.py` |
+| Port | 8001 (8000 is the XGBoost deal scorer) |
+| Adapter | `ai/adapters/deal_state/weights/` |
+| Prompt | `ai/adapters/deal_state/prompt_format.py` |
+| API | `POST /v1/deal-state` |
 
-Enforced by `tests/test_serve.py::TestIsolationFromLeadScoring`, which asserts
-no script here imports from that project and none writes to the shared weights.
-
-Port 8000 is the XGBoost deal scorer, so nothing here may use it.
+The backend uses it only when `DEAL_STATE_BASE_URL` is set; point it at
+`http://127.0.0.1:8001`.
 
 ## Layout
 
 ```
-scripts/deal_state_format.py   vocabulary, prompt, coerce_state(), version
-scripts/generate_dataset.py    synthetic journey generator
-scripts/train.py               QLoRA fine-tune -> outputs/deal_state_llama3_lora
-scripts/serve.py               inference API on :8002
-scripts/check_lengths.py       truncation guard
-tests/                         contract, dataset, API
-data/train.jsonl               generated (not committed)
+prompt_format.py               vocabulary, prompt, coerce_state(), version
+train.py                       QLoRA fine-tune -> weights/
+data/generate_dataset.py       synthetic journey generator
+data/check_lengths.py          truncation guard
+data/train.jsonl               generated dataset (committed, 800 rows)
+eval/evaluate.py               held-out field accuracy, changed-field recall
+eval/evaluate_end_to_end.py    what extraction errors cost in deal-score points
+weights/                       trained adapter (gitignored)
+logs/                          training logs (gitignored)
 ```
+
+Tests live in `ai/tests/test_contract.py`.
 
 ## Usage
 
+Run from `ai/`, with `requirements-train.txt` installed:
+
 ```bash
 # 1. Generate, validating every target against the real scorer
-python scripts/generate_dataset.py --rows 800 --validate
+python adapters/deal_state/data/generate_dataset.py --rows 800 --validate
 
 # 2. Confirm nothing truncates
-python scripts/check_lengths.py
+python adapters/deal_state/data/check_lengths.py
 
-# 3. Train (needs the GPU free — stop the lead-scoring server first)
-python scripts/train.py
+# 3. Train (needs the GPU free — stop server/main.py first)
+python adapters/deal_state/train.py
 
-# 4. Serve
-python scripts/serve.py          # :8002
+# 4. Evaluate
+python adapters/deal_state/eval/evaluate.py
+python adapters/deal_state/eval/evaluate_end_to_end.py --limit 30
+
+# 5. Serve (all three adapters)
+python server/main.py            # :8001
 
 # Tests (live-bundle tests skip cleanly without xgboost installed)
-python -m pytest tests/ -v
+python -m pytest tests/test_contract.py -v
 ```
 
 ## API
 
 ```
-GET  /health        readiness, version, whether the adapter is loaded
-GET  /v1/schema     the emitted contract — field order, vocabulary, defaults
 POST /v1/deal-state
 ```
 
@@ -119,10 +123,13 @@ POST /v1/deal-state
 {"state":          { /* 17 fields — feed this to the XGBoost scorer */ },
  "changed_fields": ["budget_status", "buying_intent"],
  "repairs":        [],           // see below
- "adapter":        true,         // false = base model, NOT production output
- "model_version":  "1.0.0",
+ "adapter":        true,
+ "model_version":  "1.0.0",      // CONTRACT_VERSION
  "latency_ms":     4210}
 ```
+
+`GET /health` on the same server reports `adapters.deal_state`: whether this
+adapter was found and attached at startup.
 
 **`repairs` is not decoration.** Every reply passes through `coerce_state()`,
 which snaps values onto the trained vocabulary and imputes anything missing —
@@ -131,14 +138,12 @@ value does not raise at scoring time, it silently scores as zero. A state that
 needed six repairs and one that needed none produce equally confident deal
 scores, and this list is the only thing that distinguishes them. **Log it.**
 
-**`adapter: false`** means the service is running the base model because no
-trained adapter was found. It still answers, so the API and coercion layer can
-be exercised before training finishes, but the output is not fit for scoring.
+Degradation paths worth knowing:
 
-Two degradation paths worth knowing:
-
-- Model unreachable → `503`. Never a fabricated state; a caller must be able to
-  tell "service down" from "the deal genuinely looks like this".
+- Base model still loading, or this adapter not found in `weights/` → `503`.
+  There is no base-model fallback: an untrained model does not reliably emit a
+  state the scorer accepts, and a caller must be able to tell "service not
+  ready" from "the deal genuinely looks like this".
 - Reply contains no JSON → the previous state is carried forward with
   `total_meetings` incremented, and `repairs` says so. Losing an opportunity's
   entire state because one generation was malformed is worse than a state that
@@ -146,15 +151,15 @@ Two degradation paths worth knowing:
 
 ## Versioning
 
-`CONTRACT_VERSION` in `deal_state_format.py` is bumped whenever the emitted
+`CONTRACT_VERSION` in `prompt_format.py` is bumped whenever the emitted
 contract changes shape — a field added or removed, a value added or retired, a
-numeric range moved. It is published by `/v1/schema` and returned on every
-response, so a consumer can pin against it and a silent vocabulary change cannot
-pass unnoticed.
+numeric range moved. It is returned as `model_version` on every response, so a
+consumer can pin against it and a silent vocabulary change cannot pass
+unnoticed.
 
 `VERIFIED_AGAINST_BUNDLE` records which deal-score bundle the vocabulary was
 checked against. **If the deal scorer is retrained, re-run
-`tests/test_contract.py::TestLiveBundle` before assuming the vocabulary still
+`ai/tests/test_contract.py::TestLiveBundle` before assuming the vocabulary still
 holds** — the bundle, not the pipeline source, is the authority.
 
 ## How the dataset is built
@@ -187,12 +192,13 @@ almost none above 70 — the model would learn that high scores barely exist.
 
 ## Environment
 
-The base weights live in `../Llama3_CRM/models/Llama-3.1-8B-Instruct` and are
-shared; this project trains its own adapter into `outputs/`.
+The base weights live in `ai/base-model/Llama-3.1-8B-Instruct` and are shared by
+all three adapters; set `CRM_BASE_MODEL` to train against a copy elsewhere. This
+adapter trains into `weights/` and logs into `logs/`.
 
-`requirements.txt` notes one unresolved issue: `XgBoost/requirements.txt` pins
-`xgboost==3.3.0` and the bundle's provenance records that version, but **no such
-release exists on PyPI** (3.2.0 is the highest). The XGBoost serving environment
-as written is not reproducible. 3.2.0 loads the bundle and validates schemas
-correctly, but emits a version-mismatch warning and should not be trusted for
-comparing predicted scores.
+`ai/requirements-train.txt` notes one unresolved issue: `xgboost/requirements.txt`
+pins `xgboost==3.3.0` and the bundle's provenance records that version, but **no
+such release exists on PyPI** (3.2.0 is the highest). The XGBoost serving
+environment as written is not reproducible. 3.2.0 loads the bundle and validates
+schemas correctly, but emits a version-mismatch warning and should not be trusted
+for comparing predicted scores.
