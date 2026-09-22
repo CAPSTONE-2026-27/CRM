@@ -40,3 +40,5 @@ hf_cache/
 
 # Deal scorer audit log — appended on every /score call, local runtime output.
 xgboost/outputs/prediction_log.jsonl
+
+backend/var/
