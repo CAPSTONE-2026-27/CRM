@@ -37,6 +37,22 @@ public class ContractProperties {
      */
     private List<String> eligibleStages = List.of("PROPOSAL", "NEGOTIATION", "CLOSED_WON");
 
+    /**
+     * Whether generation happens off the request thread.
+     *
+     * On by default, because SAP Build Process Automation abandons an HTTP call
+     * at 30 seconds and a cold generation takes longer than that. Asynchronous,
+     * POST /generate answers 202 in about a second with the contract in
+     * DRAFTING, and the bot polls GET /{id}/status.
+     *
+     * Set false to render inside the request and answer 201 with the documents
+     * already attached. Slower to respond, but it is what the tests use and what
+     * a human clicking Generate in a UI would rather have — no polling, and a
+     * render failure comes back as a 500 on the call that caused it instead of
+     * as a status a caller has to go looking for.
+     */
+    private boolean asyncGeneration = true;
+
     /** Term length when the caller does not supply an end date. */
     private int defaultTermMonths = 12;
 

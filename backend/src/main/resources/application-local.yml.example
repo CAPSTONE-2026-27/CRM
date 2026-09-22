@@ -67,23 +67,18 @@ app:
 #     # macOS:
 #     # path: /Applications/LibreOffice.app/Contents/MacOS/soffice
 #     # No LibreOffice on this machine? Contracts then generate as DOCX only and
-#     # cannot be sent for signature.
+#     # cannot be emailed to the customer.
 #     # enabled: false
 #   storage:
 #     root: ./var/contracts
 
-# --- Documenso e-signature ---
-# Leave unset to develop without it: send-for-signature returns 503 and the
-# signature callback refuses every delivery, rather than either failing obscurely.
+# --- Mailjet (emails the contract PDF to the customer) ---
+# Leave unset to develop without it: POST /api/contracts/{id}/send-email then
+# returns 503. Keys: Mailjet -> Account Settings -> API Key Management.
+# from-email must be a sender verified in Mailjet, or every send is refused.
 #
-# The webhook secret is the only thing protecting POST /api/contracts/sign-callback,
-# which is necessarily unauthenticated. Generate one with: openssl rand -hex 32
-#
-# documenso:
-#   base-url: https://app.documenso.com
-#   api-key: your-documenso-api-key
-#   # Documenso v1 takes the raw key. Set to "Bearer" behind a proxy that wants
-#   # an auth scheme -- scheme name only, the client adds the space.
-#   api-key-prefix: ""
-#   webhook:
-#     secret: replace-me-with-a-long-random-secret
+# mailjet:
+#   api-key: your-mailjet-api-key
+#   secret-key: your-mailjet-secret-key
+#   from-email: you@yourdomain.com
+#   from-name: Your Name

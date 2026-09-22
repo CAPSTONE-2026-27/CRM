@@ -1,6 +1,7 @@
 package com.techcrm.crm.contract;
 
-import com.techcrm.crm.contract.signature.DocumensoProperties;
+import com.techcrm.crm.contract.document.DocxGenerationService;
+import com.techcrm.crm.contract.email.MailjetProperties;
 import com.techcrm.crm.contract.template.ContractTemplateService;
 import com.techcrm.crm.deal.DealStages;
 import org.slf4j.Logger;
@@ -16,7 +17,7 @@ import java.util.List;
  * Reports what the contract module can and cannot do, once, at startup.
  *
  * Deliberately logs rather than fails. A missing LibreOffice or an unset
- * Documenso key is a legitimate state for a developer machine, and refusing to
+ * Mailjet key is a legitimate state for a developer machine, and refusing to
  * boot the whole CRM over it would be wrong. What is not acceptable is finding
  * out at 5pm, from a sales executive, that contracts have been silently
  * DOCX-only for a week — so each gap is stated plainly here, with the setting
@@ -33,14 +34,17 @@ public class ContractStartupCheck {
 
     private final ContractProperties properties;
     private final ContractTemplateService templateService;
-    private final DocumensoProperties documensoProperties;
+    private final MailjetProperties mailjetProperties;
+    private final DocxGenerationService docxGenerationService;
 
     public ContractStartupCheck(ContractProperties properties,
                                 ContractTemplateService templateService,
-                                DocumensoProperties documensoProperties) {
+                                MailjetProperties mailjetProperties,
+                                DocxGenerationService docxGenerationService) {
         this.properties = properties;
         this.templateService = templateService;
-        this.documensoProperties = documensoProperties;
+        this.mailjetProperties = mailjetProperties;
+        this.docxGenerationService = docxGenerationService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -53,6 +57,7 @@ public class ContractStartupCheck {
         }
         if (missingTemplates.isEmpty()) {
             log.info("Contract templates available: {}", ContractType.values().length);
+            warmUpDocx4j();
         } else {
             log.error("Contract templates missing, generation will fail for these types: {}", missingTemplates);
         }
@@ -70,17 +75,31 @@ public class ContractStartupCheck {
 
         if (!properties.getLibreoffice().isEnabled()) {
             log.warn("contract.libreoffice.enabled=false - contracts will be generated as DOCX only, "
-                    + "and cannot be sent for signature");
+                    + "and cannot be emailed to the customer");
         }
 
-        if (!documensoProperties.isConfigured()) {
-            log.warn("Documenso is not configured (documenso.base-url / documenso.api-key) - "
-                    + "POST /api/contracts/send-for-signature will return 503");
+        if (!mailjetProperties.isConfigured()) {
+            log.warn("Mailjet is not configured (mailjet.api-key / mailjet.secret-key / mailjet.from-email) - "
+                    + "POST /api/contracts/{id}/send-email will return 503");
         }
-        if (documensoProperties.getWebhook().getSecret() == null
-                || documensoProperties.getWebhook().getSecret().isBlank()) {
-            log.warn("documenso.webhook.secret is not set - POST /api/contracts/sign-callback will "
-                    + "refuse every delivery, so signatures will never reach the CRM");
-        }
+    }
+
+    /**
+     * Absorbs docx4j's first-call cost so a real contract does not.
+     *
+     * On its own thread, because it takes around twenty seconds and nothing else
+     * about the CRM should wait for the contract module to get comfortable. A
+     * daemon thread so it can never hold a shutdown open.
+     */
+    private void warmUpDocx4j() {
+        // A platform thread, not a virtual one: this is a long CPU-bound stretch
+        // of JAXB reflection, which would pin a carrier thread for its duration.
+        Thread.ofPlatform().daemon().name("contract-docx4j-warmup").start(() -> {
+            try {
+                docxGenerationService.warmUp(templateService.load(ContractType.values()[0]));
+            } catch (RuntimeException e) {
+                log.warn("docx4j warm-up could not run", e);
+            }
+        });
     }
 }

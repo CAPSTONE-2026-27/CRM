@@ -6,7 +6,6 @@ import com.techcrm.crm.auth.OAuth2SuccessHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -62,15 +61,6 @@ public class SecurityConfig {
                                 // The OAuth handshake runs before any CRM token exists.
                                 "/oauth2/**", "/login/oauth2/**"
                         ).permitAll()
-                        // Documenso's signature callback. It holds no CRM token
-                        // and there is nobody to issue it one, so it cannot be
-                        // authenticated here; it is authenticated instead by the
-                        // shared secret in its own header, checked in
-                        // ContractWebhookService, which refuses every delivery
-                        // when no secret is configured. Scoped to this one exact
-                        // path -- every other /api/contracts/** endpoint stays
-                        // behind the JWT filter like the rest of the CRM.
-                        .requestMatchers(HttpMethod.POST, "/api/contracts/sign-callback").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

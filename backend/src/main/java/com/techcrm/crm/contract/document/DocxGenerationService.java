@@ -68,6 +68,34 @@ public class DocxGenerationService {
     private final ObjectFactory factory = new ObjectFactory();
 
     /**
+     * Pays docx4j's one-off initialisation cost up front.
+     *
+     * The first {@link #generate} call in a JVM spends around twenty seconds
+     * building the JAXB context before it reads a byte of the template — the
+     * "package read; elapsed time" docx4j logs is almost entirely that, not the
+     * 7 KB file. Every later call is fast.
+     *
+     * Left where it lands, that cost is paid by whichever contract happens to be
+     * generated first, stretching one request past a minute and putting the
+     * database write at the end of it outside the lifetime of a pooled
+     * connection. Absorbing it at startup keeps the first real request the same
+     * length as every other.
+     *
+     * Best-effort by design: failing to warm a cache must never stop the
+     * application from starting.
+     */
+    public void warmUp(byte[] templateBytes) {
+        long start = System.currentTimeMillis();
+        try {
+            WordprocessingMLPackage.load(new ByteArrayInputStream(templateBytes));
+            log.info("docx4j warmed up in {} ms; the first contract will not pay this cost",
+                    System.currentTimeMillis() - start);
+        } catch (Docx4JException | RuntimeException e) {
+            log.warn("docx4j warm-up failed; the first contract generated will be slower", e);
+        }
+    }
+
+    /**
      * @param templateBytes  the .docx template, as loaded by ContractTemplateService
      * @param placeholders   scalar values, from {@link ContractPlaceholders#build}
      * @param lineItems      the schedule; may be empty, in which case the marker row is dropped

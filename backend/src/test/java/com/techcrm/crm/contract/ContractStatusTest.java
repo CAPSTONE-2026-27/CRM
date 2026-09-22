@@ -6,8 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,8 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ContractStatusTest {
 
-    private static final Path MIGRATION =
-            Path.of("src/main/resources/db/migration/V19__contracts.sql");
+    private static final Path MIGRATIONS = Path.of("src/main/resources/db/migration");
+
+    /** The index is created by one migration and may be redefined by a later
+     *  one, so the whole directory is scanned and the newest definition wins. */
+    private static final Pattern LIVE_INDEX = Pattern.compile(
+            "CREATE UNIQUE INDEX uq_contracts_live_per_deal.*?WHERE status IN \\(([^)]*)\\)",
+            Pattern.DOTALL);
 
     @Test
     void terminalStatusesAreTheOnesNoWebhookCanMove() {
@@ -43,6 +50,21 @@ class ContractStatusTest {
     }
 
     /**
+     * A render in flight must hold the deal's slot.
+     *
+     * Generation takes tens of seconds, and the whole point of the live-contract
+     * index is that two retries arriving together cannot both produce an
+     * agreement for one opportunity. If DRAFTING did not count as live, the
+     * second retry would sail past the index during exactly the window the index
+     * exists to cover.
+     */
+    @Test
+    void aContractStillBeingRenderedHoldsTheDealsSlot() {
+        assertThat(ContractStatus.DRAFTING.isLive()).isTrue();
+        assertThat(ContractStatus.DRAFTING.isTerminal()).isFalse();
+    }
+
+    /**
      * The Java view of "live" and the partial unique index have to agree.
      *
      * They are two independent statements of the same rule — one decides whether
@@ -53,24 +75,41 @@ class ContractStatusTest {
      */
     @Test
     void theLiveSetMatchesTheDatabasePartialIndex() throws Exception {
-        String sql = Files.readString(MIGRATION, StandardCharsets.UTF_8);
+        Set<String> inIndex = new TreeSet<>(Arrays.asList(
+                latestLiveIndexDefinition().replace("'", "").replaceAll("\\s+", "").split(",")));
 
-        Matcher matcher = Pattern.compile(
-                        "CREATE UNIQUE INDEX uq_contracts_live_per_deal.*?WHERE status IN \\(([^)]*)\\)",
-                        Pattern.DOTALL)
-                .matcher(sql);
+        Set<String> inCode = new TreeSet<>(ContractStatus.LIVE.stream().map(Enum::name).toList());
 
-        assertThat(matcher.find())
-                .as("uq_contracts_live_per_deal not found in %s", MIGRATION)
-                .isTrue();
+        assertThat(inIndex).isEqualTo(inCode);
+    }
 
-        Set<String> inIndex = new LinkedHashSet<>(Arrays.asList(
-                matcher.group(1).replace("'", "").replaceAll("\\s+", "").split(",")));
+    /** @return the status list from the newest migration that defines the index. */
+    private String latestLiveIndexDefinition() throws Exception {
+        List<Path> migrations;
+        try (var files = Files.list(MIGRATIONS)) {
+            migrations = files
+                    .filter(path -> path.getFileName().toString().matches("V\\d+__.*\\.sql"))
+                    .sorted(Comparator.comparingInt(ContractStatusTest::version))
+                    .toList();
+        }
 
-        Set<String> inCode = new LinkedHashSet<>(
-                ContractStatus.LIVE.stream().map(Enum::name).sorted().toList());
+        String latest = null;
+        for (Path migration : migrations) {
+            Matcher matcher = LIVE_INDEX.matcher(Files.readString(migration, StandardCharsets.UTF_8));
+            while (matcher.find()) {
+                latest = matcher.group(1);
+            }
+        }
 
-        assertThat(new LinkedHashSet<>(inIndex.stream().sorted().toList())).isEqualTo(inCode);
+        assertThat(latest)
+                .as("no migration in %s defines uq_contracts_live_per_deal", MIGRATIONS)
+                .isNotNull();
+        return latest;
+    }
+
+    private static int version(Path migration) {
+        String name = migration.getFileName().toString();
+        return Integer.parseInt(name.substring(1, name.indexOf("__")));
     }
 
     /** Storing the enum by name means renaming a constant silently orphans every

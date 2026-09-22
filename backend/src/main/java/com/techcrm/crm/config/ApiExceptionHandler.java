@@ -1,7 +1,6 @@
 package com.techcrm.crm.config;
 
 import com.techcrm.crm.contract.document.ContractDocumentException;
-import com.techcrm.crm.contract.signature.DocumensoException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,14 +52,6 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleContractDocument(ContractDocumentException ex) {
         log.error("Contract document operation failed", ex);
         return errorBody(HttpStatus.INTERNAL_SERVER_ERROR, "The contract document could not be produced or read.");
-    }
-
-    // Likewise for the signature provider: its errors can quote request details
-    // back at us, and 502 is the honest status for an upstream that failed.
-    @ExceptionHandler(DocumensoException.class)
-    public ResponseEntity<Map<String, Object>> handleDocumenso(DocumensoException ex) {
-        log.error("Documenso call failed", ex);
-        return errorBody(HttpStatus.BAD_GATEWAY, "The electronic signature provider could not be reached.");
     }
 
     private ResponseEntity<Map<String, Object>> errorBody(HttpStatus status, String message) {

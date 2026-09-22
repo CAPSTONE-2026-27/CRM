@@ -46,6 +46,23 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/crm_spring}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:changeme}
+    hikari:
+      # Tuned for a serverless Postgres (Neon), which closes connections from its
+      # side once they have been idle for a few minutes. Hikari cannot tell a
+      # connection closed by the server from a healthy one until it uses it, so
+      # the pool has to retire connections before the server does -- otherwise a
+      # request is handed a dead connection and fails at commit with
+      # "An I/O error occurred while sending to the backend".
+      #
+      # Contract generation is what exposed this: it spends tens of seconds
+      # rendering a document with no database work in between, so the pool sits
+      # idle across exactly the window in which the server hangs up.
+      max-lifetime: 240000
+      keepalive-time: 120000
+      idle-timeout: 60000
+      minimum-idle: 1
+      connection-timeout: 30000
+      validation-timeout: 5000
   jpa:
     hibernate:
       ddl-auto: validate
@@ -114,15 +131,24 @@ app:
 
 # Contract generation (Contract Generation Bot). See docs/CONTRACT-GENERATION.md.
 #
-# THIS FILE IS COMMITTED TO GIT -- no secrets below. The Documenso API key and
-# webhook secret are read from environment variables, or from
-# application-local.yml (gitignored), which overrides everything here.
+# THIS FILE IS COMMITTED TO GIT -- no secrets below. Credentials are read from
+# environment variables, or from application-local.yml (gitignored), which
+# overrides everything here.
 contract:
   # Which deal stages a contract may be generated from. The workflow's trigger
   # is "Proposal Accepted", which is not a stage this CRM has -- DealStages is a
   # fixed vocabulary shared with the frontend pipeline board -- so these are the
   # stages that mean the same thing here. Every value must be a real deal stage.
   eligible-stages: PROPOSAL,NEGOTIATION,CLOSED_WON
+  # Render off the request thread. On by default because SAP Build Process
+  # Automation abandons an HTTP call at 30 seconds and a cold generation takes
+  # longer than that: POST /generate then answers 202 in about a second with the
+  # contract DRAFTING, and the bot polls GET /{id}/status.
+  #
+  # false renders inline and answers 201 with the documents attached -- slower to
+  # respond, but a render failure comes back as a 500 on the call that caused it
+  # rather than as a status somebody has to go looking for.
+  async-generation: ${CONTRACT_ASYNC_GENERATION:true}
   # Used when the caller supplies no end date.
   default-term-months: 12
   # Neither payment terms nor a delivery schedule is recorded anywhere in the
@@ -142,7 +168,7 @@ contract:
     root: ${CONTRACT_STORAGE_ROOT:./var/contracts}
   libreoffice:
     # Set to false where LibreOffice is not installed: contracts then generate
-    # as DOCX only and cannot be sent for signature.
+    # as DOCX only and cannot be emailed to the customer.
     enabled: ${CONTRACT_LIBREOFFICE_ENABLED:true}
     # A bare name is resolved on PATH. On Windows this is usually
     # "C:/Program Files/LibreOffice/program/soffice.exe"; on macOS
@@ -150,45 +176,57 @@ contract:
     path: ${CONTRACT_LIBREOFFICE_PATH:soffice}
     timeout-seconds: 120
 
-# Documenso e-signature. Written against Documenso's public API v1 -- this
-# project had no prior Documenso integration to match, so the two things
-# installations differ on are settings rather than assumptions.
-documenso:
-  base-url: ${DOCUMENSO_BASE_URL:}
-  # Never commit a real key -- set DOCUMENSO_API_KEY, or put it in
-  # application-local.yml. Blank disables send-for-signature (503) rather than
-  # posting a contract at a URL nobody configured.
-  api-key: ${DOCUMENSO_API_KEY:}
-  # Documenso v1 takes the raw key in the Authorization header. Set this to
-  # "Bearer" behind a proxy that expects an auth scheme -- just the scheme name,
-  # the separating space is added by the client.
-  api-key-prefix: ${DOCUMENSO_API_KEY_PREFIX:}
+# Proposal generation (Proposal Generation Bot). See docs/PROPOSAL-GENERATION.md.
+#
+# Storage and LibreOffice are not repeated here: proposals render through the
+# same DocumentStorageService and PdfConversionService as contracts, so they are
+# configured once, above, under `contract`. Only what differs lives here.
+proposal:
+  # Which deal stages a proposal may be generated from. Just PROPOSAL, and
+  # narrower than the contract list on purpose -- this bot fires when a deal
+  # *reaches* the proposal stage, whereas the contract bot fires on the later
+  # "Proposal Accepted" outcome. Every value must be a real deal stage.
+  eligible-stages: PROPOSAL
+  # Render off the request thread. On by default because SAP Build Process
+  # Automation abandons an HTTP call at 30 seconds and a cold generation takes
+  # longer than that: POST /generate then answers 202 in about a second with the
+  # proposal GENERATING, and the bot polls GET /{id}/status.
+  async-generation: ${PROPOSAL_ASYNC_GENERATION:true}
+  # How long a quotation stands when the caller supplies no expiry. This is why
+  # proposals carry a validity and contracts carry a term: after this date the
+  # pricing is no longer ours to honour.
+  default-validity-days: 30
+  # Neither payment terms nor a delivery schedule is recorded anywhere in the
+  # CRM, so they default from here and can be overridden per request.
+  default-payment-terms: "50% on acceptance of this proposal, 50% on delivery. Invoices are payable within 30 days."
+  default-delivery-timeline: "Within 30 days of proposal acceptance."
+  # At or above this deal value a product sale is proposed as an implementation
+  # engagement rather than a straight quotation. In the deal's own currency.
+  implementation-value-threshold: 2500000
+  templates:
+    # A classpath: location uses the bundled templates; point this at a
+    # directory to let an admin drop in their own without a rebuild.
+    location: ${PROPOSAL_TEMPLATE_LOCATION:classpath:proposal-templates/}
+
+# Mailjet -- emails a contract to its customer (POST /api/contracts/{id}/send-email).
+#
+# The backend sends this itself rather than handing the PDF to SAP Build Process
+# Automation, which cuts text values to 1,024 characters -- far short of a
+# contract PDF in base64. SAP decides when; the backend sends.
+#
+# THIS FILE IS COMMITTED TO GIT -- keys belong in application-local.yml
+# (gitignored) or environment variables. Blank keys or sender make send-email
+# answer 503 rather than fail inside Mailjet.
+mailjet:
+  base-url: https://api.mailjet.com
+  api-key: ${MAILJET_API_KEY:}
+  secret-key: ${MAILJET_SECRET_KEY:}
+  # Must be a sender address verified in the Mailjet account.
+  from-email: ${MAILJET_FROM_EMAIL:}
+  from-name: ${MAILJET_FROM_NAME:}
   request-timeout-ms: 30000
-  # Whether Documenso emails the signer itself, or the bot sends its own mail
-  # using the returned signUrl.
-  send-email: true
-  webhook:
-    # The signature callback is unauthenticated by necessity, so this shared
-    # secret is its only access control. Blank means the endpoint refuses every
-    # delivery rather than trusting one.
-    secret: ${DOCUMENSO_WEBHOOK_SECRET:}
-    secret-header: X-Documenso-Secret
-  # Where the signer signs. Documenso refuses to send a document whose signer has
-  # no signature field, so one is always placed; NAME and DATE below it make it
-  # read as a signature block rather than a lone widget.
-  #
-  # All positions are percentages of the page -- the unit Documenso's field API
-  # uses. Defaults sit low on the LAST page, under the templates' own
-  # "Signed for and on behalf of" line. Tune them for different wording, or drag
-  # the fields in Documenso's editor.
-  signature-field:
-    # 0 = the document's last page, resolved by counting pages in the generated
-    # PDF. A positive number pins a specific page instead.
-    page: 0
-    x: 8
-    y: 62
-    width: 34
-    height: 10
-    include-name-and-date: true
-    row-gap: 2
-    row-height: 6
+  templates:
+    # Subject, HTML and plain-text wording, read on every send so they can be
+    # edited while the backend runs. Relative to the directory the backend is
+    # started from. See email-templates/README.md.
+    location: ${MAILJET_TEMPLATE_LOCATION:file:./email-templates/}

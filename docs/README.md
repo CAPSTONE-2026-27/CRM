@@ -20,7 +20,8 @@ Reference:
 
 | Document | Covers |
 |---|---|
-| [CONTRACT-GENERATION.md](CONTRACT-GENERATION.md) | The Contract Generation Bot: deal -> DOCX -> PDF -> Documenso -> signed, and the API the SAP BPA bot drives it with |
+| [CONTRACT-GENERATION.md](CONTRACT-GENERATION.md) | The Contract Generation Bot: deal -> DOCX -> PDF -> emailed to the customer via Mailjet, and the API the SAP BPA bot drives it with |
+| [PROPOSAL-GENERATION.md](PROPOSAL-GENERATION.md) | The Proposal Generation Bot: the same pipeline one step earlier in the deal, on the Proposal stage, reusing the contract module's document machinery |
 | [DATABASE-SETUP.md](DATABASE-SETUP.md) | Getting PostgreSQL running |
 | [BACKEND-MIGRATION.md](BACKEND-MIGRATION.md) | History of the Node → Spring Boot migration |
 | [DESIGN-GUIDELINES.md](DESIGN-GUIDELINES.md) | Visual language |

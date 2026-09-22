@@ -28,10 +28,5 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
     Optional<Contract> findLiveForDeal(@Param("dealId") Long dealId,
                                        @Param("organizationId") Long organizationId);
 
-    /** Webhook lookup. Not organization-scoped, because Documenso knows nothing
-     *  about our tenants — the document id is the only thing it sends back, and
-     *  it is globally unique on their side. */
-    Optional<Contract> findByDocumensoDocumentId(String documensoDocumentId);
-
     Optional<Contract> findByContractNumber(String contractNumber);
 }

@@ -1,0 +1,254 @@
+{
+  "info": {
+    "name": "CRM - Proposal Generation Bot",
+    "description": "Every proposal endpoint, in the order the SAP BPA bot calls them.\n\nSet the collection variables first:\n  baseUrl   - http://localhost:8080 (or your dev-tunnel/ngrok URL)\n  email     - a CRM login\n  password  - its password\n  dealId    - deals.id of a deal in the PROPOSAL stage\n\n\"1. Login\" stores the access token and \"2. Generate proposal\" stores proposalId,\nso the later requests need no manual copying.\n\nThe webhook request is the exception: it is unauthenticated and needs\n\nNOTE ON dealId: this is deals.id - the value GET /api/deals returns as \"id\" and\nthe lead-conversion response returns as \"dealId\". It is NOT opportunityId\n(\"OPP-000031\"), which is a display reference derived from it.\n\nNOTE ON THE STAGE: proposal.eligible-stages defaults to PROPOSAL alone, which is\nnarrower than the contract bot's list. This bot fires when a deal *reaches* the\nproposal stage; \"Proposal Accepted\" is a later outcome and belongs to the\ncontract bot.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "email",
+      "value": "admin@example.com"
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "dealId",
+      "value": "31"
+    },
+    {
+      "key": "proposalId",
+      "value": ""
+    },
+    {
+      "key": "proposalNumber",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Login (existing CRM auth - not part of this module)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', body.accessToken || body.token);",
+              "pm.test('got a token', () => pm.expect(pm.collectionVariables.get('accessToken')).to.be.a('string'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "Expected: 200 with { \"accessToken\": \"eyJ...\" }, valid 30 minutes.\n\nGoogle sign-in accounts have no password hash and cannot use this endpoint - create a local service account with POST /api/users instead."
+      }
+    },
+    {
+      "name": "2. Generate proposal",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('proposalId', body.proposalId);",
+              "pm.collectionVariables.set('proposalNumber', body.proposalNumber);",
+              "pm.test('201 for a new proposal, 200 for an absorbed retry', () =>",
+              "  pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+              "pm.test('DRAFT with both documents', () => {",
+              "  pm.expect(body.status).to.eql('DRAFT');",
+              "  pm.expect(body.pdfUrl).to.be.a('string');",
+              "  pm.expect(body.docxUrl).to.be.a('string');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals/generate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals",
+            "generate"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dealId\": {{dealId}}\n}"
+        },
+        "description": "The SAP BPA bot's first call.\n\nTakes ~25-30 seconds: docx4j render plus a headless LibreOffice conversion. Set the request timeout to at least 60s.\n\nOptional fields:\n  proposalType      STANDARD_SALES_PROPOSAL | SOFTWARE_IMPLEMENTATION_PROPOSAL | PROFESSIONAL_SERVICES_PROPOSAL\n  contactId         who it is addressed to (defaults to the account's primary contact)\n  validUntil        ISO date; defaults to proposal.default-validity-days from today\n  paymentTerms      overrides the configured default\n  deliveryTimeline  overrides the configured default\n  regenerate        true supersedes the deal's existing live proposal\n\nExpected:\n  201 Created - a proposal was generated\n  200 OK      - a retry was absorbed; the existing proposal is returned unchanged\n\nErrors:\n  400 incomplete data (no billing address, no emailable contact, no owner, zero value, expired validUntil)\n  404 unknown deal, or a deal in another organization\n  409 deal not in an eligible stage, or a proposal already with the customer\n  500 document generation or PDF conversion failed (recorded against the proposal)"
+      }
+    },
+    {
+      "name": "3. Get proposal",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals/{{proposalId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals",
+            "{{proposalId}}"
+          ]
+        },
+        "description": "Expected: 200. 404 if the proposal belongs to another organization."
+      }
+    },
+    {
+      "name": "4. Get proposal status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals/{{proposalId}}/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals",
+            "{{proposalId}}",
+            "status"
+          ]
+        },
+        "description": "Deliberately small, because the automation platform polls it.\n\nReturns proposalId, dealId, status, sentForSignatureAt, signedAt, rejectedAt, updatedAt.\n\nStatuses: GENERATING -> DRAFT -> SENT_FOR_SIGNATURE -> VIEWED -> SIGNED | REJECTED, plus FAILED and SUPERSEDED.\n\nExpected: 200."
+      }
+    },
+    {
+      "name": "5. Download PDF",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals/{{proposalId}}/document.pdf",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals",
+            "{{proposalId}}",
+            "document.pdf"
+          ]
+        },
+        "description": "Expected: 200, Content-Type application/pdf, Content-Disposition attachment named PRP-000042.pdf, Cache-Control no-store.\n\n404 when no PDF exists - either generation ran DOCX-only (contract.libreoffice.enabled=false) or the stored file is gone.\n\nUse Postman's \"Send and Download\" to save it."
+      }
+    },
+    {
+      "name": "6. Download DOCX",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals/{{proposalId}}/document.docx",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals",
+            "{{proposalId}}",
+            "document.docx"
+          ]
+        },
+        "description": "Expected: 200, Content-Type application/vnd.openxmlformats-officedocument.wordprocessingml.document, named PRP-000042.docx."
+      }
+    },
+    {
+      "name": "10. List proposals",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/proposals",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "proposals"
+          ]
+        },
+        "description": "Every proposal in the caller's organization, newest first. Expected: 200."
+      }
+    }
+  ]
+}

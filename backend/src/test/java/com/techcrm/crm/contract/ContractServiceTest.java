@@ -12,8 +12,10 @@ import com.techcrm.crm.contract.document.PdfConversionService;
 import com.techcrm.crm.contract.template.ContractTemplateService;
 import com.techcrm.crm.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -51,11 +53,13 @@ class ContractServiceTest {
     @Mock PdfConversionService pdfConversionService;
     @Mock DocumentStorageService storageService;
     @Mock ContractRecordService recordService;
+    @Mock ContractDocumentGenerator documentGenerator;
     @Mock AccountRepository accountRepository;
     @Mock ContactRepository contactRepository;
     @Mock UserRepository userRepository;
     @Mock AuditLogService auditLogService;
 
+    ContractProperties properties;
     ContractService service;
 
     private static final GenerateContractRequest GENERATE =
@@ -65,8 +69,15 @@ class ContractServiceTest {
 
     @BeforeEach
     void setUp() {
+        properties = new ContractProperties();
+        // These cases are about the render pipeline itself, so they run it
+        // inline. The asynchronous path — which is the shipped default — has its
+        // own tests below.
+        properties.setAsyncGeneration(false);
+
         service = new ContractService(contractRepository, lineItemRepository, assembler, templateService,
                 docxGenerationService, pdfConversionService, storageService, recordService,
+                documentGenerator, properties,
                 accountRepository, contactRepository, userRepository, auditLogService);
 
         when(assembler.requireDeal(any(), eq(DEAL_ID))).thenReturn(deal());
@@ -137,6 +148,53 @@ class ContractServiceTest {
         service.generate(caller(), GENERATE);
 
         verify(assembler, never()).assemble(any(), any(), any());
+    }
+
+    /**
+     * The failure this guards against actually happened.
+     *
+     * The row is written before the document is rendered, and a generation whose
+     * final commit died — a dropped database connection was enough — left a
+     * contract that claimed to be finished with no file behind it. Because that
+     * status also occupies the deal's live-contract slot, every retry was handed
+     * the empty record back as a success, with null document URLs, and no
+     * ordinary call could produce a real contract for that deal again.
+     *
+     * A retry must look at whether a document exists, not only at the status.
+     */
+    @Test
+    void anAbandonedAttemptIsRegeneratedRatherThanReturnedAsASuccess() {
+        Contract abandoned = contract();
+        abandoned.setStatus(ContractStatus.DRAFTING);
+        abandoned.setDocxPath(null);
+        abandoned.setPdfPath(null);
+        when(contractRepository.findLiveForDeal(DEAL_ID, ORG_ID)).thenReturn(Optional.of(abandoned));
+
+        // Note: the plain request, with no regenerate flag. Needing one to escape
+        // a half-written row is the bug, not the cure.
+        var outcome = service.generate(caller(), GENERATE);
+
+        assertThat(outcome.created()).isTrue();
+        assertThat(outcome.response().pdfUrl()).isNotNull();
+        verify(recordService).supersede(42L);
+        verify(docxGenerationService).generate(any(), any(), any());
+    }
+
+    /** The same, for rows stranded in GENERATED before DRAFTING existed. Their
+     *  status is a leftover from the old behaviour; the missing document is
+     *  still what settles it. */
+    @Test
+    void aStrandedGeneratedRowWithNoDocumentIsAlsoRegenerated() {
+        Contract stranded = contract();
+        stranded.setStatus(ContractStatus.GENERATED);
+        stranded.setDocxPath(null);
+        stranded.setPdfPath(null);
+        when(contractRepository.findLiveForDeal(DEAL_ID, ORG_ID)).thenReturn(Optional.of(stranded));
+
+        var outcome = service.generate(caller(), GENERATE);
+
+        assertThat(outcome.created()).isTrue();
+        verify(recordService).supersede(42L);
     }
 
     @Test
@@ -288,5 +346,118 @@ class ContractServiceTest {
         assertThat(response.pdfUrl()).isNull();
         assertThat(response.docxUrl()).isNull();
         assertThat(response.status()).isEqualTo("FAILED");
+    }
+
+    /**
+     * The shipped default: generation is handed to a background thread so the
+     * request returns inside SAP BPA's 30-second limit.
+     *
+     * These use a draft row — DRAFTING, no documents — because that is what the
+     * caller actually gets back from an accepted request.
+     */
+    @Nested
+    class AsynchronousGeneration {
+
+        @BeforeEach
+        void useTheShippedDefault() {
+            properties.setAsyncGeneration(true);
+
+            Contract draft = contract();
+            draft.setStatus(ContractStatus.DRAFTING);
+            draft.setDocxPath(null);
+            draft.setPdfPath(null);
+            when(recordService.createDraft(any(), any(), any(), any())).thenReturn(draft);
+        }
+
+        @Test
+        void acceptsTheRequestWithoutRenderingAnything() {
+            var outcome = service.generate(caller(), GENERATE);
+
+            assertThat(outcome.disposition()).isEqualTo(ContractService.Disposition.ACCEPTED);
+            assertThat(outcome.created()).isTrue();
+
+            // Nothing slow happened on this thread.
+            verify(docxGenerationService, never()).generate(any(), any(), any());
+            verify(pdfConversionService, never()).convertToPdf(any());
+            verify(storageService, never()).store(anyLong(), anyString(), anyString(), any());
+        }
+
+        @Test
+        void handsTheWorkToTheBackgroundGenerator() {
+            service.generate(caller(), GENERATE);
+
+            ArgumentCaptor<ContractDocumentGenerator.DocumentJob> job =
+                    ArgumentCaptor.forClass(ContractDocumentGenerator.DocumentJob.class);
+            verify(documentGenerator).generate(job.capture());
+
+            assertThat(job.getValue().contractId()).isEqualTo(42L);
+            assertThat(job.getValue().contractNumber()).isEqualTo("CTR-000042");
+            assertThat(job.getValue().dealId()).isEqualTo(DEAL_ID);
+            assertThat(job.getValue().organizationId()).isEqualTo(ORG_ID);
+            assertThat(job.getValue().userId()).isEqualTo(USER_ID);
+            assertThat(job.getValue().contractType()).isEqualTo(ContractType.STANDARD_SALES_AGREEMENT);
+        }
+
+        /**
+         * No JPA entity may cross the thread boundary — it would be detached by
+         * the time the task ran. The placeholders are resolved here instead, on
+         * the request thread, and only plain values are handed over.
+         */
+        @Test
+        void resolvesThePlaceholdersBeforeHandingOver() {
+            service.generate(caller(), GENERATE);
+
+            ArgumentCaptor<ContractDocumentGenerator.DocumentJob> job =
+                    ArgumentCaptor.forClass(ContractDocumentGenerator.DocumentJob.class);
+            verify(documentGenerator).generate(job.capture());
+
+            assertThat(job.getValue().placeholders())
+                    .containsEntry("contractNumber", "CTR-000042")
+                    .containsEntry("companyName", "Northwind Traders Pvt Ltd")
+                    .containsEntry("salesExecutive", "Ravi Kulkarni");
+            assertThat(job.getValue().lineItems()).hasSize(1);
+        }
+
+        /** DRAFTING with null URLs is the honest answer while a render is in
+         *  flight, and what tells the bot to poll. */
+        @Test
+        void theAcceptedResponseSaysDraftingWithNoDocumentsYet() {
+            var response = service.generate(caller(), GENERATE).response();
+
+            assertThat(response.contractId()).isEqualTo("42");
+            assertThat(response.status()).isEqualTo("DRAFTING");
+            assertThat(response.pdfUrl()).isNull();
+            assertThat(response.docxUrl()).isNull();
+        }
+
+        /**
+         * Validation must stay on the request thread. A wrong stage is a 409 on
+         * the call that caused it — not a 202 followed by a FAILED status the
+         * caller has to go looking for.
+         */
+        @Test
+        void validationStillFailsSynchronously() {
+            when(assembler.assemble(any(), any(), any())).thenThrow(
+                    new ResponseStatusException(HttpStatus.CONFLICT, "Deal is in stage QUALIFICATION"));
+
+            assertThatThrownBy(() -> service.generate(caller(), GENERATE))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .extracting(e -> ((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.CONFLICT);
+
+            verify(recordService, never()).createDraft(any(), any(), any(), any());
+            verify(documentGenerator, never()).generate(any());
+        }
+
+        /** Idempotency is decided before any work is queued. */
+        @Test
+        void aRetryIsStillAbsorbedWithoutQueueingAnything() {
+            when(contractRepository.findLiveForDeal(DEAL_ID, ORG_ID)).thenReturn(Optional.of(contract()));
+
+            var outcome = service.generate(caller(), GENERATE);
+
+            assertThat(outcome.disposition()).isEqualTo(ContractService.Disposition.EXISTING);
+            verify(documentGenerator, never()).generate(any());
+        }
     }
 }

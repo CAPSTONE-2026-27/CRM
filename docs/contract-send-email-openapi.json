@@ -1,0 +1,77 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CRM Contract Email",
+    "version": "1.0",
+    "description": "Emails a contract to its customer with the PDF attached, and marks it SENT. The backend sends through Mailjet; the PDF never passes through SAP. Call once the contract status is GENERATED. Replace the server URL with your backend's public URL, and create a BTP destination for it that sends the CRM bearer token."
+  },
+  "servers": [
+    { "url": "https://your-backend-url" }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/api/contracts/{contractId}/send-email": {
+      "post": {
+        "operationId": "sendContractEmail",
+        "summary": "Email contract to customer",
+        "description": "Returns status SENT, or ALREADY_SENT when a retry found the contract already emailed and nothing was sent twice.",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64", "example": 5 }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recipientEmail": { "type": "string", "description": "Optional. Send somewhere other than the contract's contact.", "example": "customer@company.com" },
+                  "recipientName": { "type": "string", "description": "Optional. Overrides the contact's name in the greeting.", "example": "Meera Deshpande" },
+                  "resend": { "type": "boolean", "description": "Optional. Email again even if already emailed.", "example": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent, or already sent before",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contractId": { "type": "string", "example": "5" },
+                    "contractNumber": { "type": "string", "example": "CTR-000005" },
+                    "status": { "type": "string", "example": "SENT" },
+                    "sentTo": { "type": "string", "example": "customer@company.com" },
+                    "mailjetMessageId": { "type": "string", "example": "1ab23cd4-5ef6-7890-abcd-1234567890ef" },
+                    "attachmentBytes": { "type": "integer", "example": 82637 },
+                    "sentAt": { "type": "string", "example": "2026-09-17T11:30:00Z" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "No recipient email address" },
+          "404": { "description": "Contract not found in your organization" },
+          "409": { "description": "No PDF, or the contract is still generating or no longer current" },
+          "502": { "description": "Mailjet refused the message; reason in the audit log" },
+          "503": { "description": "Mailjet is not configured on the server" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    }
+  }
+}

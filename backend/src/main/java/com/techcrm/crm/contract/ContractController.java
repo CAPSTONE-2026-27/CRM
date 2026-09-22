@@ -5,15 +5,11 @@ import com.techcrm.crm.contract.ContractDtos.ContractResponse;
 import com.techcrm.crm.contract.ContractDtos.ContractStatusResponse;
 import com.techcrm.crm.contract.ContractDtos.GenerateContractRequest;
 import com.techcrm.crm.contract.ContractDtos.GenerateContractResponse;
-import com.techcrm.crm.contract.ContractDtos.SendForSignatureRequest;
-import com.techcrm.crm.contract.ContractDtos.SendForSignatureResponse;
-import com.techcrm.crm.contract.ContractDtos.WebhookAck;
+import com.techcrm.crm.contract.ContractDtos.ContractEmailResponse;
+import com.techcrm.crm.contract.ContractDtos.SendContractEmailRequest;
 import com.techcrm.crm.contract.ContractService.GenerationOutcome;
 import com.techcrm.crm.contract.document.DocumentStorageService;
-import com.techcrm.crm.contract.signature.ContractSignatureService;
-import com.techcrm.crm.contract.signature.ContractWebhookService;
-import com.techcrm.crm.contract.signature.DocumensoProperties;
-import jakarta.servlet.http.HttpServletRequest;
+import com.techcrm.crm.contract.email.ContractEmailService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -30,16 +26,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Contract generation and signature.
+ * Contract generation, and emailing the contract to the customer.
  *
  * Every endpoint here is authenticated through the CRM's existing JWT filter and
- * scoped to the caller's organization — except {@code /sign-callback}, which
- * Documenso calls with no CRM identity and which is protected by a shared secret
- * instead. That one exception is declared in {@code SecurityConfig}; nothing
- * else about the security model changes for this module.
+ * scoped to the caller's organization.
  *
- * The generate, status and download endpoints are the ones the SAP Build Process
- * Automation bot uses.
+ * The SAP Build Process Automation bot calls generate, polls status until the
+ * contract is GENERATED, then calls send-email.
  */
 @RestController
 @RequestMapping("/api/contracts")
@@ -49,34 +42,41 @@ public class ContractController {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
     private final ContractService contractService;
-    private final ContractSignatureService signatureService;
-    private final ContractWebhookService webhookService;
     private final DocumentStorageService storageService;
-    private final DocumensoProperties documensoProperties;
+    private final ContractEmailService emailService;
 
     public ContractController(ContractService contractService,
-                              ContractSignatureService signatureService,
-                              ContractWebhookService webhookService,
                               DocumentStorageService storageService,
-                              DocumensoProperties documensoProperties) {
+                              ContractEmailService emailService) {
         this.contractService = contractService;
-        this.signatureService = signatureService;
-        this.webhookService = webhookService;
         this.storageService = storageService;
-        this.documensoProperties = documensoProperties;
+        this.emailService = emailService;
     }
 
     /**
      * Generates a contract for an existing CRM deal.
      *
-     * <b>201</b> when a contract was created, <b>200</b> when an existing live
-     * contract was returned because this was a retry. The body is identical
-     * either way, so a caller that ignores the status code still gets a usable
-     * answer — the distinction is there for one that does not.
+     * <b>202</b> — accepted: the contract is reserved and its documents are being
+     * rendered. {@code status} is {@code DRAFTING} and the document URLs are
+     * null. Poll {@code GET /{contractId}/status} until it reads GENERATED (or
+     * FAILED). This is the default, and answers in about a second, because SAP
+     * Build Process Automation abandons an HTTP call at 30 seconds and a cold
+     * generation takes longer than that.
+     *
+     * <b>201</b> — created: the same thing, but rendered inline and already
+     * finished. Only when {@code contract.async-generation=false}.
+     *
+     * <b>200</b> — an existing live contract was returned because this was a
+     * retry.
+     *
+     * The body is identical in all three cases, so a caller that ignores the
+     * status code still gets a usable answer; the distinction is there for one
+     * that does not.
      *
      * <b>404</b> unknown deal, <b>409</b> wrong stage or an already-signed
      * contract, <b>400</b> incomplete contract data, <b>500</b> document
-     * generation or conversion failure.
+     * generation or conversion failure (synchronous mode only — asynchronously,
+     * a failure lands on the contract's status instead).
      */
     @PostMapping("/generate")
     public ResponseEntity<GenerateContractResponse> generate(
@@ -84,9 +84,12 @@ public class ContractController {
             @Valid @RequestBody GenerateContractRequest request) {
 
         GenerationOutcome outcome = contractService.generate(caller, request);
-        return ResponseEntity
-                .status(outcome.created() ? HttpStatus.CREATED : HttpStatus.OK)
-                .body(outcome.response());
+        HttpStatus status = switch (outcome.disposition()) {
+            case ACCEPTED -> HttpStatus.ACCEPTED;
+            case CREATED -> HttpStatus.CREATED;
+            case EXISTING -> HttpStatus.OK;
+        };
+        return ResponseEntity.status(status).body(outcome.response());
     }
 
     @GetMapping
@@ -100,33 +103,35 @@ public class ContractController {
         return contractService.get(caller, contractId);
     }
 
-    /** The endpoint the automation platform polls while it waits for a signature. */
+    /** The endpoint the automation platform polls while a contract is generating. */
     @GetMapping("/{contractId}/status")
     public ContractStatusResponse status(@AuthenticationPrincipal AuthenticatedUser caller,
                                          @PathVariable Long contractId) {
         return contractService.status(caller, contractId);
     }
 
-    @PostMapping("/send-for-signature")
-    public SendForSignatureResponse sendForSignature(@AuthenticationPrincipal AuthenticatedUser caller,
-                                                     @Valid @RequestBody SendForSignatureRequest request) {
-        return signatureService.sendForSignature(caller, request);
-    }
-
     /**
-     * Documenso's signature callback.
+     * Emails the contract PDF to the customer for review, and marks it SENT.
      *
-     * The body is taken as a String, not bound to a DTO: the redelivery digest
-     * has to be computed over exactly the bytes Documenso sent.
+     * Called by the automation platform once the contract is GENERATED. The
+     * platform decides when; the backend sends, because it holds the PDF and SAP
+     * Build Process Automation cannot carry one between steps. The wording comes
+     * from the editable files in {@code mailjet.templates.location}.
      *
-     * Always answers with a body Documenso can log — {@code processed} or
-     * {@code duplicate} — so an operator reading its delivery history can tell a
-     * retry that was absorbed from one that did nothing.
+     * The body is optional: {@code recipientEmail} and {@code recipientName}
+     * override the contact, {@code resend: true} emails again.
+     *
+     * <b>200</b> {@code SENT}, or {@code ALREADY_SENT} when a retry found it
+     * already emailed and nothing was sent twice. <b>404</b> no such contract,
+     * <b>409</b> no PDF, or a contract not ready or no longer current,
+     * <b>400</b> no recipient address, <b>502</b> Mailjet refused it (the reason
+     * is in the audit log), <b>503</b> Mailjet is not configured.
      */
-    @PostMapping(value = "/sign-callback", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public WebhookAck signCallback(@RequestBody String rawBody, HttpServletRequest request) {
-        String secret = request.getHeader(documensoProperties.getWebhook().getSecretHeader());
-        return webhookService.handle(rawBody, secret);
+    @PostMapping("/{contractId}/send-email")
+    public ContractEmailResponse sendEmail(@AuthenticationPrincipal AuthenticatedUser caller,
+                                           @PathVariable Long contractId,
+                                           @Valid @RequestBody(required = false) SendContractEmailRequest request) {
+        return emailService.send(caller, contractId, request);
     }
 
     /* ------------------------------------------------------------ downloads */

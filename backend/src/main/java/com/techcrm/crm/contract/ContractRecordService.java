@@ -67,7 +67,9 @@ public class ContractRecordService {
         contract.setOwnerId(assembly.owner().getId());
         contract.setContractType(contractType);
         contract.setTemplateKey(templateKey);
-        contract.setStatus(ContractStatus.GENERATED);
+        // Not GENERATED: nothing has been generated yet. attachDocuments
+        // promotes it once a document actually exists. See ContractStatus.DRAFTING.
+        contract.setStatus(ContractStatus.DRAFTING);
         contract.setCurrency(assembly.currency());
         contract.setTotalAmount(assembly.totalAmount());
         contract.setStartDate(assembly.startDate());
@@ -147,19 +149,18 @@ public class ContractRecordService {
         });
     }
 
-    /** Records that Documenso accepted the contract. Lives here rather than in
-     *  {@code ContractSignatureService} for the proxying reason in this class's
-     *  Javadoc: a {@code @Transactional} method called from inside its own bean
-     *  gets no transaction at all. */
+    /**
+     * Records that the contract was emailed to the customer.
+     *
+     * The recipient is not written back: a test send to an override address must
+     * not replace the real contact on the contract. Who it went to is in the
+     * audit entry. Lives here rather than in the email service for the proxying
+     * reason in this class's Javadoc: a {@code @Transactional} method called
+     * from inside its own bean gets no transaction at all.
+     */
     @Transactional
-    public Contract markSent(Long contractId, String documensoDocumentId, String documensoRecipientId,
-                             String signUrl, String recipientName, String recipientEmail) {
+    public Contract markEmailed(Long contractId) {
         Contract contract = contractRepository.findById(contractId).orElseThrow();
-        contract.setDocumensoDocumentId(documensoDocumentId);
-        contract.setDocumensoRecipientId(documensoRecipientId);
-        contract.setSignUrl(signUrl);
-        contract.setSignerName(recipientName);
-        contract.setSignerEmail(recipientEmail);
         contract.setStatus(ContractStatus.SENT);
         contract.setSentAt(OffsetDateTime.now());
         return contractRepository.save(contract);
@@ -181,9 +182,7 @@ public class ContractRecordService {
      *
      * Only {@code contract_status} and {@code contract_signed_at} — never
      * {@code stage}. Moving a deal to Closed Won is a decision the sales
-     * executive makes in the pipeline, and a signature arriving from an external
-     * service is not authority to make it for them. Customer activation still
-     * happens on signature; it just does not pretend the stage changed.
+     * executive makes in the pipeline.
      */
     @Transactional
     public void mirrorOntoDeal(Long dealId, ContractStatus status, OffsetDateTime signedAt) {

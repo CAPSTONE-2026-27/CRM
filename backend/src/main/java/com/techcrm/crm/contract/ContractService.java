@@ -36,8 +36,21 @@ import java.util.Optional;
  * The contract generation flow, start to finish.
  *
  * <pre>
- *   deal -> validate -> assemble -> pick template -> DOCX -> PDF -> store -> row
+ *   deal -> validate -> assemble -> pick template -> reserve row  (on the request thread)
+ *                                -> DOCX -> PDF -> store         (on a background thread)
  * </pre>
+ *
+ * The split is at the row, not earlier, and that is the important part.
+ * Validation stays synchronous: an unknown deal is still a 404, a wrong stage
+ * still a 409, missing customer data still a 400, on the call that caused them.
+ * Moving validation into the background would turn every one of those into a
+ * FAILED status the caller has to go looking for, and would hand out 202 for
+ * deals that were never going to produce a contract.
+ *
+ * What moved is only the slow half — a docx4j render and a LibreOffice
+ * subprocess, together longer than the 30 seconds SAP Build Process Automation
+ * waits before abandoning a call. See {@link ContractDocumentGenerator}.
+ * {@code contract.async-generation=false} puts it back inline.
  *
  * Not {@code @Transactional}: rendering and converting a document takes seconds
  * and involves an external process, and a transaction spanning that would both
@@ -57,6 +70,8 @@ public class ContractService {
     private final PdfConversionService pdfConversionService;
     private final DocumentStorageService storageService;
     private final ContractRecordService recordService;
+    private final ContractDocumentGenerator documentGenerator;
+    private final ContractProperties properties;
     private final AccountRepository accountRepository;
     private final ContactRepository contactRepository;
     private final UserRepository userRepository;
@@ -70,6 +85,8 @@ public class ContractService {
                            PdfConversionService pdfConversionService,
                            DocumentStorageService storageService,
                            ContractRecordService recordService,
+                           ContractDocumentGenerator documentGenerator,
+                           ContractProperties properties,
                            AccountRepository accountRepository,
                            ContactRepository contactRepository,
                            UserRepository userRepository,
@@ -82,17 +99,37 @@ public class ContractService {
         this.pdfConversionService = pdfConversionService;
         this.storageService = storageService;
         this.recordService = recordService;
+        this.documentGenerator = documentGenerator;
+        this.properties = properties;
         this.accountRepository = accountRepository;
         this.contactRepository = contactRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
 
-    /** Whether {@link #generate} created a contract or handed back one that
-     *  already existed. The controller turns this into 201 or 200, which is how
-     *  the automation platform can tell a retry was absorbed without the
-     *  response body having to grow a field for it. */
-    public record GenerationOutcome(GenerateContractResponse response, boolean created) {
+    /**
+     * What {@link #generate} did, which the controller turns into a status code.
+     *
+     * Three outcomes rather than a boolean, because there are now three: work
+     * was started, work was finished, or a retry was absorbed. Carrying it in the
+     * status line rather than the body means a caller that only looks at the code
+     * still knows whether to poll.
+     */
+    public enum Disposition {
+        /** Reserved and queued; documents are being rendered. 202. */
+        ACCEPTED,
+        /** Rendered inline and finished. 201. */
+        CREATED,
+        /** A live contract already existed and was returned unchanged. 200. */
+        EXISTING
+    }
+
+    public record GenerationOutcome(GenerateContractResponse response, Disposition disposition) {
+
+        /** True when this call produced a new contract, either way round. */
+        public boolean created() {
+            return disposition != Disposition.EXISTING;
+        }
     }
 
     /**
@@ -110,10 +147,16 @@ public class ContractService {
         Optional<Contract> existing = contractRepository.findLiveForDeal(deal.getId(), caller.organizationId());
         boolean regenerate = Boolean.TRUE.equals(request.regenerate());
 
-        if (existing.isPresent() && !regenerate) {
+        // Only a contract that actually produced a document is a valid answer to
+        // a retry. Status on its own is not enough: the row is written before
+        // the document is rendered, so a run that died in between -- a dropped
+        // database connection during the commit is enough -- leaves a record
+        // that would otherwise be handed back as a success for ever, with null
+        // document URLs and nothing but a manual regenerate to get past it.
+        if (existing.isPresent() && !regenerate && existing.get().hasDocument()) {
             log.info("Returning existing contract {} for deal {} (idempotent generate)",
                     existing.get().getContractNumber(), deal.getId());
-            return new GenerationOutcome(toGenerateResponse(existing.get()), false);
+            return new GenerationOutcome(toGenerateResponse(existing.get()), Disposition.EXISTING);
         }
 
         if (existing.isPresent()) {
@@ -125,6 +168,11 @@ public class ContractService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Contract " + previous.getContractNumber()
                                 + " for this deal is already signed and cannot be regenerated");
+            }
+            if (!previous.hasDocument()) {
+                log.warn("Contract {} for deal {} is {} with no document behind it; "
+                                + "superseding the abandoned attempt and generating again",
+                        previous.getContractNumber(), deal.getId(), previous.getStatus());
             }
             recordService.supersede(previous.getId());
             auditLogService.record(caller.organizationId(), caller.userId(), "CONTRACT_SUPERSEDED",
@@ -140,6 +188,24 @@ public class ContractService {
         log.info("Drafting contract {} ({}) for deal {} / {}",
                 contract.getContractNumber(), contractType, deal.getId(), deal.getOpportunityId());
 
+        if (properties.isAsyncGeneration()) {
+            // Placeholders are built here, on the request thread, while the
+            // entities in the assembly are still attached. Only plain values
+            // cross to the background task.
+            documentGenerator.generate(new ContractDocumentGenerator.DocumentJob(
+                    contract.getId(),
+                    contract.getContractNumber(),
+                    deal.getId(),
+                    caller.organizationId(),
+                    caller.userId(),
+                    contractType,
+                    ContractPlaceholders.build(contract, assembly),
+                    assembly.lineItems()));
+
+            log.info("Contract {} queued for generation; returning 202", contract.getContractNumber());
+            return new GenerationOutcome(toGenerateResponse(contract), Disposition.ACCEPTED);
+        }
+
         try {
             Contract completed = renderAndStore(contract, assembly, contractType);
             recordService.mirrorOntoDeal(deal.getId(), completed.getStatus(), null);
@@ -149,7 +215,7 @@ public class ContractService {
                     "Generated " + contractType.name() + " for deal " + deal.getId()
                             + " (" + deal.getOpportunityId() + ")");
 
-            return new GenerationOutcome(toGenerateResponse(completed), true);
+            return new GenerationOutcome(toGenerateResponse(completed), Disposition.CREATED);
 
         } catch (ContractDocumentException e) {
             // The cause carries a docx4j trace or a LibreOffice stderr dump.
@@ -277,8 +343,6 @@ public class ContractService {
                 lineItems,
                 documentUrl(contract, "pdf", contract.getPdfPath()),
                 documentUrl(contract, "docx", contract.getDocxPath()),
-                contract.getDocumensoDocumentId(),
-                contract.getSignUrl(),
                 contract.getSignerName(),
                 contract.getSignerEmail(),
                 contract.getSentAt(),

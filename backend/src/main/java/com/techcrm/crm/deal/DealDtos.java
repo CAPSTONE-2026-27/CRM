@@ -126,6 +126,10 @@ public final class DealDtos {
             String contractStatus,
             OffsetDateTime contractSignedAt,
 
+            // The same, for the proposal that precedes it.
+            String proposalStatus,
+            OffsetDateTime proposalSignedAt,
+
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt
     ) {
@@ -182,6 +186,8 @@ public final class DealDtos {
 
                     d.getContractStatus(),
                     d.getContractSignedAt(),
+                    d.getProposalStatus(),
+                    d.getProposalSignedAt(),
 
                     d.getCreatedAt(),
                     d.getUpdatedAt()

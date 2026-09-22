@@ -3,9 +3,7 @@ package com.techcrm.crm.contract;
 import com.techcrm.crm.config.ApiExceptionHandler;
 import com.techcrm.crm.contract.ContractService.GenerationOutcome;
 import com.techcrm.crm.contract.document.DocumentStorageService;
-import com.techcrm.crm.contract.signature.ContractSignatureService;
-import com.techcrm.crm.contract.signature.ContractWebhookService;
-import com.techcrm.crm.contract.signature.DocumensoProperties;
+import com.techcrm.crm.contract.email.ContractEmailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,16 +47,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ContractControllerTest {
 
     @Mock ContractService contractService;
-    @Mock ContractSignatureService signatureService;
-    @Mock ContractWebhookService webhookService;
     @Mock DocumentStorageService storageService;
+    @Mock ContractEmailService emailService;
 
     MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        var controller = new ContractController(contractService, signatureService, webhookService,
-                storageService, new DocumensoProperties());
+        var controller = new ContractController(contractService, storageService, emailService);
 
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -82,7 +78,7 @@ class ContractControllerTest {
     @Test
     void generateReturns201AndTheFourFieldsTheWorkflowConsumes() throws Exception {
         when(contractService.generate(any(), any()))
-                .thenReturn(new GenerationOutcome(generated("GENERATED"), true));
+                .thenReturn(new GenerationOutcome(generated("GENERATED"), ContractService.Disposition.CREATED));
 
         mvc.perform(post("/api/contracts/generate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -95,12 +91,36 @@ class ContractControllerTest {
                 .andExpect(jsonPath("$.docxUrl").value("/api/contracts/42/document.docx"));
     }
 
+    /**
+     * The shipped default, and the reason it exists: SAP Build Process
+     * Automation abandons an HTTP call at 30 seconds, and a cold generation
+     * takes longer. 202 with DRAFTING and null document URLs is what tells the
+     * bot to poll rather than wait.
+     */
+    @Test
+    void generateReturns202WhenTheWorkWasQueued() throws Exception {
+        var accepted = new ContractDtos.GenerateContractResponse(
+                "42", "CTR-000042", "31", "OPP-000031", "STANDARD_SALES_AGREEMENT",
+                "DRAFTING", null, null);
+        when(contractService.generate(any(), any()))
+                .thenReturn(new GenerationOutcome(accepted, ContractService.Disposition.ACCEPTED));
+
+        mvc.perform(post("/api/contracts/generate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dealId\":31}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.contractId").value("42"))
+                .andExpect(jsonPath("$.status").value("DRAFTING"))
+                .andExpect(jsonPath("$.pdfUrl").doesNotExist())
+                .andExpect(jsonPath("$.docxUrl").doesNotExist());
+    }
+
     /** The status code is how a retry is distinguished, so the body did not have
      *  to grow a field the workflow would have to know about. */
     @Test
     void anAbsorbedRetryReturns200WithTheSameBody() throws Exception {
         when(contractService.generate(any(), any()))
-                .thenReturn(new GenerationOutcome(generated("SENT"), false));
+                .thenReturn(new GenerationOutcome(generated("SENT"), ContractService.Disposition.EXISTING));
 
         mvc.perform(post("/api/contracts/generate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -126,7 +146,7 @@ class ContractControllerTest {
     @Test
     void generateAcceptsAStringDealIdBecauseTheCrmReturnsIdsAsStrings() throws Exception {
         when(contractService.generate(any(), any()))
-                .thenReturn(new GenerationOutcome(generated("GENERATED"), true));
+                .thenReturn(new GenerationOutcome(generated("GENERATED"), ContractService.Disposition.CREATED));
 
         mvc.perform(post("/api/contracts/generate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -201,56 +221,43 @@ class ContractControllerTest {
                 .andExpect(jsonPath("$.error").value("Contract not found"));
     }
 
-    @Test
-    void sendForSignatureReturnsTheSigningDetails() throws Exception {
-        when(signatureService.sendForSignature(any(), any())).thenReturn(
-                new ContractDtos.SendForSignatureResponse("42", "SENT", "https://sign.example/s/tok", "881"));
+    /* ------------------------------------------------------- send email */
 
-        mvc.perform(post("/api/contracts/send-for-signature")
+    @Test
+    void sendEmailReturnsTheSendResult() throws Exception {
+        when(emailService.send(any(), anyLong(), any())).thenReturn(new ContractDtos.ContractEmailResponse(
+                "5", "CTR-000005", "SENT", "you@company.com", "uuid-123", 82637,
+                java.time.OffsetDateTime.parse("2026-09-17T10:00:00Z")));
+
+        mvc.perform(post("/api/contracts/5/send-email")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"contractId\":42}"))
+                        .content("{\"recipientEmail\":\"you@company.com\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SENT"))
-                .andExpect(jsonPath("$.signUrl").value("https://sign.example/s/tok"))
-                .andExpect(jsonPath("$.documensoId").value("881"));
+                .andExpect(jsonPath("$.sentTo").value("you@company.com"))
+                .andExpect(jsonPath("$.mailjetMessageId").value("uuid-123"))
+                .andExpect(jsonPath("$.attachmentBytes").value(82637));
+
+        org.mockito.Mockito.verify(emailService).send(any(), org.mockito.ArgumentMatchers.eq(5L),
+                org.mockito.ArgumentMatchers.argThat(r -> "you@company.com".equals(r.recipientEmail())));
+    }
+
+    /** The automation platform can call it with no body at all. */
+    @Test
+    void sendEmailNeedsNoBody() throws Exception {
+        when(emailService.send(any(), anyLong(), any())).thenReturn(new ContractDtos.ContractEmailResponse(
+                "5", "CTR-000005", "SENT", "meera@company.com", "uuid-123", 82637, null));
+
+        mvc.perform(post("/api/contracts/5/send-email"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"));
     }
 
     @Test
-    void sendForSignatureRejectsAnInvalidRecipientEmail() throws Exception {
-        mvc.perform(post("/api/contracts/send-for-signature")
+    void sendEmailRejectsAnInvalidRecipientEmail() throws Exception {
+        mvc.perform(post("/api/contracts/5/send-email")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"contractId\":42,\"recipientEmail\":\"not-an-email\"}"))
+                        .content("{\"recipientEmail\":\"not-an-email\"}"))
                 .andExpect(status().isBadRequest());
-    }
-
-    /** The raw body reaches the service verbatim, and the configured header name
-     *  is what the secret is read from. */
-    @Test
-    void theWebhookPassesTheRawBodyAndSecretHeaderThrough() throws Exception {
-        when(webhookService.handle(anyString(), anyString()))
-                .thenReturn(new ContractDtos.WebhookAck("processed", "42", "SIGNED"));
-
-        mvc.perform(post("/api/contracts/sign-callback")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header("X-Documenso-Secret", "whsec-test")
-                        .content("{\"event\":\"DOCUMENT_COMPLETED\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result").value("processed"))
-                .andExpect(jsonPath("$.status").value("SIGNED"));
-
-        org.mockito.Mockito.verify(webhookService)
-                .handle("{\"event\":\"DOCUMENT_COMPLETED\"}", "whsec-test");
-    }
-
-    @Test
-    void theWebhookReportsARedeliveryAsSuch() throws Exception {
-        when(webhookService.handle(anyString(), any()))
-                .thenReturn(new ContractDtos.WebhookAck("duplicate", "42", "SIGNED"));
-
-        mvc.perform(post("/api/contracts/sign-callback")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"event\":\"DOCUMENT_COMPLETED\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result").value("duplicate"));
     }
 }

@@ -65,20 +65,37 @@ public final class ContractDtos {
     ) {
     }
 
-    /** Input to POST /api/contracts/send-for-signature. Recipient defaults to
-     *  the contact the contract was generated for. */
-    public record SendForSignatureRequest(
-            @NotNull Long contractId,
+    /**
+     * Optional body of POST /api/contracts/{contractId}/send-email. Every field
+     * may be left out.
+     */
+    public record SendContractEmailRequest(
+            /** Send somewhere other than the contract's contact — useful for a test
+             *  send, since demo contacts use undeliverable example.com addresses. */
+            @Email @Size(max = 255) String recipientEmail,
             @Size(max = 200) String recipientName,
-            @Email @Size(max = 255) String recipientEmail
+            /** Email the customer again even though this contract was already emailed. */
+            Boolean resend
     ) {
     }
 
-    public record SendForSignatureResponse(
+    /**
+     * Result of POST /api/contracts/{contractId}/send-email.
+     *
+     * {@code status} is {@code SENT}, or {@code ALREADY_SENT} when a retry found
+     * the contract already emailed and nothing was sent twice — in which case
+     * the other fields describe that earlier send. {@code attachmentBytes} is the
+     * size of the PDF that went out, so a caller can see the whole document was
+     * attached.
+     */
+    public record ContractEmailResponse(
             String contractId,
+            String contractNumber,
             String status,
-            String signUrl,
-            String documensoId
+            String sentTo,
+            String mailjetMessageId,
+            Integer attachmentBytes,
+            OffsetDateTime sentAt
     ) {
     }
 
@@ -142,8 +159,6 @@ public final class ContractDtos {
             List<ContractLineItemResponse> lineItems,
             String pdfUrl,
             String docxUrl,
-            String documensoId,
-            String signUrl,
             String signerName,
             String signerEmail,
             OffsetDateTime sentAt,
@@ -153,10 +168,5 @@ public final class ContractDtos {
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt
     ) {
-    }
-
-    /** Reply to the Documenso webhook. Says what we did with the delivery, which
-     *  is what makes a redelivery visibly a no-op rather than silently one. */
-    public record WebhookAck(String result, String contractId, String status) {
     }
 }

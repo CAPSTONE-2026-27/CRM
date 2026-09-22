@@ -1,7 +1,7 @@
 # Contract generation
 
-How a won proposal becomes a signed agreement, and the API the SAP Build Process
-Automation bot drives it with.
+How a won proposal becomes a contract in the customer's inbox, and the API the
+SAP Build Process Automation bot drives it with.
 
 ```
 Sales executive moves the deal to Proposal / Negotiation / Closed Won
@@ -12,20 +12,20 @@ Sales executive moves the deal to Proposal / Negotiation / Closed Won
        -> docx4j renders the DOCX
        -> LibreOffice headless converts it to PDF
        -> both stored, contract row written
-  <- { contractId, dealId, status, pdfUrl, docxUrl }
-  -> SAP BPA bot: POST /api/contracts/send-for-signature
-       -> Documenso creates the document and emails the signer
-  <- { contractId, status, signUrl, documensoId }
-  -> customer signs or declines
-  -> Documenso: POST /api/contracts/sign-callback
-       -> contract status, deal contract status, audit entry
-       -> customer onboarding opens, on a signature only
+  <- 202 { contractId, status: "DRAFTING", ... }
+  -> SAP BPA bot: GET /api/contracts/{contractId}/status   until GENERATED
+  -> SAP BPA bot: POST /api/contracts/{contractId}/send-email
+       -> the backend emails the customer via Mailjet, PDF attached
+       -> contract and deal contract status become SENT, audit entry
+  <- { status: "SENT", sentTo, mailjetMessageId, attachmentBytes }
+  -> the customer replies by email to accept or reject
 ```
 
 There is no separate "contract" step in the pipeline board: `deals.stage` is
 untouched by any of this. Contract progress lives on `deals.contract_status`,
-which is a second axis — a deal can be in Negotiation with a contract already out
-for signature.
+which is a second axis — a deal can be in Negotiation with a contract already
+with the customer. Customer onboarding opens when the sales executive moves the
+deal to Closed Won.
 
 ---
 
@@ -84,8 +84,7 @@ lead would silently rewrite a contract the customer has already signed.
 
 All under `/api/contracts`. Every one requires the usual
 `Authorization: Bearer <access token>` and is scoped to the caller's
-organization — **except** `POST /sign-callback`, which Documenso calls with no
-CRM identity and which is authenticated by a shared secret instead.
+organization.
 
 ### `POST /generate`
 
@@ -104,8 +103,29 @@ CRM identity and which is authenticated by a shared secret instead.
 
 Only `dealId` is required; everything else overrides a default.
 
-**201 Created** on a new contract, **200 OK** when an existing live contract was
-returned instead. Same body either way:
+**Generation is asynchronous.** A cold render — docx4j plus a LibreOffice
+subprocess — takes longer than the **30 seconds SAP Build Process Automation
+waits before abandoning a call**, so the endpoint reserves the contract and
+returns immediately:
+
+```
+POST /generate
+   ↓  ~1 second
+202 Accepted   { "contractId": "42", "status": "DRAFTING", "pdfUrl": null, ... }
+   ↓
+   │   background: DOCX → PDF → store → status = GENERATED
+   ↓
+GET /{contractId}/status   → poll until GENERATED or FAILED
+```
+
+| Code | Meaning |
+|---|---|
+| **202** | Accepted. `DRAFTING`, document URLs null. Poll the status endpoint. **The default.** |
+| **201** | Created and finished inline. Only when `contract.async-generation=false`. |
+| **200** | A live contract already existed; a retry was absorbed. |
+
+The body is identical in all three, so a caller that ignores the status code
+still gets a usable answer:
 
 ```json
 {
@@ -114,21 +134,31 @@ returned instead. Same body either way:
   "dealId": "31",
   "opportunityId": "OPP-000031",
   "contractType": "STANDARD_SALES_AGREEMENT",
-  "status": "GENERATED",
-  "pdfUrl": "/api/contracts/42/document.pdf",
-  "docxUrl": "/api/contracts/42/document.docx"
+  "status": "DRAFTING",
+  "pdfUrl": null,
+  "docxUrl": null
 }
 ```
 
-`pdfUrl` is `null` when PDF conversion is turned off, so a caller can tell "not
-produced" from "here it is" without probing the URL.
+`pdfUrl` is `null` while a render is in flight, and also when PDF conversion is
+turned off — so a caller can tell "not produced" from "here it is" without
+probing the URL.
+
+**Validation stays synchronous.** Only the slow half moved. An unknown deal is
+still a 404 on this call, a wrong stage still a 409, missing customer data still
+a 400. Nothing gets a 202 that was never going to produce a contract.
+
+**A render failure lands on the contract, not the response.** Asynchronously
+there is no request left to fail, so the row goes to `FAILED` with the reason in
+`failureReason`, which `GET /{contractId}` returns. Synchronously it is a 500 on
+the call that caused it.
 
 | Status | When |
 |---|---|
 | 400 | No billing address, no contact with an email, no owner, zero deal value, end date not after start, unknown contract type |
 | 404 | No such deal in this organization |
 | 409 | Deal is in an ineligible stage, or its contract is already signed and `regenerate` was asked for |
-| 500 | DOCX generation, PDF conversion or storage failed — the reason is recorded on the contract row, not returned |
+| 500 | DOCX generation, PDF conversion or storage failed — the reason is recorded on the contract row, not returned. **Synchronous mode only**; asynchronously the failure lands on the contract's status |
 
 **Idempotency.** A retry returns the deal's existing live contract rather than
 producing a second one. "Live" means `GENERATED`, `SENT`, `VIEWED` or `SIGNED`,
@@ -152,80 +182,10 @@ The small shape, for polling.
 }
 ```
 
-`GENERATED` -> `SENT` -> `VIEWED` -> `SIGNED` | `REJECTED`, plus `FAILED`
-(generation broke) and `SUPERSEDED` (replaced by a regeneration). `SIGNED`,
-`REJECTED` and `SUPERSEDED` are terminal — no webhook moves a contract out of
-them.
-
-### `POST /send-for-signature`
-
-```json
-{ "contractId": 42, "recipientName": "Legal Desk", "recipientEmail": "legal@..." }
-```
-
-Recipient defaults to the contact the contract was generated for.
-
-```json
-{ "contractId": "42", "status": "SENT",
-  "signUrl": "https://app.documenso.com/sign/<token>", "documensoId": "881" }
-```
-
-| Status | When |
-|---|---|
-| 404 | No such contract |
-| 409 | Contract has no generated PDF, or is not in a sendable state |
-| 502 | Documenso refused or could not be reached |
-| 503 | Documenso is not configured on this server |
-
-**The signature block.** Documenso refuses to send a document whose signer has
-nothing to sign — *"Signers must have at least one signature field"* — so the
-client places one between uploading the PDF and sending it. It places three
-fields, not one: SIGNATURE with NAME and DATE stacked underneath, which is what
-makes it read as a signature block rather than a stray widget mid-contract.
-
-They go on the **last page**, resolved by counting pages in the generated PDF
-([`PdfPageCount`](../backend/src/main/java/com/techcrm/crm/contract/document/PdfPageCount.java))
-rather than assumed: the templates run to two pages today, but a long address or
-a multi-line schedule makes it three, and a signature field stranded on page one
-of a three-page contract is exactly the wrong outcome. If the page count cannot
-be read the field falls back to page 1 — an awkwardly placed box beats a failed
-send. Positions are percentages of the page and all of it is configurable under
-`documenso.signature-field`.
-
-Calling it twice returns the existing signing details rather than creating a
-second Documenso document — two links to one agreement, only one of which
-reports back, is not a recoverable state.
-
-### `POST /sign-callback`
-
-Called by Documenso. **Unauthenticated** in the Spring Security sense; the shared
-secret in `X-Documenso-Secret` is its access control, compared in constant time.
-When `documenso.webhook.secret` is unset the endpoint refuses every delivery
-(503) rather than trusting one — a public URL that can mark any contract signed
-would be worse than a broken integration.
-
-| Event | Effect |
-|---|---|
-| `DOCUMENT_SENT` | `SENT` |
-| `DOCUMENT_OPENED` | `VIEWED` |
-| `DOCUMENT_SIGNED`, `DOCUMENT_COMPLETED` | `SIGNED`, **and customer onboarding opens** |
-| `DOCUMENT_REJECTED`, `DOCUMENT_CANCELLED` | `REJECTED`, with the decline reason |
-| anything else | recorded, nothing changes |
-
-```json
-{ "result": "processed", "contractId": "42", "status": "SIGNED" }
-```
-
-**Idempotency.** Documenso retries anything it did not get a 2xx for. Each
-delivery is keyed by `(contract, event type, SHA-256 of the raw body)` in
-`contract_signature_events`; a redelivery is answered `"result": "duplicate"` and
-does nothing. The whole delivery is one transaction, so the "seen it" marker
-commits with the actions it guards — recorded-but-not-applied would make the next
-retry look like a duplicate and lose the signature.
-
-`DOCUMENT_SIGNED` and `DOCUMENT_COMPLETED` both mean signed because the CRM
-creates exactly one recipient per document. That needs revisiting if
-countersigning is ever added.
+`DRAFTING` -> `GENERATED` -> `SENT` (emailed), plus `FAILED` (generation broke)
+and `SUPERSEDED` (replaced by a regeneration). `VIEWED`, `SIGNED` and `REJECTED`
+were set by a former e-signature integration; nothing sets them now, but
+contracts from that time still carry them, with `signedAt` / `rejectedAt`.
 
 ### `GET /{contractId}/document.pdf` · `GET /{contractId}/document.docx`
 
@@ -234,6 +194,61 @@ organization scoping that guards everything else guards the documents.
 `Content-Disposition: attachment; filename="CTR-000042.pdf"`, `Cache-Control:
 no-store`. **404** when the document was never produced or has gone missing from
 the store.
+
+### `POST /{contractId}/send-email`
+
+Emails the customer the contract PDF **attached**, asking them to review it and
+reply. Call it once the contract is `GENERATED`. On success the contract and the
+deal's `contract_status` become `SENT` and `sentAt` is recorded.
+
+```json
+{ "recipientEmail": "optional@override.com", "recipientName": "Optional", "resend": false }
+```
+
+The body is optional. With no body the email goes to the contract's contact.
+
+```json
+{ "contractId": "5", "contractNumber": "CTR-000005", "status": "SENT",
+  "sentTo": "meera@company.com", "mailjetMessageId": "1ab23cd4-...",
+  "attachmentBytes": 82637, "sentAt": "2026-09-17T11:30:00Z" }
+```
+
+| Status | When |
+|---|---|
+| 200 | `SENT`, or `ALREADY_SENT` — a retry found it already emailed, and nothing was sent twice |
+| 400 | No recipient address on the contract and none given |
+| 404 | No such contract in the caller's organization |
+| 409 | No PDF, or the contract is not `GENERATED`, `SENT` or `VIEWED` — still `DRAFTING`, or `FAILED`, `SUPERSEDED`, `SIGNED`, `REJECTED` |
+| 502 | Mailjet refused the message — its reason is in the audit log as `CONTRACT_EMAIL_FAILED` |
+| 503 | Mailjet is not configured on this server |
+
+**Why the backend sends it, not SAP.** SAP Build Process Automation cuts text
+values to 1,024 characters. A contract PDF is about 110,000 characters of base64,
+so a PDF handed to the workflow arrives truncated and will not open — while
+Mailjet still reports success. The workflow decides *when* to email; the PDF goes
+straight from the backend, which holds it, to Mailjet. The workflow only ever
+sees the small result above.
+
+**Idempotent.** SAP retries a step whose response it did not receive, and a
+timeout after Mailjet accepted the message would otherwise email the customer
+twice. Each send is recorded as a `CONTRACT_EMAILED` audit entry, and a later
+call returns that earlier result as `ALREADY_SENT`. Pass `"resend": true` to
+email again on purpose. Two calls arriving at the same instant can both send;
+the realistic case — a retry after a timeout — is covered.
+
+**The wording is editable at any time.** Subject, HTML body and plain-text body
+are the three files in [`backend/email-templates/`](../backend/email-templates),
+read on every send — change them while the backend is running and the next
+email uses the new text. Placeholders and a test-send recipe are in that
+folder's [README](../backend/email-templates/README.md). Values are HTML-escaped
+in the HTML body only.
+
+**Test sends.** Demo contacts use `@example.com`, which never receives mail — pass
+`recipientEmail` with a real address, and `resend: true` to send again after
+editing a template.
+
+An OpenAPI description of this endpoint, for an SAP BPA action project, is in
+[`contract-send-email-openapi.json`](contract-send-email-openapi.json).
 
 ---
 
@@ -324,21 +339,13 @@ contract:
     path: soffice            # resolved on PATH; full path on Windows
     timeout-seconds: 120
 
-documenso:
-  base-url: ${DOCUMENSO_BASE_URL:}
-  api-key: ${DOCUMENSO_API_KEY:}
-  api-key-prefix: ""         # "Bearer" behind a proxy that wants an auth scheme
-  send-email: true
-  webhook:
-    secret: ${DOCUMENSO_WEBHOOK_SECRET:}
-    secret-header: X-Documenso-Secret
-  signature-field:
-    page: 0                  # 0 = last page; a positive number pins one
-    x: 8
-    y: 62                    # percentages of the page
-    width: 34
-    height: 10
-    include-name-and-date: true
+mailjet:
+  api-key: ${MAILJET_API_KEY:}
+  secret-key: ${MAILJET_SECRET_KEY:}
+  from-email: ${MAILJET_FROM_EMAIL:}
+  from-name: ${MAILJET_FROM_NAME:}
+  templates:
+    location: file:./email-templates/
 ```
 
 ### `eligible-stages`
@@ -366,44 +373,31 @@ concurrent `soffice` invocations contend for the single default profile and the
 second exits having converted nothing.
 
 Set `enabled: false` where there is no LibreOffice. Contracts then generate as
-DOCX only, `pdfUrl` comes back `null`, and send-for-signature refuses (the
-customer signs the PDF). The startup log says so explicitly.
+DOCX only, `pdfUrl` comes back `null`, and send-email refuses (the customer is
+sent the PDF). The startup log says so explicitly.
 
-### Documenso
+### Mailjet
 
-The project had no Documenso integration before this, so there was no version to
-match; the client is written against Documenso's public **API v1**:
-
+```yaml
+mailjet:
+  api-key: ...        # Mailjet -> Account Settings -> API Key Management
+  secret-key: ...
+  from-email: ...     # must be a sender verified in Mailjet
+  from-name: ...
+  templates:
+    location: file:./email-templates/
 ```
-POST /api/v1/documents            -> { documentId, uploadUrl, recipients[] }
-PUT  <uploadUrl>                     the PDF bytes
-POST /api/v1/documents/{id}/fields   SIGNATURE, then NAME and DATE
-POST /api/v1/documents/{id}/send
-```
 
-The fields step is not optional: without it `/send` returns 400 and the document
-stays in DRAFT for ever.
+Real values go in `application-local.yml` or `MAILJET_*` environment variables —
+`application.yml` holds placeholders only. Blank keys or sender make send-email
+answer 503.
 
-Two things learned the hard way, both now covered by tests. The presigned
-`uploadUrl` must be passed to `RestClient` as a pre-parsed `URI` — the `String`
-overload treats it as a URI template and re-encodes the `%2F` in
-`X-Amz-Credential` into `%252F`, which S3 rejects as a malformed credential. And
-every Documenso error carries the provider's own response body into the
-exception, because a bare "400 BAD_REQUEST" sent us hunting the API key when
-Documenso had plainly said what was wrong.
-
-The upload URL is presigned and absolute — on Documenso Cloud it points at their
-object store — so it is called with no Authorization header. Sending the API key
-to whatever host that URL names would leak it.
-
-The two things installations actually differ on are settings, not assumptions:
-`api-key-prefix` (v1 takes the raw key; a fronting proxy may want `Bearer`) and
-`webhook.secret-header`.
-
-Set `api-key-prefix` to the scheme name only — the separating space is added by
-the client. Spring's property binder trims trailing whitespace, so a configured
-`"Bearer "` arrives as `"Bearer"` and would otherwise produce the header
-`Bearersk_live_...` and a 401 with no clue as to why.
+The client calls `POST /v3.1/send` with Basic auth. The PDF is encoded with the
+standard base64 encoder — the MIME encoder's line breaks corrupt attachments — and
+Mailjet's per-message `Status` decides success, since it answers 200 per request.
+A rejection keeps Mailjet's own wording ("Sender not validated") for the audit
+log. `templates.location` is relative to the directory the backend is started
+from.
 
 ---
 
@@ -418,12 +412,12 @@ repository.
 |---|---|
 | `contracts` | One row per generated contract, referencing `deals`, `accounts`, `contacts`, `users` |
 | `contract_line_items` | The frozen schedule |
-| `contract_signature_events` | Every accepted webhook delivery, and the uniqueness that makes redelivery a no-op |
+| `contract_signature_events` | Unused since the e-signature integration was removed; kept, with the `documenso_*` and `sign_url` columns on `contracts`, rather than dropped by a migration |
 
 Plus two columns on `deals`: `contract_status` and `contract_signed_at`.
 
 No customer, deal or account data is duplicated — the contract references them
-and copies only what has to be frozen at signature time (the commercial terms,
+and copies only what has to be frozen at generation time (the commercial terms,
 `opportunity_id` for readability, and which contact the document was addressed
 to).
 
@@ -434,7 +428,7 @@ to).
 `ContractGenerationBot.postman_collection.json` in this directory covers every
 endpoint end to end.
 
-The unit tests need neither a database, nor LibreOffice, nor Documenso:
+The unit tests need neither a database, nor LibreOffice, nor Mailjet:
 
 ```
 ./mvnw test -Dtest='com.techcrm.crm.contract.**'

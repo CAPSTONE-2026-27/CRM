@@ -92,6 +92,19 @@ public class Deal {
     @Column(name = "contract_signed_at")
     private OffsetDateTime contractSignedAt;
 
+    /* Mirrored from the deal's live proposal; null until one is generated.
+     * A second axis again, and separate from the contract columns because a deal
+     * legitimately has both at once: a signed proposal is what justifies drafting
+     * the contract that follows it. */
+
+    /** GENERATING | DRAFT | SENT_FOR_SIGNATURE | VIEWED | SIGNED | REJECTED
+     *  | FAILED | SUPERSEDED */
+    @Column(name = "proposal_status", length = 30)
+    private String proposalStatus;
+
+    @Column(name = "proposal_signed_at")
+    private OffsetDateTime proposalSignedAt;
+
     /** 0-100 */
     private Integer probability;
 

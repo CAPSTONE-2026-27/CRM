@@ -1,6 +1,6 @@
 package com.techcrm.crm.contract;
 
-import com.techcrm.crm.contract.signature.DocumensoProperties;
+import com.techcrm.crm.contract.email.MailjetProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -26,7 +26,7 @@ class ContractPropertiesBindingTest {
     /** Registers the same binding machinery Boot applies to these two beans in
      *  production, and nothing else. */
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({ContractProperties.class, DocumensoProperties.class})
+    @EnableConfigurationProperties({ContractProperties.class, MailjetProperties.class})
     static class BindingOnly {
     }
 
@@ -90,41 +90,32 @@ class ContractPropertiesBindingTest {
                         .containsEntry("STANDARD_SALES_AGREEMENT", "file:/opt/crm/sales.docx"));
     }
 
-    /** Unconfigured is the default state and must be a clean "off", not a
-     *  half-configured client that fails at an empty URL. */
+    /** Unconfigured is the default state and must be a clean "off": send-email
+     *  answers 503 rather than calling Mailjet with empty credentials. */
     @Test
-    void documensoIsOffUntilBothBaseUrlAndKeyAreSet() {
+    void mailjetIsOffUntilBothKeysAndASenderAreSet() {
         runner.run(context ->
-                assertThat(context.getBean(DocumensoProperties.class).isConfigured()).isFalse());
+                assertThat(context.getBean(MailjetProperties.class).isConfigured()).isFalse());
 
-        runner.withPropertyValues("documenso.base-url=https://app.documenso.com")
+        runner.withPropertyValues("mailjet.api-key=public", "mailjet.secret-key=secret")
                 .run(context ->
-                        assertThat(context.getBean(DocumensoProperties.class).isConfigured()).isFalse());
+                        assertThat(context.getBean(MailjetProperties.class).isConfigured()).isFalse());
 
         runner.withPropertyValues(
-                        "documenso.base-url=https://app.documenso.com",
-                        "documenso.api-key=test-key")
+                        "mailjet.api-key=public",
+                        "mailjet.secret-key=secret",
+                        "mailjet.from-email=sales@techcrm.example")
                 .run(context ->
-                        assertThat(context.getBean(DocumensoProperties.class).isConfigured()).isTrue());
+                        assertThat(context.getBean(MailjetProperties.class).isConfigured()).isTrue());
     }
 
+    /** The template location is what makes the email editable without a rebuild. */
     @Test
-    void bindsTheWebhookGroup() {
-        runner.withPropertyValues(
-                        "documenso.webhook.secret=whsec-abc",
-                        "documenso.webhook.secret-header=X-Proxy-Documenso-Secret",
-                        "documenso.api-key-prefix=Bearer")
-                .run(context -> {
-                    DocumensoProperties properties = context.getBean(DocumensoProperties.class);
-
-                    assertThat(properties.getWebhook().getSecret()).isEqualTo("whsec-abc");
-                    assertThat(properties.getWebhook().getSecretHeader())
-                            .isEqualTo("X-Proxy-Documenso-Secret");
-                    // Just the scheme name. Spring's binder trims trailing
-                    // whitespace, so a configured "Bearer " would arrive as
-                    // "Bearer" regardless -- DocumensoClient adds the space.
-                    assertThat(properties.getApiKeyPrefix()).isEqualTo("Bearer");
-                });
+    void bindsTheTemplateLocation() {
+        runner.withPropertyValues("mailjet.templates.location=file:/opt/crm/email-templates/")
+                .run(context -> assertThat(context.getBean(MailjetProperties.class)
+                        .getTemplates().getLocation())
+                        .isEqualTo("file:/opt/crm/email-templates/"));
     }
 
     /** Nothing committed may carry a real credential; both default to empty so
@@ -132,10 +123,10 @@ class ContractPropertiesBindingTest {
     @Test
     void shipsNoCredentials() {
         runner.run(context -> {
-            DocumensoProperties properties = context.getBean(DocumensoProperties.class);
+            MailjetProperties properties = context.getBean(MailjetProperties.class);
 
             assertThat(properties.getApiKey()).isEmpty();
-            assertThat(properties.getWebhook().getSecret()).isEmpty();
+            assertThat(properties.getSecretKey()).isEmpty();
         });
     }
 }

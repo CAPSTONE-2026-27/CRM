@@ -47,7 +47,7 @@ public class Contract {
     @Column(name = "account_id", nullable = false)
     private Long accountId;
 
-    /** The contact the document is addressed to, and who Documenso will ask to sign. */
+    /** The contact the document is addressed to. */
     @Column(name = "contact_id")
     private Long contactId;
 
@@ -101,25 +101,21 @@ public class Contract {
     @Column(name = "pdf_size_bytes")
     private Long pdfSizeBytes;
 
-    /* ---- Documenso ---- */
+    /* ---- Recipient and delivery ---- */
 
-    @Column(name = "documenso_document_id", length = 80)
-    private String documensoDocumentId;
-
-    @Column(name = "documenso_recipient_id", length = 80)
-    private String documensoRecipientId;
-
-    @Column(name = "sign_url", length = 1000)
-    private String signUrl;
-
+    /** Who the contract is addressed to: the contact it was generated for. */
     @Column(name = "signer_name", length = 200)
     private String signerName;
 
     @Column(name = "signer_email", length = 255)
     private String signerEmail;
 
+    /** When the contract was last emailed to the customer. */
     @Column(name = "sent_at")
     private OffsetDateTime sentAt;
+
+    /* signed_at, rejected_at and rejection_reason are kept for contracts that
+       were signed through the former e-signature integration. */
 
     @Column(name = "signed_at")
     private OffsetDateTime signedAt;
@@ -140,4 +136,18 @@ public class Contract {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    /**
+     * Whether generation actually finished and left a document behind.
+     *
+     * The DOCX path is the signal rather than the PDF, because the PDF is
+     * optional — {@code contract.libreoffice.enabled=false} is a legitimate
+     * configuration — whereas a finished generation always writes the DOCX.
+     * Status alone is not enough to answer this: the row is written before the
+     * document is rendered, so a run that dies in between leaves a status that
+     * no file backs.
+     */
+    public boolean hasDocument() {
+        return docxPath != null;
+    }
 }
