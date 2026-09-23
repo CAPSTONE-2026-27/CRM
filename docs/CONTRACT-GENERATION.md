@@ -157,7 +157,7 @@ the call that caused it.
 |---|---|
 | 400 | No billing address, no contact with an email, no owner, zero deal value, end date not after start, unknown contract type |
 | 404 | No such deal in this organization |
-| 409 | Deal is in an ineligible stage, or its contract is already signed and `regenerate` was asked for |
+| 409 | Deal is in an ineligible stage (`NEGOTIATION` and `CLOSED_WON` are the eligible ones — **a deal still at `PROPOSAL` is refused**), or its contract is already signed and `regenerate` was asked for |
 | 500 | DOCX generation, PDF conversion or storage failed — the reason is recorded on the contract row, not returned. **Synchronous mode only**; asynchronously the failure lands on the contract's status |
 
 **Idempotency.** A retry returns the deal's existing live contract rather than
@@ -317,6 +317,37 @@ Two things the renderer handles that a string replace would not:
 
 ---
 
+## When the bot fires
+
+`NEGOTIATION`, and `CLOSED_WON` for a rep who dragged straight there on a verbal
+yes. **Not `PROPOSAL`** — that is the proposal bot's stage.
+
+```
+Proposal      proposal bot  -> offer emailed to the customer
+   |
+   |  customer replies by email; the rep reads it
+   v
+Negotiation   contract bot  -> agreement emailed to the customer
+   |
+   v
+Closed won
+```
+
+Nothing in this system reads the customer's reply, so the rep moving the deal
+from Proposal to Negotiation is the only record that the offer was accepted, and
+it is what gates the contract. Were `PROPOSAL` eligible, both bots would fire at
+the same stage and a contract could reach a customer who had not yet opened the
+proposal.
+
+A deal left at `PROPOSAL` therefore answers:
+
+```
+409  Deal is in stage PROPOSAL and is not ready for a contract.
+     Eligible stages: NEGOTIATION, CLOSED_WON
+```
+
+which is recoverable in seconds; a contract sent too early is not.
+
 ## Configuration
 
 Defaults in `application.yml`; secrets belong in `application-local.yml`
@@ -324,7 +355,7 @@ Defaults in `application.yml`; secrets belong in `application-local.yml`
 
 ```yaml
 contract:
-  eligible-stages: PROPOSAL,NEGOTIATION,CLOSED_WON
+  eligible-stages: NEGOTIATION,CLOSED_WON
   default-term-months: 12
   default-payment-terms: "..."
   default-delivery-timeline: "..."
@@ -353,9 +384,10 @@ mailjet:
 The workflow this implements is triggered by **"Proposal Accepted"**, which is
 not a stage this CRM has. [`DealStages`](../backend/src/main/java/com/techcrm/crm/deal/DealStages.java)
 is a fixed eight-value vocabulary shared with the frontend pipeline board, and
-adding a ninth would re-bucket every existing deal. These three stages mean the
+adding a ninth would re-bucket every existing deal. These two stages mean the
 same thing here, and the list is configuration so a team that works its pipeline
-differently needs no code change. Every value must be a real deal stage;
+differently needs no code change. `PROPOSAL` was in this list and was removed —
+see **When the bot fires** above for why. Every value must be a real deal stage;
 a typo is reported at startup and again on the first generate attempt.
 
 ### LibreOffice

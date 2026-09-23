@@ -46,7 +46,10 @@ public final class ContractFixtures {
         deal.setAccountId(ACCOUNT_ID);
         deal.setValue(new BigDecimal("450000.00"));
         deal.setCurrency("INR");
-        deal.setStage(DealStages.PROPOSAL);
+        // NEGOTIATION, not PROPOSAL: the contract bot's own stage. A deal still
+        // at PROPOSAL has an offer with the customer and no contract is due yet,
+        // so a fixture built there would make every assemble() test a 409.
+        deal.setStage(DealStages.NEGOTIATION);
         deal.setOpportunityId(DealStages.opportunityReference(DEAL_ID));
         deal.setOwnerId(OWNER_ID);
         return deal;

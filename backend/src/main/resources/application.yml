@@ -139,7 +139,18 @@ contract:
   # is "Proposal Accepted", which is not a stage this CRM has -- DealStages is a
   # fixed vocabulary shared with the frontend pipeline board -- so these are the
   # stages that mean the same thing here. Every value must be a real deal stage.
-  eligible-stages: PROPOSAL,NEGOTIATION,CLOSED_WON
+  #
+  # PROPOSAL is deliberately NOT in this list, even though it was once. The
+  # customer answers a proposal by email, and nothing in this system reads that
+  # reply -- so the rep moving the deal from Proposal to Negotiation is the only
+  # record that the offer was accepted, and it is what gates the contract. Were
+  # PROPOSAL still eligible, both bots would fire at the same stage and a
+  # contract could go out to a customer who had not yet opened the proposal.
+  #
+  # CLOSED_WON stays because reps legitimately drag straight there on a verbal
+  # yes and then remember the paperwork; refusing that would be a 409 for
+  # correct behaviour. NEGOTIATION is the intended trigger.
+  eligible-stages: NEGOTIATION,CLOSED_WON
   # Render off the request thread. On by default because SAP Build Process
   # Automation abandons an HTTP call at 30 seconds and a cold generation takes
   # longer than that: POST /generate then answers 202 in about a second with the

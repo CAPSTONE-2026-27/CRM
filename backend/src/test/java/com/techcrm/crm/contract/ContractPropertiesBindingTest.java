@@ -36,7 +36,7 @@ class ContractPropertiesBindingTest {
     @Test
     void bindsTheDefaultsShippedInApplicationYml() {
         runner.withPropertyValues(
-                        "contract.eligible-stages=PROPOSAL,NEGOTIATION,CLOSED_WON",
+                        "contract.eligible-stages=NEGOTIATION,CLOSED_WON",
                         "contract.default-term-months=12",
                         "contract.enterprise-value-threshold=2500000",
                         "contract.templates.location=classpath:contract-templates/",
@@ -51,7 +51,7 @@ class ContractPropertiesBindingTest {
                     // if relaxed binding ever stopped splitting it, every deal
                     // would silently become ineligible.
                     assertThat(properties.getEligibleStages())
-                            .containsExactly("PROPOSAL", "NEGOTIATION", "CLOSED_WON");
+                            .containsExactly("NEGOTIATION", "CLOSED_WON");
                     assertThat(properties.getDefaultTermMonths()).isEqualTo(12);
                     assertThat(properties.getEnterpriseValueThreshold())
                             .isEqualByComparingTo(new BigDecimal("2500000"));

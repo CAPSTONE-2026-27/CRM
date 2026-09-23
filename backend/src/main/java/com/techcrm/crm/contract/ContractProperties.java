@@ -31,11 +31,21 @@ public class ContractProperties {
      * The workflow this implements is triggered by "Proposal Accepted", which is
      * not a stage this CRM has — {@link com.techcrm.crm.deal.DealStages} is a
      * fixed eight-value vocabulary shared with the frontend pipeline board, and
-     * adding to it would re-bucket every existing deal. These three are the
-     * stages that mean the same thing here. Configurable so a team that works
-     * its pipeline differently does not need a code change.
+     * adding to it would re-bucket every existing deal. These two are the stages
+     * that mean the same thing here. Configurable so a team that works its
+     * pipeline differently does not need a code change.
+     *
+     * PROPOSAL is deliberately excluded. The customer answers a proposal by
+     * email and nothing here reads that reply, so the rep moving the deal from
+     * Proposal to Negotiation is the only record that the offer was accepted —
+     * and it is what gates the contract. With PROPOSAL eligible, both bots fired
+     * at the same stage and a contract could reach a customer who had not opened
+     * the proposal.
+     *
+     * CLOSED_WON stays because reps legitimately drag straight there on a verbal
+     * yes and then remember the paperwork. NEGOTIATION is the intended trigger.
      */
-    private List<String> eligibleStages = List.of("PROPOSAL", "NEGOTIATION", "CLOSED_WON");
+    private List<String> eligibleStages = List.of("NEGOTIATION", "CLOSED_WON");
 
     /**
      * Whether generation happens off the request thread.

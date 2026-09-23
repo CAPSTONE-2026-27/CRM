@@ -123,6 +123,23 @@ class ContractDataAssemblerTest {
     @Nested
     class StageEligibility {
 
+        /**
+         * PROPOSAL is the proposal bot's stage, not the contract bot's. A
+         * contract drafted while the offer is still with the customer is the
+         * failure this gate exists to prevent, so it is tested explicitly rather
+         * than left to the generic "too early" case below.
+         */
+        @Test
+        void rejectsADealStillAtProposal() {
+            Deal atProposal = deal();
+            atProposal.setStage(DealStages.PROPOSAL);
+
+            assertThatThrownBy(() -> assembler.assemble(caller(), atProposal, BARE))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .extracting(e -> ((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.CONFLICT);
+        }
+
         @Test
         void rejectsADealThatIsNotYetAtProposal() {
             Deal early = deal();
@@ -136,7 +153,7 @@ class ContractDataAssemblerTest {
 
         @Test
         void acceptsEveryConfiguredStage() {
-            for (String stage : List.of(DealStages.PROPOSAL, DealStages.NEGOTIATION, DealStages.CLOSED_WON)) {
+            for (String stage : List.of(DealStages.NEGOTIATION, DealStages.CLOSED_WON)) {
                 Deal deal = deal();
                 deal.setStage(stage);
                 assertThat(assembler.assemble(caller(), deal, BARE)).isNotNull();
