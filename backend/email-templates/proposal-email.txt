@@ -1,0 +1,14 @@
+Hello ${signerName},
+
+Please find attached your ${proposalTitle} (${proposalNumber}).
+
+The proposal sets out the scope, pricing and timeline we are offering, and it is
+valid until ${validUntil}.
+
+Please review it and reply to this email to let us know whether you would like to
+proceed. If you have questions or would like anything changed, simply reply and we
+will be happy to help.
+
+Regards,
+${senderName}
+${senderEmail}
