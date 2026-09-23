@@ -79,6 +79,32 @@ public class Deal {
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
 
+    /* ---- Contract generation (see V18) ----------------------------------
+     * A second axis alongside `stage`, not a value within it: a deal can be in
+     * Negotiation with a contract already out for signature, and folding the two
+     * together would make the pipeline board lie about one or the other.
+     * Mirrored from the deal's live contract; null until one is generated. */
+
+    /** GENERATED | SENT | VIEWED | SIGNED | REJECTED | FAILED | SUPERSEDED */
+    @Column(name = "contract_status", length = 20)
+    private String contractStatus;
+
+    @Column(name = "contract_signed_at")
+    private OffsetDateTime contractSignedAt;
+
+    /* Mirrored from the deal's live proposal; null until one is generated.
+     * A second axis again, and separate from the contract columns because a deal
+     * legitimately has both at once: a signed proposal is what justifies drafting
+     * the contract that follows it. */
+
+    /** GENERATING | DRAFT | SENT_FOR_SIGNATURE | VIEWED | SIGNED | REJECTED
+     *  | FAILED | SUPERSEDED */
+    @Column(name = "proposal_status", length = 30)
+    private String proposalStatus;
+
+    @Column(name = "proposal_signed_at")
+    private OffsetDateTime proposalSignedAt;
+
     /** 0-100 */
     private Integer probability;
 

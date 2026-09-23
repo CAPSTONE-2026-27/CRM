@@ -134,3 +134,116 @@ app:
     # has no per-message tenant signal, so this is a fixed assumption for
     # v1 (one mailbox = one org). Find your org id via GET /api/auth/me.
     organization-id:
+# Contract and proposal generation (the two SAP Build Process Automation bots).
+# See docs/CONTRACT-GENERATION.md and docs/PROPOSAL-GENERATION.md.
+#
+# THIS FILE IS COMMITTED TO GIT -- no secrets below. Credentials are read from
+# environment variables, or from application-local.yml (gitignored), which
+# overrides everything here.
+contract:
+  # Which deal stages a contract may be generated from. The workflow's trigger
+  # is "Proposal Accepted", which is not a stage this CRM has -- DealStages is a
+  # fixed vocabulary shared with the frontend pipeline board -- so these are the
+  # stages that mean the same thing here. Every value must be a real deal stage.
+  #
+  # PROPOSAL is deliberately NOT in this list, even though it was once. The
+  # customer answers a proposal by email, and nothing in this system reads that
+  # reply -- so the rep moving the deal from Proposal to Negotiation is the only
+  # record that the offer was accepted, and it is what gates the contract. Were
+  # PROPOSAL still eligible, both bots would fire at the same stage and a
+  # contract could go out to a customer who had not yet opened the proposal.
+  #
+  # CLOSED_WON stays because reps legitimately drag straight there on a verbal
+  # yes and then remember the paperwork; refusing that would be a 409 for
+  # correct behaviour. NEGOTIATION is the intended trigger.
+  eligible-stages: NEGOTIATION,CLOSED_WON
+  # Render off the request thread. On by default because SAP Build Process
+  # Automation abandons an HTTP call at 30 seconds and a cold generation takes
+  # longer than that: POST /generate then answers 202 in about a second with the
+  # contract DRAFTING, and the bot polls GET /{id}/status.
+  #
+  # false renders inline and answers 201 with the documents attached -- slower to
+  # respond, but a render failure comes back as a 500 on the call that caused it
+  # rather than as a status somebody has to go looking for.
+  async-generation: ${CONTRACT_ASYNC_GENERATION:true}
+  # Used when the caller supplies no end date.
+  default-term-months: 12
+  # Neither payment terms nor a delivery schedule is recorded anywhere in the
+  # CRM, so they default from here and can be overridden per request.
+  default-payment-terms: "50% on execution of this agreement, 50% on delivery. Invoices are payable within 30 days."
+  default-delivery-timeline: "Within 30 days of the contract start date."
+  # At or above this deal value a product sale is written as an enterprise
+  # subscription rather than a one-off sale. In the deal's own currency.
+  enterprise-value-threshold: 2500000
+  templates:
+    # A classpath: location uses the bundled templates; point this at a
+    # directory to let an admin drop in their own without a rebuild.
+    location: ${CONTRACT_TEMPLATE_LOCATION:classpath:contract-templates/}
+  storage:
+    # Generated DOCX and PDF files. The database stores paths relative to this,
+    # so moving the store is a config change rather than a data migration.
+    root: ${CONTRACT_STORAGE_ROOT:./var/contracts}
+  libreoffice:
+    # Set to false where LibreOffice is not installed: contracts then generate
+    # as DOCX only and cannot be emailed to the customer.
+    enabled: ${CONTRACT_LIBREOFFICE_ENABLED:true}
+    # A bare name is resolved on PATH. On Windows this is usually
+    # "C:/Program Files/LibreOffice/program/soffice.exe"; on macOS
+    # "/Applications/LibreOffice.app/Contents/MacOS/soffice".
+    path: ${CONTRACT_LIBREOFFICE_PATH:soffice}
+    timeout-seconds: 120
+
+# Proposal generation (Proposal Generation Bot). See docs/PROPOSAL-GENERATION.md.
+#
+# Storage and LibreOffice are not repeated here: proposals render through the
+# same DocumentStorageService and PdfConversionService as contracts, so they are
+# configured once, above, under `contract`. Only what differs lives here.
+proposal:
+  # Which deal stages a proposal may be generated from. Just PROPOSAL, and
+  # narrower than the contract list on purpose -- this bot fires when a deal
+  # *reaches* the proposal stage, whereas the contract bot fires on the later
+  # "Proposal Accepted" outcome. Every value must be a real deal stage.
+  eligible-stages: PROPOSAL
+  # Render off the request thread. On by default because SAP Build Process
+  # Automation abandons an HTTP call at 30 seconds and a cold generation takes
+  # longer than that: POST /generate then answers 202 in about a second with the
+  # proposal GENERATING, and the bot polls GET /{id}/status.
+  async-generation: ${PROPOSAL_ASYNC_GENERATION:true}
+  # How long a quotation stands when the caller supplies no expiry. This is why
+  # proposals carry a validity and contracts carry a term: after this date the
+  # pricing is no longer ours to honour.
+  default-validity-days: 30
+  # Neither payment terms nor a delivery schedule is recorded anywhere in the
+  # CRM, so they default from here and can be overridden per request.
+  default-payment-terms: "50% on acceptance of this proposal, 50% on delivery. Invoices are payable within 30 days."
+  default-delivery-timeline: "Within 30 days of proposal acceptance."
+  # At or above this deal value a product sale is proposed as an implementation
+  # engagement rather than a straight quotation. In the deal's own currency.
+  implementation-value-threshold: 2500000
+  templates:
+    # A classpath: location uses the bundled templates; point this at a
+    # directory to let an admin drop in their own without a rebuild.
+    location: ${PROPOSAL_TEMPLATE_LOCATION:classpath:proposal-templates/}
+
+# Mailjet -- emails a contract to its customer (POST /api/contracts/{id}/send-email).
+#
+# The backend sends this itself rather than handing the PDF to SAP Build Process
+# Automation, which cuts text values to 1,024 characters -- far short of a
+# contract PDF in base64. SAP decides when; the backend sends.
+#
+# THIS FILE IS COMMITTED TO GIT -- keys belong in application-local.yml
+# (gitignored) or environment variables. Blank keys or sender make send-email
+# answer 503 rather than fail inside Mailjet.
+mailjet:
+  base-url: https://api.mailjet.com
+  api-key: ${MAILJET_API_KEY:}
+  secret-key: ${MAILJET_SECRET_KEY:}
+  # Must be a sender address verified in the Mailjet account.
+  from-email: ${MAILJET_FROM_EMAIL:}
+  from-name: ${MAILJET_FROM_NAME:}
+  request-timeout-ms: 30000
+  templates:
+    # Subject, HTML and plain-text wording, read on every send so they can be
+    # edited while the backend runs. Relative to the directory the backend is
+    # started from. See email-templates/README.md.
+    location: ${MAILJET_TEMPLATE_LOCATION:file:./email-templates/}

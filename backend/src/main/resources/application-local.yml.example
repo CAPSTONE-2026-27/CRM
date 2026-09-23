@@ -115,3 +115,33 @@ app:
 # Which Microsoft accounts may sign in. See the OAuth notes above for the other
 # values; this must match the Azure app registration's supported account types.
 MICROSOFT_TENANT_ID: consumers
+
+# --- Contract and proposal generation (the two SAP BPA bots) ---
+# application.yml already carries working defaults, so this block is only needed
+# where LibreOffice is somewhere unusual, or not installed at all.
+#
+# contract:
+#   libreoffice:
+#     # Windows:
+#     path: "C:/Program Files/LibreOffice/program/soffice.exe"
+#     # macOS:
+#     # path: /Applications/LibreOffice.app/Contents/MacOS/soffice
+#     # No LibreOffice on this machine? Documents then generate as DOCX only and
+#     # cannot be emailed to the customer.
+#     # enabled: false
+#   storage:
+#     root: ./var/contracts
+#
+# Proposals share contract.storage.root rather than taking a second one.
+
+# --- Mailjet (emails the contract or proposal PDF to the customer) ---
+# Leave unset to develop without it: POST /api/contracts/{id}/send-email and
+# /api/proposals/{id}/send-email then return 503. Keys: Mailjet -> Account
+# Settings -> API Key Management. from-email must be a sender verified in
+# Mailjet, or every send is refused.
+#
+# mailjet:
+#   api-key: your-mailjet-api-key
+#   secret-key: your-mailjet-secret-key
+#   from-email: you@yourdomain.com
+#   from-name: Your Name

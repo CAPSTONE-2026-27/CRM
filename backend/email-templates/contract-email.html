@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:6px;">
+          <tr>
+            <td style="padding:32px 36px;">
+              <p style="margin:0 0 16px;font-size:16px;">Hello ${signerName},</p>
+
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
+                Please find attached your <strong>${contractTitle}</strong> (${contractNumber}) for review.
+              </p>
+
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">
+                Please review the contract and reply to this email to let us know whether you accept it.
+                If you have any questions or would like changes, simply reply and we will be happy to help.
+              </p>
+
+              <p style="margin:0;font-size:15px;line-height:1.5;">
+                Regards,<br>
+                ${senderName}<br>
+                <a href="mailto:${senderEmail}" style="color:#1a73e8;">${senderEmail}</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
