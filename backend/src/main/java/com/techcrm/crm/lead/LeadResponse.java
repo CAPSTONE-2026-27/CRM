@@ -16,6 +16,7 @@ public record LeadResponse(
         Integer productQuantity,
         String purchaseTimeline,
         String sourceChannel,
+        String billingAddress,
         String captureMethod,
         String notes,
         Integer aiScore,
@@ -34,6 +35,8 @@ public record LeadResponse(
         String contactStatus,
         OffsetDateTime contactStatusUpdatedAt,
         String contactNotes,
+
+        String pipelineStage,
 
         String convertedDealId,
         OffsetDateTime convertedAt,

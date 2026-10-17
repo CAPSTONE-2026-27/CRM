@@ -17,9 +17,25 @@ import java.util.List;
 public class RpaBotController {
 
     private final RpaBotService rpaBotService;
+    private final com.techcrm.crm.sap.SapBotRegistry botRegistry;
 
-    public RpaBotController(RpaBotService rpaBotService) {
+    public RpaBotController(RpaBotService rpaBotService,
+                            com.techcrm.crm.sap.SapBotRegistry botRegistry) {
         this.rpaBotService = rpaBotService;
+        this.botRegistry = botRegistry;
+    }
+
+    /**
+     * The automations this CRM starts, and whether each is wired up.
+     *
+     * Read from configuration rather than the registry table: a bot runs when
+     * its definition id is set, so that is what the control room should show.
+     * Nothing here is editable — these are deployed in SAP and pointed at from
+     * configuration.
+     */
+    @GetMapping("/automations")
+    public List<com.techcrm.crm.sap.SapBotRegistry.BotSummary> automations() {
+        return botRegistry.all();
     }
 
     @GetMapping

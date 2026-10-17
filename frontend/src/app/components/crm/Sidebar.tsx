@@ -4,8 +4,6 @@ import {
   UserPlus,
   BarChart3,
   Building2,
-  Ticket,
-  GitBranch,
   Bot,
   Brain,
   Megaphone,
@@ -18,8 +16,6 @@ export type ScreenId =
   | "leads"
   | "pipeline"
   | "accounts"
-  | "cases"
-  | "workflow"
   | "rpa"
   | "copilot"
   | "marketing"
@@ -37,8 +33,6 @@ const SCREEN_PERMISSION: Partial<Record<ScreenId, string>> = {
   leads: "leads",
   pipeline: "pipeline",
   accounts: "accounts",
-  cases: "cases",
-  workflow: "workflow",
   rpa: "rpa",
   copilot: "copilot",
   marketing: "marketing",
@@ -92,13 +86,6 @@ const sections: {
       { icon: UserPlus, label: "Lead management", screen: "leads" },
       { icon: BarChart3, label: "Sales pipeline", screen: "pipeline" },
       { icon: Building2, label: "Accounts", screen: "accounts" },
-    ],
-  },
-  {
-    label: "Service",
-    items: [
-      { icon: Ticket, label: "Cases & tickets", screen: "cases" },
-      { icon: GitBranch, label: "Workflow engine", screen: "workflow" },
     ],
   },
   {

@@ -95,7 +95,7 @@ public class ProposalDataAssembler {
                             + "A proposal cannot be addressed without one.");
         }
 
-        Contact contact = resolveContact(caller, account, request.contactId());
+        Contact contact = resolveContact(caller, deal, account, request.contactId());
         User owner = resolveOwner(caller, deal);
 
         List<ProposalAssembly.ResolvedLineItem> lineItems = resolveLineItems(deal);
@@ -173,7 +173,7 @@ public class ProposalDataAssembler {
      * because a proposal with no route to a customer cannot progress past
      * generation.
      */
-    private Contact resolveContact(AuthenticatedUser caller, Account account, Long requestedContactId) {
+    private Contact resolveContact(AuthenticatedUser caller, Deal deal, Account account, Long requestedContactId) {
         if (requestedContactId != null) {
             Contact contact = contactRepository
                     .findByIdAndOrganizationId(requestedContactId, caller.organizationId())
@@ -187,6 +187,19 @@ public class ProposalDataAssembler {
                         "Contact \"" + contact.getFullName() + "\" has no email address");
             }
             return contact;
+        }
+
+        // The deal's own primary contact comes next: the person this deal is
+        // with, set when the lead was converted. Skipped rather than refused
+        // when it has moved account or lost its email, so an out-of-date choice
+        // degrades to the account's contact instead of blocking the document.
+        if (deal.getPrimaryContactId() != null) {
+            Optional<Contact> primary = contactRepository
+                    .findByIdAndOrganizationId(deal.getPrimaryContactId(), caller.organizationId())
+                    .filter(c -> c.getAccountId().equals(account.getId()) && !isBlank(c.getEmail()));
+            if (primary.isPresent()) {
+                return primary.get();
+            }
         }
 
         return contactRepository.findForAccount(account.getId(), caller.organizationId()).stream()

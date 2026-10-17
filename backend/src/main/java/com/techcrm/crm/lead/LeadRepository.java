@@ -23,4 +23,14 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
     List<Lead> findByOrganizationIdAndEmailIgnoreCase(Long organizationId, String email);
 
     List<Lead> findByOrganizationIdAndFullNameIgnoreCase(Long organizationId, String fullName);
+
+    /** Candidates for phone duplicate detection.
+     *
+     *  Narrowed in the database only by organization; the digits-only
+     *  comparison happens in {@link LeadService}, for the same reason the
+     *  name+company one does — the same number is written "+91 90000 00000",
+     *  "09000000000" and "9000000000" by three different representatives, and
+     *  no derived query expresses "equal once punctuation is stripped"
+     *  portably. */
+    List<Lead> findByOrganizationIdAndPhoneIsNotNull(Long organizationId);
 }

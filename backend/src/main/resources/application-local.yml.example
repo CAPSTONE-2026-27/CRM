@@ -145,3 +145,18 @@ MICROSOFT_TENANT_ID: consumers
 #   secret-key: your-mailjet-secret-key
 #   from-email: you@yourdomain.com
 #   from-name: Your Name
+
+# --- College SMTP (the alternative to Mailjet) ---
+# The college mailbox is Google Workspace, so this logs in to smtp.gmail.com
+# with the mailbox's APP PASSWORD (16 letters, spaces removed) -- never the
+# normal account password. Mail is sent from the mailbox address itself.
+#
+# Setting provider to smtp switches contract and proposal emails over; set it
+# back to mailjet to return to Mailjet. Nothing else changes.
+#
+# email:
+#   provider: smtp
+#   smtp:
+#     username: your-id@ritindia.edu
+#     password: your-16-letter-app-password
+#     from-name: TechCRM

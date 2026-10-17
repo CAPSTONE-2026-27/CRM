@@ -24,9 +24,12 @@ import {
   Avatar,
 } from "../components/crm/ui";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
+import { ValidationProgressModal } from "../components/crm/ValidationProgressModal";
+import { useLeadValidation } from "../lib/leadValidation";
 import {
   useCreateLead,
   useCreateLeadFromEmail,
+  useParseEmailLead,
   useCreateUser,
   useUsers,
   useCreateAccount,
@@ -46,6 +49,7 @@ import { PURCHASE_TIMELINES } from "../lib/types";
 import {
   User,
   ShieldCheck,
+  FileSignature,
   FileText,
   Mail,
   MessageSquare,
@@ -54,6 +58,7 @@ import {
   Monitor,
   Box,
   Rocket,
+  SquarePen,
   Check,
   AlertTriangle,
   Zap,
@@ -63,20 +68,19 @@ import {
   Shuffle,
   Clock,
   UserCheck,
-  SquarePen,
 } from "lucide-react";
 
 export type WizardId = "F01" | "F02" | "F03" | "F04" | "F05" | "F06" | "F07" | "F08";
 
-export const wizardMeta: Record<WizardId, { title: string; badge: string }> = {
-  F01: { title: "RPA bot creation", badge: "Module 7" },
-  F02: { title: "User creation", badge: "Module 1" },
-  F03: { title: "Lead creation", badge: "Module 2" },
-  F04: { title: "Account creation", badge: "Module 4" },
-  F05: { title: "New workflow", badge: "Module 9" },
-  F06: { title: "Deploy bot", badge: "Module 7" },
-  F07: { title: "New deal", badge: "Module 3" },
-  F08: { title: "New campaign", badge: "Module 11" },
+export const wizardMeta: Record<WizardId, { title: string }> = {
+  F01: { title: "RPA bot creation" },
+  F02: { title: "User creation" },
+  F03: { title: "Lead creation" },
+  F04: { title: "Account creation" },
+  F05: { title: "New workflow" },
+  F06: { title: "Deploy bot" },
+  F07: { title: "New deal" },
+  F08: { title: "New campaign" },
 };
 
 /* ---- layout helpers ---- */
@@ -558,7 +562,7 @@ type F03Form = {
   estimatedDealValue: string;
   purchaseTimeline: PurchaseTimeline;
   notes: string;
-  sourceChannel: string;
+  billingAddress: string;
 };
 
 // Everything on the lead form except Notes must be filled in. Order matches
@@ -573,7 +577,7 @@ const F03_REQUIRED_FIELDS: { key: keyof F03Form; label: string }[] = [
   { key: "productQuantity", label: "Product quantity" },
   { key: "estimatedDealValue", label: "Estimated deal value" },
   { key: "purchaseTimeline", label: "Purchase timeline" },
-  { key: "sourceChannel", label: "Source channel" },
+  { key: "billingAddress", label: "Billing address" },
 ];
 
 type EmailPasteForm = {
@@ -589,7 +593,6 @@ function F03({ onCancel }: { onCancel: () => void }) {
   const captureOptions = [
     { icon: FileText, label: "Web form" },
     { icon: Mail, label: "Email parsing" },
-    { icon: Bot, label: "RPA bot import" },
   ];
   const [form, setForm] = useState<F03Form>({
     fullName: "",
@@ -603,14 +606,16 @@ function F03({ onCancel }: { onCancel: () => void }) {
     // No blank default: an empty select reads as "not asked" and would let the
     // most urgency-signalling field on the form be skipped by inattention.
     purchaseTimeline: "Within 1 Month",
-    sourceChannel: "Web form",
+    billingAddress: "",
     notes: "",
   });
   const [emailForm, setEmailForm] = useState<EmailPasteForm>({ from: "", subject: "", body: "" });
   const setEmailField = <K extends keyof EmailPasteForm>(key: K) => (v: string) => setEmailForm((f) => ({ ...f, [key]: v }));
   const set = <K extends keyof F03Form>(key: K) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
   const createLead = useCreateLead();
+  const validation = useLeadValidation();
   const createLeadFromEmail = useCreateLeadFromEmail();
+  const parseEmailLead = useParseEmailLead();
   const isPending = isEmailCapture ? createLeadFromEmail.isPending : createLead.isPending;
   const [createdLead, setCreatedLead] = useState<Lead | null>(null);
   const [missingFields, setMissingFields] = useState<string[]>([]);
@@ -620,6 +625,63 @@ function F03({ onCancel }: { onCancel: () => void }) {
   const primaryIcon = step === 1 ? SquarePen : step === 2 && !isPending ? Check : undefined;
 
   const submitLead = async () => {
+    const captureMethod = F03_CAPTURE_METHODS[capture];
+    const dealValue = parseFloat(form.estimatedDealValue.replace(/[^0-9.]/g, ""));
+
+    // Everything the validation bot inspects, and the shape the create call
+    // uses afterwards — built once so the lead that is validated is exactly
+    // the lead that gets created.
+    const payload = {
+      fullName: form.fullName,
+      company: form.company,
+      email: form.email || undefined,
+      phone: form.phone || undefined,
+      product: form.product,
+      employeeCount: form.employeeCount || undefined,
+      productQuantity: parseIntOrUndefined(form.productQuantity),
+      estimatedDealValue: Number.isFinite(dealValue) ? dealValue : undefined,
+      purchaseTimeline: form.purchaseTimeline,
+      // Copied to the account when the lead is converted; proposals and
+      // contracts cannot be generated without it.
+      billingAddress: form.billingAddress.trim() || undefined,
+      captureMethod,
+      notes: form.notes || undefined,
+    };
+
+    // Both capture methods are validated. A pasted email has no structured
+    // fields until the backend has parsed it, so it is parsed first and what
+    // comes out is what gets validated — the automation applies a different
+    // required-field rule to each method, so it needs to know which this is.
+    let toValidate = payload;
+    if (isEmailCapture) {
+      try {
+        const parsed = await parseEmailLead.mutateAsync({
+          from: emailForm.from || undefined,
+          subject: emailForm.subject || undefined,
+          body: emailForm.body,
+        });
+        toValidate = { ...parsed, captureMethod } as typeof payload;
+      } catch (err) {
+        toast.error("Could not read that email", {
+          description: err instanceof Error ? err.message : undefined,
+        });
+        return;
+      }
+    }
+
+    const verdict = await validation.validate(toValidate, captureMethod);
+    validation.reset();
+
+    if (!verdict.valid) {
+      toast.error("This lead cannot be created", {
+        description: verdict.errors.join(" · "),
+      });
+      return;
+    }
+    if (verdict.warnings.length > 0) {
+      toast.warning("Validation note", { description: verdict.warnings.join(" · ") });
+    }
+
     setStep(2);
     try {
       let created: Lead;
@@ -632,21 +694,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
         created = result.lead;
         setMissingFields(result.missingFields);
       } else {
-        const dealValue = parseFloat(form.estimatedDealValue.replace(/[^0-9.]/g, ""));
-        created = await createLead.mutateAsync({
-          fullName: form.fullName,
-          company: form.company,
-          email: form.email || undefined,
-          phone: form.phone || undefined,
-          product: form.product,
-          employeeCount: form.employeeCount || undefined,
-          productQuantity: parseIntOrUndefined(form.productQuantity),
-          estimatedDealValue: Number.isFinite(dealValue) ? dealValue : undefined,
-          purchaseTimeline: form.purchaseTimeline,
-          sourceChannel: form.sourceChannel,
-          captureMethod: F03_CAPTURE_METHODS[capture],
-          notes: form.notes || undefined,
-        });
+        created = await createLead.mutateAsync(payload);
         setMissingFields([]);
       }
       setCreatedLead(created);
@@ -721,6 +769,11 @@ function F03({ onCancel }: { onCancel: () => void }) {
 
   return (
     <Stack>
+      <ValidationProgressModal
+        status={validation.status}
+        slow={validation.slow}
+        onCancel={validation.cancel}
+      />
       <Stepper steps={F03_STEPS} current={step} />
 
       {step === 0 && (
@@ -774,7 +827,7 @@ function F03({ onCancel }: { onCancel: () => void }) {
               <Field required label="Product quantity" value={form.productQuantity} onChange={set("productQuantity")} placeholder="e.g. 120 (units)" />
               <Field required label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
               <Field required label="Purchase timeline" type="select" value={form.purchaseTimeline} onChange={set("purchaseTimeline")} options={[...PURCHASE_TIMELINES]} />
-              <Field required label="Source channel" type="select" value={form.sourceChannel} onChange={set("sourceChannel")} options={["Web form", "Referral", "Cold outreach", "Event"]} />
+              <Field required label="Billing address" value={form.billingAddress} onChange={set("billingAddress")} placeholder="Street, city, state, PIN" />
             </FieldGrid>
             <div>
               <label style={{ fontSize: 11, fontWeight: 500, color: colors.textSecondary, display: "block", marginBottom: 5 }}>Notes (optional)</label>
@@ -816,6 +869,7 @@ export const MISSING_FIELD_LABELS: Record<string, string> = {
   estimatedDealValue: "Estimated deal value",
   industry: "Industry",
   sourceChannel: "Source channel",
+  billingAddress: "Billing address",
 };
 
 function F03Result({ pending, lead, missingFields }: { pending: boolean; lead: Lead | null; missingFields: string[] }) {
@@ -1483,9 +1537,10 @@ const F07_STAGES = [
   { icon: UserCheck, label: "Qualification", sub: "30% · budget confirmed", pct: 30 },
   { icon: FileText, label: "Proposal", sub: "60% · quote sent", pct: 60 },
   { icon: GitFork, label: "Negotiation", sub: "80% · terms in review", pct: 80 },
+  { icon: FileSignature, label: "Contract", sub: "90% · terms agreed", pct: 90 },
 ];
 
-const F07_STAGE_VALUES = ["PROSPECTING", "QUALIFICATION", "PROPOSAL", "NEGOTIATION"] as const;
+const F07_STAGE_VALUES = ["PROSPECTING", "QUALIFICATION", "PROPOSAL", "NEGOTIATION", "CONTRACT"] as const;
 
 type F07Form = { name: string; accountName: string; value: string; currency: string };
 
