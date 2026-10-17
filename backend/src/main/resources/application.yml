@@ -146,17 +146,17 @@ contract:
   # fixed vocabulary shared with the frontend pipeline board -- so these are the
   # stages that mean the same thing here. Every value must be a real deal stage.
   #
-  # PROPOSAL is deliberately NOT in this list, even though it was once. The
-  # customer answers a proposal by email, and nothing in this system reads that
-  # reply -- so the rep moving the deal from Proposal to Negotiation is the only
-  # record that the offer was accepted, and it is what gates the contract. Were
-  # PROPOSAL still eligible, both bots would fire at the same stage and a
-  # contract could go out to a customer who had not yet opened the proposal.
+  # PROPOSAL and NEGOTIATION are deliberately NOT in this list. Nothing in this
+  # system reads the customer's reply to a proposal, so the rep advancing the
+  # deal is the only record of what the customer said: Negotiation records that
+  # the offer landed and is being discussed, Contract records that terms are
+  # settled. Only the second justifies drafting an agreement -- with NEGOTIATION
+  # eligible, a contract could go out while the price was still being argued.
   #
   # CLOSED_WON stays because reps legitimately drag straight there on a verbal
   # yes and then remember the paperwork; refusing that would be a 409 for
-  # correct behaviour. NEGOTIATION is the intended trigger.
-  eligible-stages: NEGOTIATION,CLOSED_WON
+  # correct behaviour. CONTRACT is the intended trigger.
+  eligible-stages: CONTRACT,CLOSED_WON
   # Render off the request thread. On by default because SAP Build Process
   # Automation abandons an HTTP call at 30 seconds and a cold generation takes
   # longer than that: POST /generate then answers 202 in about a second with the
@@ -234,6 +234,77 @@ proposal:
 # THIS FILE IS COMMITTED TO GIT -- keys belong in application-local.yml
 # (gitignored) or environment variables. Blank keys or sender make send-email
 # answer 503 rather than fail inside Mailjet.
+# SAP Build Process Automation — the platform the lead validation bot runs on.
+#
+# OFF BY DEFAULT. With sap.process.enabled false the validation endpoints still
+# answer, returning a pass with a warning, so lead capture behaves exactly as it
+# did before this feature existed. Turning it on is a deliberate act and needs
+# every value below.
+#
+# All of these come from a service key created against the Process Automation
+# instance in the BTP cockpit. The secret belongs in application-local.yml or an
+# environment variable, never here.
+sap:
+  process:
+    enabled: ${SAP_PROCESS_ENABLED:false}
+    token-url: ${SAP_TOKEN_URL:}
+    client-id: ${SAP_CLIENT_ID:}
+    client-secret: ${SAP_CLIENT_SECRET:}
+    api-base-url: ${SAP_API_BASE_URL:}
+    # The lead validation process, as its definition id appears in the platform.
+    lead-validation-definition-id: ${SAP_LEAD_VALIDATION_DEFINITION_ID:}
+    # The environment a deployed process lives in, where the platform needs
+    # telling. Some landscapes answer "definition not found" without it; others
+    # infer it from the service key. Blank sends no parameter.
+    environment-id: ${SAP_ENVIRONMENT_ID:}
+    # The trigger's API key, sent as irpa-api-key alongside the bearer token.
+    # Required by tenants that scope calls per trigger; blank sends no header.
+    api-key: ${SAP_API_KEY:}
+    # The document bots, started when a deal reaches the stage that calls for
+    # one. Blank means that stage starts nothing and the document is generated
+    # by hand, which is how this ships: wiring a bot to a stage is a deliberate
+    # act, not a consequence of filling in the platform credentials above.
+    proposal-definition-id: ${SAP_PROPOSAL_DEFINITION_ID:}
+    contract-definition-id: ${SAP_CONTRACT_DEFINITION_ID:}
+    # The opportunity bot, which converts a lead the scoring model has called
+    # HOT. Blank means the CRM converts leads itself, as it did before the bot.
+    opportunity-definition-id: ${SAP_OPPORTUNITY_DEFINITION_ID:}
+    # The meeting scheduler bot, which emails a lead the invitation to a
+    # meeting a representative booked. Blank means the meeting is booked and
+    # nobody is told.
+    # Two scheduler bots, because the two invitations say different things: one
+    # welcomes an enquiry to a first conversation, the other discusses a deal
+    # that already exists. Which runs is decided by whether the lead has been
+    # converted. Blank means a meeting of that kind is booked and nobody told.
+    meeting-scheduler-definition-id: ${SAP_MEETING_SCHEDULER_DEFINITION_ID:}
+    deal-meeting-scheduler-definition-id: ${SAP_DEAL_MEETING_SCHEDULER_DEFINITION_ID:}
+    # The welcome bot, which emails a lead when one is captured. Blank means
+    # no welcome is sent -- an email to a customer should not start happening
+    # because the platform credentials above were filled in.
+    lead-welcome-definition-id: ${SAP_LEAD_WELCOME_DEFINITION_ID:}
+    # What each process calls its recipient inputs. The platform matches
+    # context keys against the declared inputs exactly, so these have to be
+    # whatever the deployed process says -- which is the process author's
+    # choice, and not always the obvious spelling.
+    contract-recipient-name-key: ${SAP_CONTRACT_RECIPIENT_NAME_KEY:recipientname}
+    contract-recipient-email-key: ${SAP_CONTRACT_RECIPIENT_EMAIL_KEY:recipientemail}
+    proposal-recipient-name-key: ${SAP_PROPOSAL_RECIPIENT_NAME_KEY:recipientname}
+    proposal-recipient-email-key: ${SAP_PROPOSAL_RECIPIENT_EMAIL_KEY:recipientemail}
+    # How long a representative waits before the lead is allowed through
+    # unchecked. A validation service that is slow must not stop lead capture.
+    #
+    # Forty-five seconds because the measured runs need it. The automation
+    # makes three round trips back into this CRM — sign in, report progress,
+    # ask about duplicates — and a sign-in alone costs about three seconds of
+    # password hashing before the tunnel is counted. Twenty seconds was set
+    # before any of that was measured, and it expired on runs that went on to
+    # succeed, which wastes the check rather than protecting the
+    # representative from it.
+    validation-timeout: ${SAP_VALIDATION_TIMEOUT:45s}
+    # How often the backend asks whether the process has finished.
+    poll-interval: ${SAP_POLL_INTERVAL:2s}
+    request-timeout: ${SAP_REQUEST_TIMEOUT:10s}
+
 mailjet:
   base-url: https://api.mailjet.com
   api-key: ${MAILJET_API_KEY:}
@@ -247,3 +318,34 @@ mailjet:
     # edited while the backend runs. Relative to the directory the backend is
     # started from. See email-templates/README.md.
     location: ${MAILJET_TEMPLATE_LOCATION:file:./email-templates/}
+
+# Which provider delivers customer email (contract and proposal PDFs).
+#
+#   mailjet  the Mailjet REST API above -- the default, so nothing changes until
+#            this is switched on purpose
+#   smtp     an SMTP server -- the college Google Workspace mailbox, via
+#            smtp.gmail.com, logging in with an app password
+#
+# Switching is this one setting and a restart. The endpoints SAP calls, the
+# templates and the PDFs are the same either way.
+#
+# THIS FILE IS COMMITTED TO GIT -- the password belongs in application-local.yml
+# (gitignored) or the SMTP_PASSWORD environment variable, never here.
+email:
+  provider: ${EMAIL_PROVIDER:mailjet}
+  smtp:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    # 587 with STARTTLS. For 465, set ssl: true as well.
+    port: ${SMTP_PORT:587}
+    ssl: ${SMTP_SSL:false}
+    # The full mailbox address, e.g. your-id@ritindia.edu
+    username: ${SMTP_USERNAME:}
+    # Gmail: the 16-character app password, spaces removed. Not the account password.
+    password: ${SMTP_PASSWORD:}
+    # Blank sends from the username. Gmail will not send as another address
+    # unless it is a verified alias of the mailbox.
+    from-email: ${SMTP_FROM_EMAIL:}
+    from-name: ${SMTP_FROM_NAME:TechCRM}
+    # Per connect, read and write. Must stay well under the 30 seconds after
+    # which SAP Build Process Automation abandons the send-email call.
+    timeout: ${SMTP_TIMEOUT:10s}

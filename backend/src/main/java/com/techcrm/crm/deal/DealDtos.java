@@ -1,9 +1,11 @@
 package com.techcrm.crm.deal;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -54,6 +56,29 @@ public final class DealDtos {
      *  columns and only ever changes the stage. A closing reason is accepted
      *  alongside it because the two are set together when a deal closes. */
     public record DealStageRequest(@NotBlank String stage, String closingReason) {
+    }
+
+    /**
+     * Body of POST /api/deals/{id}/negotiated-terms.
+     *
+     * What the parties actually agreed, recorded while the deal is in
+     * Negotiation so that the contract generated afterwards carries it. Every
+     * field is optional: a negotiation that moved only the price sends only the
+     * price, and an omitted field leaves the existing value untouched rather
+     * than clearing it.
+     */
+    public record NegotiatedTermsRequest(
+            /** The agreed price. Replaces the deal's value, which the contract's
+             *  line items are derived from. */
+            @DecimalMin(value = "0", inclusive = false) BigDecimal finalAmount,
+            @Size(max = 300) String paymentTerms,
+            @Size(max = 300) String deliveryTimeline
+    ) {
+    }
+
+    /** Body of PUT /api/deals/{id}/primary-contact. Null clears it, and
+     *  generation then falls back to the account's primary contact. */
+    public record PrimaryContactRequest(Long contactId) {
     }
 
     /** Deal flow step 2 — books the customer meeting. */
@@ -113,6 +138,8 @@ public final class DealDtos {
 
             String opportunityId,
             String leadId,
+            // Who proposals and contracts for this deal are addressed to.
+            String primaryContactId,
             OffsetDateTime meetingScheduledAt,
             String meetingMode,
             String meetingParticipants,
@@ -120,6 +147,11 @@ public final class DealDtos {
             String riskLevel,
             String closingReason,
             OffsetDateTime closedAt,
+
+            // Terms agreed during negotiation; null until they are recorded.
+            String paymentTerms,
+            String deliveryTimeline,
+            OffsetDateTime termsAgreedAt,
 
             // Mirrored from the deal's live contract so the pipeline board can
             // show signature progress without a second request per card.
@@ -176,6 +208,7 @@ public final class DealDtos {
 
                     d.getOpportunityId(),
                     d.getLeadId() == null ? null : String.valueOf(d.getLeadId()),
+                    d.getPrimaryContactId() == null ? null : String.valueOf(d.getPrimaryContactId()),
                     d.getMeetingScheduledAt(),
                     d.getMeetingMode(),
                     d.getMeetingParticipants(),
@@ -183,6 +216,10 @@ public final class DealDtos {
                     d.getRiskLevel(),
                     d.getClosingReason(),
                     d.getClosedAt(),
+
+                    d.getPaymentTerms(),
+                    d.getDeliveryTimeline(),
+                    d.getTermsAgreedAt(),
 
                     d.getContractStatus(),
                     d.getContractSignedAt(),

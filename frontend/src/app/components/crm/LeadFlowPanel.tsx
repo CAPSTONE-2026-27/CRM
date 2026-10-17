@@ -86,6 +86,15 @@ export function LeadFlowPanel({ lead, users }: { lead: Lead; users: UserRow[] })
             {lead.assignedAt && ` on ${formatDate(lead.assignedAt)}`}
           </div>
         )}
+        {/* A dimmed control with no explanation reads as broken rather than
+            blocked. Qualification is the gate, and it is one step above. */}
+        {canAssign && !qualified && (
+          <div style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 8 }}>
+            {lead.qualificationStatus === "UNQUALIFIED"
+              ? "Unqualified leads are not assigned to anyone."
+              : "Qualify this lead first — only qualified leads are assigned to a sales executive."}
+          </div>
+        )}
         {canAssign ? (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <select

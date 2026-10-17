@@ -2,11 +2,14 @@ package com.techcrm.crm.lead;
 
 import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.common.PagedResponse;
+import com.techcrm.crm.deal.DealStages;
 import com.techcrm.crm.user.Role;
 import com.techcrm.crm.user.User;
 import com.techcrm.crm.user.UserRepository;
 import com.techcrm.crm.user.UserStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -19,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -27,11 +31,14 @@ public class LeadService {
     private final LeadRepository leadRepository;
     private final UserRepository userRepository;
     private final AiScoringClient aiScoringClient;
+    private final ApplicationEventPublisher events;
 
-    public LeadService(LeadRepository leadRepository, UserRepository userRepository, AiScoringClient aiScoringClient) {
+    public LeadService(LeadRepository leadRepository, UserRepository userRepository,
+                       AiScoringClient aiScoringClient, ApplicationEventPublisher events) {
         this.leadRepository = leadRepository;
         this.userRepository = userRepository;
         this.aiScoringClient = aiScoringClient;
+        this.events = events;
     }
 
     @Transactional
@@ -44,7 +51,16 @@ public class LeadService {
         // unless the caller named an assignee explicitly — the real trigger is
         // the executive pressing Qualify.
         autoAssignIfQualified(lead, caller.organizationId());
-        return toResponse(leadRepository.save(lead));
+
+        Lead saved = leadRepository.save(lead);
+        // Announced from here alone. Every path a person captures a lead
+        // through -- the wizard, a pasted email, the API -- comes through this
+        // method, while the bulk paths deliberately do not: a CSV import of two
+        // hundred rows must not send two hundred welcome emails.
+        events.publishEvent(new LeadCreated(
+                saved.getOrganizationId(), saved.getId(), saved.getFullName(),
+                saved.getEmail(), saved.getCompany(), saved.getSourceChannel()));
+        return toResponse(saved);
     }
 
     /** Saves the lead immediately WITHOUT scoring — for bulk paths (CSV
@@ -219,6 +235,7 @@ public class LeadService {
         if (patch.product() != null) lead.setProduct(patch.product());
         if (patch.estimatedDealValue() != null) lead.setEstimatedDealValue(patch.estimatedDealValue());
         if (patch.sourceChannel() != null) lead.setSourceChannel(patch.sourceChannel());
+        if (patch.billingAddress() != null) lead.setBillingAddress(patch.billingAddress());
         if (patch.notes() != null) lead.setNotes(patch.notes());
         if (patch.status() != null) lead.setStatus(patch.status().trim().toUpperCase());
 
@@ -263,6 +280,71 @@ public class LeadService {
         }
 
         setAssignee(lead, resolveAssignee(caller.organizationId(), assignedToId));
+        return toResponse(leadRepository.save(lead));
+    }
+
+    /**
+     * The open leads the pipeline board shows in its lead columns.
+     *
+     * Unconverted (a converted lead is on the board as its deal) and not
+     * UNQUALIFIED (the model said not to work it; one CSV import would
+     * otherwise bury Prospecting). Same visibility as {@link #search}. Newest
+     * first and capped, because the board renders every card it is given.
+     */
+    @Transactional(readOnly = true)
+    public List<LeadResponse> pipelineLeads(AuthenticatedUser caller) {
+        Specification<Lead> spec = Specification.where(LeadSpecifications.organizationId(caller.organizationId()))
+                .and(LeadSpecifications.notConverted())
+                .and(LeadSpecifications.qualificationStatusNot("UNQUALIFIED"));
+        if (isScopedToOwnLeads(caller)) {
+            spec = spec.and(LeadSpecifications.assignedToId(caller.userId()));
+        }
+        PageRequest firstPage = PageRequest.of(0, PIPELINE_LEAD_LIMIT, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return leadRepository.findAll(spec, firstPage).map(this::toResponse).getContent();
+    }
+
+    /**
+     * Moves an open lead between the board's lead columns.
+     *
+     * Only the lead columns: moving a lead to Opportunity is a conversion, which
+     * creates records and goes through {@code POST /api/leads/{id}/convert}.
+     */
+    @Transactional
+    public LeadResponse updatePipelineStage(AuthenticatedUser caller, Long id, String rawStage) {
+        Lead lead = getOrThrow(caller, id);
+
+        if (lead.getConvertedDealId() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This lead is already opportunity " + lead.getConvertedDealId() + "; move the deal instead.");
+        }
+
+        String stage = rawStage == null ? "" : rawStage.trim().toUpperCase();
+        if (!DealStages.LEAD_PHASE.contains(stage)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A lead can only be placed in " + DealStages.LEAD_PHASE
+                            + ". To make it an opportunity, convert it.");
+        }
+
+        lead.setPipelineStage(stage);
+        return toResponse(leadRepository.save(lead));
+    }
+
+    /**
+     * Records a person's qualification verdict.
+     *
+     * The scoring model sets this when a lead is created, and this does not
+     * compete with it: it is for the leads the model never reached, which sit
+     * at PENDING and cannot otherwise be moved. The reason is kept separate
+     * from {@code qualificationReasoning} so a person's judgement is never
+     * mistaken for the model's.
+     */
+    @Transactional
+    public LeadResponse qualify(AuthenticatedUser caller, Long id, boolean qualified, String reason) {
+        Lead lead = getOrThrow(caller, id);
+        lead.setQualificationStatus(qualified ? "QUALIFIED" : "UNQUALIFIED");
+        if (reason != null && !reason.isBlank()) {
+            lead.setQualificationReasoning(reason.trim());
+        }
         return toResponse(leadRepository.save(lead));
     }
 
@@ -341,6 +423,63 @@ public class LeadService {
         );
     }
 
+    /**
+     * Which field, if any, makes this lead a duplicate.
+     *
+     * {@link #isDuplicate} answers yes or no, which is all CSV import needs.
+     * The validation bot needs to know <em>what</em> matched, because the two
+     * kinds of match mean different things: an email address or a phone number
+     * identifies one person, so a second lead carrying either is the same
+     * person being entered twice. A name does not — two people genuinely share
+     * one — so a name match is worth surfacing and not worth refusing over.
+     *
+     * @return the matching lead and the field that matched, or empty
+     */
+    @Transactional(readOnly = true)
+    public Optional<DuplicateMatch> findDuplicate(Long organizationId, LeadRequest request) {
+        if (hasText(request.email())) {
+            Optional<Lead> byEmail = leadRepository
+                    .findByOrganizationIdAndEmailIgnoreCase(organizationId, request.email().trim())
+                    .stream().findFirst();
+            if (byEmail.isPresent()) {
+                return byEmail.map(l -> new DuplicateMatch(l, DuplicateField.EMAIL));
+            }
+        }
+
+        String digits = digitsOf(request.phone());
+        if (digits.length() >= 7) {
+            Optional<Lead> byPhone = leadRepository
+                    .findByOrganizationIdAndPhoneIsNotNull(organizationId).stream()
+                    .filter(l -> digitsOf(l.getPhone()).equals(digits))
+                    .findFirst();
+            if (byPhone.isPresent()) {
+                return byPhone.map(l -> new DuplicateMatch(l, DuplicateField.PHONE));
+            }
+        }
+
+        if (hasText(request.fullName())) {
+            Optional<Lead> byName = leadRepository
+                    .findByOrganizationIdAndFullNameIgnoreCase(organizationId, request.fullName().trim())
+                    .stream()
+                    .filter(l -> nonBlankEqualsIgnoreCase(l.getCompany(), request.company()))
+                    .findFirst();
+            if (byName.isPresent()) {
+                return byName.map(l -> new DuplicateMatch(l, DuplicateField.NAME_COMPANY));
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /** Punctuation and spacing vary between representatives; the digits do not. */
+    private static String digitsOf(String value) {
+        return value == null ? "" : value.replaceAll("\\D", "");
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private boolean nonBlankEqualsIgnoreCase(String a, String b) {
         if (a == null || a.isBlank() || b == null || b.isBlank()) {
             return false;
@@ -358,7 +497,10 @@ public class LeadService {
         if (isBlank(request.company())) missing.add("company");
         if (isBlank(request.email())) missing.add("email");
         if (isBlank(request.phone())) missing.add("phone");
-        if (isBlank(request.sourceChannel())) missing.add("sourceChannel");
+        // Billing address rather than source channel: a converted lead cannot
+        // be quoted or contracted without one, whereas source channel is only
+        // a scoring hint and is no longer on the lead form.
+        if (isBlank(request.billingAddress())) missing.add("billingAddress");
         return missing;
     }
 
@@ -457,6 +599,10 @@ public class LeadService {
     static final Set<String> CONTACT_STATUSES = Set.of(
             "NOT_CONTACTED", "MEETING_SCHEDULED", "NO_RESPONSE", "INTERESTED", "NOT_INTERESTED");
 
+    /** Most open leads the pipeline board is sent. Older ones stay reachable
+     *  from the lead list. */
+    private static final int PIPELINE_LEAD_LIMIT = 200;
+
     private void applyAiScore(Lead lead) {
         AiScoreResult result = aiScoringClient.score(lead);
         if (result != null) {
@@ -500,6 +646,7 @@ public class LeadService {
         lead.setProductQuantity(r.productQuantity());
         lead.setPurchaseTimeline(r.purchaseTimeline());
         lead.setSourceChannel(r.sourceChannel());
+        lead.setBillingAddress(r.billingAddress());
         lead.setCaptureMethod(r.captureMethod());
         lead.setNotes(r.notes());
         if (r.status() != null) lead.setStatus(r.status());

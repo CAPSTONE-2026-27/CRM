@@ -95,7 +95,7 @@ public class ContractDataAssembler {
                             + "A contract cannot be addressed without one.");
         }
 
-        Contact contact = resolveContact(caller, account, request.contactId());
+        Contact contact = resolveContact(caller, deal, account, request.contactId());
         User owner = resolveOwner(caller, deal);
 
         List<ContractAssembly.ResolvedLineItem> lineItems = resolveLineItems(deal);
@@ -116,11 +116,19 @@ public class ContractDataAssembler {
                 .map(Organization::getName)
                 .orElse("");
 
+        // Terms resolve in order of how specific the source is: what this
+        // request asked for, then what was agreed during negotiation and
+        // recorded on the deal, then what the originating lead implied, then the
+        // configured default. The negotiated terms sit above the defaults for
+        // the obvious reason -- a concession the parties agreed must reach the
+        // document that formalises it, or the contract contradicts the meeting.
         return new ContractAssembly(
                 deal, account, contact, owner, providerName, lineItems,
                 deal.getCurrency(), totalAmount, startDate, endDate,
-                firstNonBlank(request.paymentTerms(), properties.getDefaultPaymentTerms()),
-                firstNonBlank(request.deliveryTimeline(), deliveryTimelineFromLead(deal),
+                firstNonBlank(request.paymentTerms(), deal.getPaymentTerms(),
+                        properties.getDefaultPaymentTerms()),
+                firstNonBlank(request.deliveryTimeline(), deal.getDeliveryTimeline(),
+                        deliveryTimelineFromLead(deal),
                         properties.getDefaultDeliveryTimeline()));
     }
 
@@ -172,7 +180,7 @@ public class ContractDataAssembler {
      * address, because a contract with no route to a signer cannot progress past
      * generation.
      */
-    private Contact resolveContact(AuthenticatedUser caller, Account account, Long requestedContactId) {
+    private Contact resolveContact(AuthenticatedUser caller, Deal deal, Account account, Long requestedContactId) {
         if (requestedContactId != null) {
             Contact contact = contactRepository
                     .findByIdAndOrganizationId(requestedContactId, caller.organizationId())
@@ -186,6 +194,19 @@ public class ContractDataAssembler {
                         "Contact \"" + contact.getFullName() + "\" has no email address");
             }
             return contact;
+        }
+
+        // The deal's own primary contact comes next: the person this deal is
+        // with, set when the lead was converted. Skipped rather than refused
+        // when it has moved account or lost its email, so an out-of-date choice
+        // degrades to the account's contact instead of blocking the document.
+        if (deal.getPrimaryContactId() != null) {
+            Optional<Contact> primary = contactRepository
+                    .findByIdAndOrganizationId(deal.getPrimaryContactId(), caller.organizationId())
+                    .filter(c -> c.getAccountId().equals(account.getId()) && !isBlank(c.getEmail()));
+            if (primary.isPresent()) {
+                return primary.get();
+            }
         }
 
         return contactRepository.findForAccount(account.getId(), caller.organizationId()).stream()

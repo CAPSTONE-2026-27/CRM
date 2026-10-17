@@ -11,13 +11,14 @@ public final class LeadMapper {
                 l.getFullName(), l.getCompany(), l.getIndustry(), l.getEmployeeCount(),
                 l.getEmail(), l.getPhone(), l.getProduct(), l.getEstimatedDealValue(),
                 l.getProductQuantity(), l.getPurchaseTimeline(),
-                l.getSourceChannel(), l.getCaptureMethod(), l.getNotes(),
+                l.getSourceChannel(), l.getBillingAddress(), l.getCaptureMethod(), l.getNotes(),
                 l.getAiScore(), l.getAiScoreLabel(), l.getAiScoreReason(),
                 l.getStatus(), l.getAssignedToId() != null ? String.valueOf(l.getAssignedToId()) : null,
 
                 l.getQualificationStatus(), l.getQualificationProbability(), l.getQualificationReasoning(),
                 l.getAssignedAt(), l.getAssignmentStatus(),
                 l.getContactStatus(), l.getContactStatusUpdatedAt(), l.getContactNotes(),
+                l.getPipelineStage(),
                 l.getConvertedDealId() != null ? String.valueOf(l.getConvertedDealId()) : null, l.getConvertedAt(),
 
                 l.getCreatedAt(), l.getUpdatedAt());

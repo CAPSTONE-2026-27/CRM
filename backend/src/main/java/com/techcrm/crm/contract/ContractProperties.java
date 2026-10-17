@@ -35,17 +35,18 @@ public class ContractProperties {
      * that mean the same thing here. Configurable so a team that works its
      * pipeline differently does not need a code change.
      *
-     * PROPOSAL is deliberately excluded. The customer answers a proposal by
-     * email and nothing here reads that reply, so the rep moving the deal from
-     * Proposal to Negotiation is the only record that the offer was accepted —
-     * and it is what gates the contract. With PROPOSAL eligible, both bots fired
-     * at the same stage and a contract could reach a customer who had not opened
-     * the proposal.
+     * PROPOSAL and NEGOTIATION are deliberately excluded. Nothing in this
+     * system reads the customer's reply to a proposal, so the rep advancing the
+     * deal is the only record of what the customer said: moving it to
+     * NEGOTIATION records that the offer was received and is being discussed,
+     * and moving it to CONTRACT records that terms are settled. Only the second
+     * of those justifies drafting a contract. With NEGOTIATION eligible, a
+     * contract could be generated while the price was still being argued over.
      *
      * CLOSED_WON stays because reps legitimately drag straight there on a verbal
-     * yes and then remember the paperwork. NEGOTIATION is the intended trigger.
+     * yes and then remember the paperwork. CONTRACT is the intended trigger.
      */
-    private List<String> eligibleStages = List.of("NEGOTIATION", "CLOSED_WON");
+    private List<String> eligibleStages = List.of("CONTRACT", "CLOSED_WON");
 
     /**
      * Whether generation happens off the request thread.

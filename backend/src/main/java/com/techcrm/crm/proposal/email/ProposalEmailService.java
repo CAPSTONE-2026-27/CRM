@@ -5,9 +5,9 @@ import com.techcrm.crm.audit.AuditLogRepository;
 import com.techcrm.crm.audit.AuditLogService;
 import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.contract.document.DocumentStorageService;
-import com.techcrm.crm.contract.email.MailjetClient;
-import com.techcrm.crm.contract.email.MailjetException;
-import com.techcrm.crm.contract.email.MailjetProperties;
+import com.techcrm.crm.mail.EmailDeliveryException;
+import com.techcrm.crm.mail.EmailSender;
+import com.techcrm.crm.mail.OutboundEmail;
 import com.techcrm.crm.proposal.Proposal;
 import com.techcrm.crm.proposal.ProposalDtos.ProposalEmailResponse;
 import com.techcrm.crm.proposal.ProposalDtos.SendProposalEmailRequest;
@@ -39,14 +39,14 @@ import java.util.regex.Pattern;
  * second shape for the same operation would mean two bots that look alike but
  * behave differently under retry.
  *
- * The Mailjet client, its properties and the document store are reused from the
- * contract module rather than duplicated — none of them is contract-specific,
- * and a second Mailjet client would mean two places to rotate a key. Only the
- * wording differs, which is why {@link ProposalEmailTemplates} is its own class.
+ * The {@link EmailSender} and the document store are shared with the contract
+ * module rather than duplicated — neither is contract-specific, and a second
+ * sender would mean two places to rotate a credential. Only the wording differs,
+ * which is why {@link ProposalEmailTemplates} is its own class.
  *
  * <b>Idempotent.</b> The platform retries a step whose response it did not get,
- * and a timeout after Mailjet accepted the message would otherwise email the
- * customer twice. A proposal already emailed gets the earlier result back unless
+ * and a timeout after the provider accepted the message would otherwise email
+ * the customer twice. A proposal already emailed gets the earlier result back unless
  * {@code resend} is set. The record of that send is its audit entry, so no
  * schema change was needed for it.
  */
@@ -72,8 +72,7 @@ public class ProposalEmailService {
     private final ProposalRecordService recordService;
     private final DocumentStorageService storageService;
     private final ProposalEmailTemplates templates;
-    private final MailjetClient mailjetClient;
-    private final MailjetProperties properties;
+    private final EmailSender emailSender;
     private final AuditLogService auditLogService;
     private final AuditLogRepository auditLogRepository;
 
@@ -81,16 +80,14 @@ public class ProposalEmailService {
                                 ProposalRecordService recordService,
                                 DocumentStorageService storageService,
                                 ProposalEmailTemplates templates,
-                                MailjetClient mailjetClient,
-                                MailjetProperties properties,
+                                EmailSender emailSender,
                                 AuditLogService auditLogService,
                                 AuditLogRepository auditLogRepository) {
         this.proposalRepository = proposalRepository;
         this.recordService = recordService;
         this.storageService = storageService;
         this.templates = templates;
-        this.mailjetClient = mailjetClient;
-        this.properties = properties;
+        this.emailSender = emailSender;
         this.auditLogService = auditLogService;
         this.auditLogRepository = auditLogRepository;
     }
@@ -133,7 +130,7 @@ public class ProposalEmailService {
                     "No email address to send proposal " + proposal.getProposalNumber() + " to");
         }
 
-        if (!mailjetClient.isConfigured()) {
+        if (!emailSender.isConfigured()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Email delivery is not configured on this server");
         }
@@ -143,14 +140,15 @@ public class ProposalEmailService {
 
         String messageId;
         try {
-            messageId = mailjetClient.send(new MailjetClient.Email(
+            messageId = emailSender.send(new OutboundEmail(
                     recipientEmail, recipientName,
                     email.subject(), email.text(), email.html(),
                     proposal.getProposalNumber(),
                     proposal.getProposalNumber() + ".pdf",
                     pdf));
-        } catch (MailjetException e) {
-            log.error("Mailjet rejected the email for proposal {}", proposal.getProposalNumber(), e);
+        } catch (EmailDeliveryException e) {
+            log.error("{} rejected the email for proposal {}", emailSender.provider(),
+                    proposal.getProposalNumber(), e);
             auditLogService.record(caller.organizationId(), caller.userId(), EMAIL_FAILED,
                     ENTITY, String.valueOf(proposal.getId()), e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
@@ -161,10 +159,10 @@ public class ProposalEmailService {
         // customer, and this entry is what stops a retry from sending it again.
         auditLogService.record(caller.organizationId(), caller.userId(), EMAILED,
                 ENTITY, String.valueOf(proposal.getId()),
-                "sentTo=" + recipientEmail + ";mailjetMessageId=" + messageId
-                        + ";attachmentBytes=" + pdf.length);
-        log.info("Proposal {} emailed to {} (Mailjet {}, {} byte attachment)",
-                proposal.getProposalNumber(), recipientEmail, messageId, pdf.length);
+                "sentTo=" + recipientEmail + ";provider=" + emailSender.provider()
+                        + ";messageId=" + messageId + ";attachmentBytes=" + pdf.length);
+        log.info("Proposal {} emailed to {} ({} {}, {} byte attachment)",
+                proposal.getProposalNumber(), recipientEmail, emailSender.provider(), messageId, pdf.length);
 
         try {
             Proposal sent = recordService.markEmailed(proposal.getId());
@@ -191,8 +189,8 @@ public class ProposalEmailService {
         // contract email does not, and the reason a customer opens it promptly.
         values.put("validUntil", proposal.getValidUntil() == null
                 ? "" : proposal.getValidUntil().format(VALID_UNTIL));
-        values.put("senderName", properties.getFromName());
-        values.put("senderEmail", properties.getFromEmail());
+        values.put("senderName", emailSender.fromName());
+        values.put("senderEmail", emailSender.fromEmail());
         return values;
     }
 
@@ -210,7 +208,12 @@ public class ProposalEmailService {
         }
         return new ProposalEmailResponse(
                 String.valueOf(proposal.getId()), proposal.getProposalNumber(), "ALREADY_SENT",
-                fields.get("sentTo"), fields.get("mailjetMessageId"), bytes, entry.getOccurredAt());
+                fields.get("sentTo"), messageId(fields), bytes, entry.getOccurredAt());
+    }
+
+    /** Entries written before the SMTP option existed call it mailjetMessageId. */
+    private static String messageId(Map<String, String> fields) {
+        return fields.containsKey("messageId") ? fields.get("messageId") : fields.get("mailjetMessageId");
     }
 
     private static String firstNonBlank(String... values) {

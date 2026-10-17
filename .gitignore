@@ -42,3 +42,14 @@ hf_cache/
 xgboost/outputs/prediction_log.jsonl
 
 backend/var/
+
+# Capstone report, resume and presentation decks — coursework deliverables
+# written alongside the project rather than part of it. Generated .docx/.pdf
+# outputs, their build scripts and the chapter sources all live together, and
+# none of it is needed to build or run the CRM.
+report/
+
+# Working notes and scratch files kept beside the project
+ai_accuracy.txt
+sample_report.txt
+Sample Report - Application based Capstone Project.docx
