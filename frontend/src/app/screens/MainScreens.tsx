@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { colors, BadgeVariant } from "../tokens";
 import {
   MetricCard,
@@ -16,25 +17,31 @@ import {
   ToggleRow,
   Field,
 } from "../components/crm/ui";
-import { KanbanBoard, Column } from "../components/crm/KanbanBoard";
+import { KanbanBoard, type BoardCard, type Column } from "../components/crm/KanbanBoard";
 import { LeadOutputModal } from "../components/crm/LeadOutputModal";
+import { ScheduleMeetingModal } from "../components/crm/ScheduleMeetingModal";
+import { AccountDetailModal } from "../components/crm/AccountDetailModal";
 import { DealWorkspace } from "../components/crm/DealWorkspace";
+import { DealDetailModal } from "../components/crm/DealDetailModal";
 import { LeadFlowPanel } from "../components/crm/LeadFlowPanel";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
-import { Filter, Search, Plus, Send, Brain, Zap, Upload, Download, Trash2, X } from "lucide-react";
+import { Filter, Search, Plus, Send, Brain, Upload, Download, Trash2, Pencil, SquarePen, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
 import {
   useDashboardSummary,
   useLeads,
   useLeadStats,
   useDeals,
+  usePipelineLeads,
   useUpdateDealStage,
+  useUpdateLeadStage,
+  useConvertLeadViaBot,
   useAccounts,
   useContacts,
   useCases,
   useCampaigns,
-  useRpaBots,
   useRpaBotRuns,
+  useSapAutomations,
   useWorkflows,
   useActivateWorkflow,
   useReportingSummary,
@@ -46,14 +53,23 @@ import {
   useResetUserPassword,
   useDeleteLead,
   useBulkDeleteLeads,
-  useDeleteRpaBot,
   useImportLeads,
   useUpdateLead,
   useUpdateUser,
   type LeadImportResult,
 } from "../lib/queries";
 import { streamCopilotChat, downloadFile, type CopilotMessage } from "../lib/apiClient";
-import { CONTACT_STATUS_LABELS, DEAL_STAGE_LABELS, type Lead, type RpaBotRun, type UserRow } from "../lib/types";
+import {
+  CONTACT_STATUS_LABELS,
+  DEAL_STAGE_LABELS,
+  LEAD_PIPELINE_STAGES,
+  type Account,
+  type Deal,
+  type Lead,
+  type LeadPipelineStage,
+  type RpaBotRun,
+  type UserRow,
+} from "../lib/types";
 import { useAuth } from "../lib/auth";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS, type Role } from "../components/crm/Sidebar";
 
@@ -383,7 +399,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
-  const [outputLead, setOutputLead] = useState<Lead | null>(null);
+  const [scheduleLead, setScheduleLead] = useState<Lead | null>(null);
   // Mirrors the backend rule in guardLeadAssignment — only these roles may
   // change lead ownership; everyone else can still edit the lead's details.
   const { user: currentUser } = useAuth();
@@ -517,9 +533,10 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
         <Table
           headers={[
             <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} style={{ cursor: "pointer" }} />,
-            "Name / Company", "Product", "AI Score", "Status", "Qualification", "Contact", "Assigned", "",
+            "Name / Company", "Product", "AI Score", "Status", "Qualification", "Contact", "Assigned",
+            "Meeting", "Conversion",
           ]}
-          cols="0.4fr 1.8fr 1.1fr 0.7fr 0.7fr 1fr 1.1fr 1fr 1.5fr"
+          cols="0.4fr 1.6fr 1fr 0.6fr 0.6fr 1fr 1fr 1fr 0.9fr 1fr"
         >
           {rows.map((r) => (
             <TableRow key={r.id} onClick={() => setSelectedLead(r)}>
@@ -554,35 +571,32 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
               </Cell>
               <Cell muted>{r.assignedToId ? (usersById.get(r.assignedToId)?.fullName ?? "Assigned") : "Unassigned"}</Cell>
               <Cell>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingLead(r);
-                    }}
-                    style={{ border: "none", background: "transparent", color: colors.primary, fontSize: 12, cursor: "pointer", padding: 0 }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOutputLead(r);
-                    }}
-                    style={{ border: "none", background: "transparent", color: colors.aiPurple, fontSize: 12, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
-                  >
-                    Lead output
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(r.id, r.fullName);
-                    }}
-                    style={{ border: "none", background: "transparent", color: colors.danger, fontSize: 12, cursor: "pointer", padding: 0 }}
-                  >
-                    Remove
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setScheduleLead(r);
+                  }}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    border: `0.5px solid ${colors.aiPurple}55`, background: colors.aiLight, color: colors.aiPurple,
+                    fontSize: 11, fontWeight: 500, borderRadius: 5, padding: "3px 9px", cursor: "pointer",
+                    whiteSpace: "nowrap", fontFamily: "inherit",
+                  }}
+                >
+                  <SquarePen size={11} color={colors.aiPurple} />
+                  Schedule
+                </button>
+              </Cell>
+              {/* Status, not an action. Converting happens on the pipeline
+                  board, by moving the lead into Opportunity — one route to a
+                  thing that creates a deal and an account and cannot be
+                  undone, rather than two that behave differently. */}
+              <Cell>
+                {r.convertedDealId ? (
+                  <Badge label="Converted" variant="green" />
+                ) : (
+                  <Badge label="Not converted" variant="amber" />
+                )}
               </Cell>
             </TableRow>
           ))}
@@ -623,7 +637,7 @@ export function Leads({ onNavigate }: { onNavigate: Nav }) {
           onClose={() => setEditingLead(null)}
         />
       )}
-      {outputLead && <LeadOutputModal lead={outputLead} onClose={() => setOutputLead(null)} />}
+      {scheduleLead && <ScheduleMeetingModal lead={scheduleLead} onClose={() => setScheduleLead(null)} />}
     </Stack>
   );
 }
@@ -703,7 +717,7 @@ function EditLeadModal({
     industry: lead.industry ?? "",
     product: lead.product ?? "",
     estimatedDealValue: lead.estimatedDealValue != null ? String(lead.estimatedDealValue) : "",
-    sourceChannel: lead.sourceChannel ?? "",
+    billingAddress: lead.billingAddress ?? "",
     status: lead.status ?? "NEW",
     notes: lead.notes ?? "",
   });
@@ -734,7 +748,7 @@ function EditLeadModal({
       industry: form.industry.trim() || undefined,
       product: form.product.trim() || undefined,
       estimatedDealValue: Number.isFinite(dealValue) ? dealValue : undefined,
-      sourceChannel: form.sourceChannel.trim() || undefined,
+      billingAddress: form.billingAddress.trim() || undefined,
       status: form.status,
       notes: form.notes.trim() || undefined,
     };
@@ -776,7 +790,7 @@ function EditLeadModal({
           <Field label="Industry" value={form.industry} onChange={set("industry")} />
           <Field label="Product" value={form.product} onChange={set("product")} />
           <Field label="Estimated deal value" value={form.estimatedDealValue} onChange={set("estimatedDealValue")} placeholder="31000" />
-          <Field label="Source channel" value={form.sourceChannel} onChange={set("sourceChannel")} />
+          <Field label="Billing address" value={form.billingAddress} onChange={set("billingAddress")} placeholder="Street, city, state, PIN" />
           <Field label="Status" type="select" value={form.status} onChange={set("status")} options={LEAD_STATUS_OPTIONS} />
           {canAssign && (
             <Field
@@ -811,7 +825,7 @@ function EditLeadModal({
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <Button label="Cancel" onClick={onClose} />
-          <Button label={updateLead.isPending ? "Saving…" : "Save changes"} variant="primary" onClick={save} />
+          <Button label={updateLead.isPending ? "Saving…" : "Save changes"} icon={Pencil} variant="primary" onClick={save} />
         </div>
       </div>
     </div>
@@ -840,6 +854,7 @@ function LeadDetailModal({
     ["Product quantity", lead.productQuantity != null ? `${lead.productQuantity} units` : "—"],
     ["Estimated deal value", lead.estimatedDealValue != null ? formatCurrency(lead.estimatedDealValue) : "—"],
     ["Purchase timeline", lead.purchaseTimeline ?? "—"],
+    ["Billing address", lead.billingAddress ?? "—"],
     ["Source channel", lead.sourceChannel ?? "—"],
     ["Capture method", lead.captureMethod ?? "—"],
     ["Assigned to", assignee?.fullName ?? "Unassigned"],
@@ -916,7 +931,7 @@ function LeadDetailModal({
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button label="Close" onClick={onClose} />
-          <Button label="Edit lead" variant="primary" onClick={onEdit} />
+          <Button label="Edit lead" icon={Pencil} variant="primary" onClick={onEdit} />
         </div>
       </div>
     </div>
@@ -924,27 +939,32 @@ function LeadDetailModal({
 }
 
 /* ============ S03 Sales Pipeline Kanban ============ */
-// Opportunity and Meeting sit ahead of the original stages rather than
-// replacing them: existing deals are on Prospecting/Qualification and renaming
-// those columns would relabel history to match a workflow they never ran.
+// Prospecting, Qualification and Meeting hold open leads; Opportunity onwards
+// holds deals. Dragging a lead into Opportunity converts it. Deals created
+// before this split may still sit in the lead columns and can move forward
+// from there, but no deal is moved back into them.
 const stageToColumnId: Record<string, string> = {
-  OPPORTUNITY_CREATED: "opportunity",
-  MEETING_SCHEDULED: "meeting",
   PROSPECTING: "prospecting",
   QUALIFICATION: "qualification",
+  MEETING_SCHEDULED: "meeting",
+  OPPORTUNITY_CREATED: "opportunity",
+  DEAL_MEETING: "dealMeeting",
   PROPOSAL: "proposal",
   NEGOTIATION: "negotiation",
+  CONTRACT: "contract",
   CLOSED_WON: "won",
   CLOSED_LOST: "lost",
 };
 
 const columnIdToStage: Record<string, string> = {
-  opportunity: "OPPORTUNITY_CREATED",
-  meeting: "MEETING_SCHEDULED",
   prospecting: "PROSPECTING",
   qualification: "QUALIFICATION",
+  meeting: "MEETING_SCHEDULED",
+  opportunity: "OPPORTUNITY_CREATED",
+  dealMeeting: "DEAL_MEETING",
   proposal: "PROPOSAL",
   negotiation: "NEGOTIATION",
+  contract: "CONTRACT",
   won: "CLOSED_WON",
   lost: "CLOSED_LOST",
 };
@@ -952,18 +972,39 @@ const columnIdToStage: Record<string, string> = {
 const riskVariantFor = (risk: string | null | undefined): BadgeVariant =>
   risk === "LOW" ? "green" : risk === "MEDIUM" ? "amber" : "red";
 
+const scoreBadgeVariant = (score: number): BadgeVariant =>
+  score >= 75 ? "green" : score >= 50 ? "blue" : score >= 25 ? "amber" : "red";
+
+const isLeadColumnStage = (stage: string | undefined): stage is LeadPipelineStage =>
+  LEAD_PIPELINE_STAGES.includes(stage as LeadPipelineStage);
+
 export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
+  const qc = useQueryClient();
   const { data: deals, isLoading } = useDeals();
+  const { data: pipelineLeads, isLoading: leadsLoading } = usePipelineLeads();
+  const { data: users } = useUsers();
+  const { user: currentUser } = useAuth();
   const updateDealStage = useUpdateDealStage();
+  const updateLeadStage = useUpdateLeadStage();
+  const convertViaBot = useConvertLeadViaBot();
   const [workspaceDealId, setWorkspaceDealId] = useState<string | null>(null);
+  const [detailDealId, setDetailDealId] = useState<string | null>(null);
+  const [detailLeadId, setDetailLeadId] = useState<string | null>(null);
+  const [outputLeadId, setOutputLeadId] = useState<string | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const usersById = new Map((users ?? []).map((u) => [String(u.id), u]));
+  const canAssignLeads = currentUser?.role === "ADMIN" || currentUser?.role === "MANAGER";
+  const leadsById = new Map((pipelineLeads ?? []).map((l) => [l.id, l]));
 
   const columns: Column[] = [
-    { id: "opportunity", title: "Opportunity", cards: [] },
-    { id: "meeting", title: "Meeting", cards: [] },
     { id: "prospecting", title: "Prospecting", cards: [] },
     { id: "qualification", title: "Qualification", cards: [] },
+    { id: "meeting", title: "Lead meeting", cards: [] },
+    { id: "opportunity", title: "Opportunity", cards: [] },
+    { id: "dealMeeting", title: "Deal meeting", cards: [] },
     { id: "proposal", title: "Proposal", cards: [] },
     { id: "negotiation", title: "Negotiation", cards: [] },
+    { id: "contract", title: "Contract", cards: [] },
     { id: "won", title: "Closed won", cards: [] },
     { id: "lost", title: "Closed lost", cards: [] },
   ];
@@ -973,29 +1014,32 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
     const column = columns.find((c) => c.id === columnId);
     if (!column) continue;
     const isClosed = deal.stage === "CLOSED_WON" || deal.stage === "CLOSED_LOST";
-    // Prefer the model's deal score over the manually-entered probability —
-    // when a deal has been analysed, that is the number worth reading.
+    // Prefer the model's deal score; before a deal has been analysed, show the
+    // lead score it was converted with. Only a deal with neither falls back to
+    // the manually-entered probability. The qualification probability copied
+    // onto deal.probability at conversion is not a score and is not shown here.
     const score = deal.dealScore;
+    const shownScore = score ?? deal.leadScore;
+    const amount = Number(deal.value ?? 0);
     column.cards.push({
+      key: `deal:${deal.id}`,
       id: deal.id,
+      kind: "deal",
       name: deal.name,
       value: formatCurrency(deal.value),
+      amount: Number.isFinite(amount) ? amount : 0,
       probability: isClosed
         ? deal.stage === "CLOSED_WON"
           ? "Won"
           : "Lost"
         : score != null
           ? `Score ${score.toFixed(0)}`
-          : `${deal.probability ?? 0}%`,
+          : deal.leadScore != null
+            ? `Lead ${deal.leadScore.toFixed(0)}`
+            : `${deal.probability ?? 0}%`,
       variant:
-        score != null
-          ? score >= 75
-            ? "green"
-            : score >= 50
-              ? "blue"
-              : score >= 25
-                ? "amber"
-                : "red"
+        shownScore != null
+          ? scoreBadgeVariant(shownScore)
           : (deal.probability ?? 0) >= 70
             ? "green"
             : (deal.probability ?? 0) >= 40
@@ -1004,23 +1048,127 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
     });
   }
 
-  const pool: Column = { id: "unassigned", title: "Unassigned deals", cards: [] };
+  for (const lead of pipelineLeads ?? []) {
+    const column = columns.find((c) => c.id === stageToColumnId[lead.pipelineStage]);
+    if (!column) continue;
+    const amount = Number(lead.estimatedDealValue ?? 0);
+    column.cards.push({
+      key: `lead:${lead.id}`,
+      id: lead.id,
+      kind: "lead",
+      name: lead.company ? `${lead.company} — ${lead.fullName}` : lead.fullName,
+      value: formatCurrency(lead.estimatedDealValue),
+      amount: Number.isFinite(amount) ? amount : 0,
+      probability: lead.aiScore != null ? `Lead ${lead.aiScore}` : qualificationLabel(lead),
+      variant: lead.aiScore != null ? scoreBadgeVariant(lead.aiScore) : qualificationVariant(lead),
+    });
+  }
+
+  // Leads move among the lead columns or into Opportunity (a conversion);
+  // deals move anywhere except back into the lead columns.
+  const canDrop = (card: BoardCard, _from: string, toColumn: string) => {
+    const stage = columnIdToStage[toColumn];
+    return card.kind === "lead"
+      ? isLeadColumnStage(stage) || stage === "OPPORTUNITY_CREATED"
+      : !isLeadColumnStage(stage);
+  };
+
+  // The board is controlled, so a move shows by writing the new stage into the
+  // cached list straight away; a failure refetches, which puts the card back.
+  const onCardMoved = (card: BoardCard, _from: string, toColumn: string) => {
+    const stage = columnIdToStage[toColumn];
+    if (!stage) return;
+
+    if (card.kind === "lead") {
+      if (stage === "OPPORTUNITY_CREATED") {
+        // The drop is the instruction. The opportunity bot does the
+        // converting, and the backend refuses a lead the scoring model has
+        // not called ready — so the card moving is already the decision, and
+        // a confirmation step on top of it asks the same question twice.
+        //
+        // The card stays where it is until the deal exists: a lead that the
+        // model refuses never leaves its column, and the toast says why.
+        convertViaBot.mutate(
+          { leadId: card.id },
+          {
+            onSuccess: () =>
+              toast.success("Converting this lead", {
+                description: "The opportunity bot is creating the deal — it will appear in a moment.",
+              }),
+            onError: (err) =>
+              toast.error("Couldn't convert the lead", {
+                description: err instanceof Error ? err.message : undefined,
+              }),
+          }
+        );
+        return;
+      }
+      if (!isLeadColumnStage(stage)) return;
+      qc.setQueryData<Lead[]>(["leads", "pipeline"], (prev) =>
+        prev?.map((l) => (l.id === card.id ? { ...l, pipelineStage: stage } : l))
+      );
+      updateLeadStage.mutate(
+        { id: card.id, stage },
+        {
+          onError: (err) =>
+            toast.error("Couldn't move the lead", { description: err instanceof Error ? err.message : undefined }),
+        }
+      );
+      return;
+    }
+
+    qc.setQueryData<Deal[]>(["deals"], (prev) => prev?.map((d) => (d.id === card.id ? { ...d, stage: stage as Deal["stage"] } : d)));
+    updateDealStage.mutate(
+      { id: card.id, stage },
+      {
+        onError: (err) => {
+          qc.invalidateQueries({ queryKey: ["deals"] });
+          toast.error("Couldn't move the deal", { description: err instanceof Error ? err.message : undefined });
+        },
+      }
+    );
+  };
+
+  /**
+   * Which card opens which workspace.
+   *
+   * A meeting stage opens the workspace where that meeting is recorded and
+   * what was discussed is scored — the lead one before conversion, the deal
+   * one after it. Every other stage opens a read-only view, because a card
+   * sitting in Proposal or Negotiation is there to be looked at, not to have
+   * a meeting written against it.
+   */
+  const onCardClick = (card: BoardCard) => {
+    if (card.kind === "deal") {
+      const deal = (deals ?? []).find((d) => d.id === card.id);
+      if (deal?.stage === "DEAL_MEETING") {
+        setWorkspaceDealId(card.id);
+      } else {
+        setDetailDealId(card.id);
+      }
+      return;
+    }
+
+    const lead = leadsById.get(card.id);
+    if (lead?.pipelineStage === "MEETING_SCHEDULED") {
+      setOutputLeadId(card.id);
+    } else {
+      setDetailLeadId(card.id);
+    }
+  };
+
   const rows = deals ?? [];
+  const detailDeal = detailDealId ? rows.find((d) => d.id === detailDealId) : undefined;
+  const detailLead = detailLeadId ? leadsById.get(detailLeadId) : undefined;
+  const outputLead = outputLeadId ? leadsById.get(outputLeadId) : undefined;
 
   return (
     <Stack>
-      <ActionBar left={[]} right={[{ label: "New deal", icon: Plus, variant: "primary", onClick: () => onNavigate("F07") }]} />
-      {isLoading ? (
+      <ActionBar left={[]} right={[{ label: "New deal", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F07") }]} />
+      {isLoading || leadsLoading ? (
         <LoadingState />
       ) : (
-        <KanbanBoard
-          initialColumns={columns}
-          initialPool={pool}
-          onCardMoved={(cardId, toColumn) => {
-            const stage = columnIdToStage[toColumn];
-            if (stage) updateDealStage.mutate({ id: cardId, stage });
-          }}
-        />
+        <KanbanBoard columns={columns} canDrop={canDrop} onCardMoved={onCardMoved} onCardClick={onCardClick} />
       )}
 
       {/* The board is for moving deals; this is for working them. Opening a row
@@ -1068,6 +1216,28 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
       </Card>
 
       {workspaceDealId && <DealWorkspace dealId={workspaceDealId} onClose={() => setWorkspaceDealId(null)} />}
+      {detailDeal && <DealDetailModal deal={detailDeal} onClose={() => setDetailDealId(null)} />}
+      {outputLead && <LeadOutputModal lead={outputLead} onClose={() => setOutputLeadId(null)} />}
+      {detailLead && (
+        <LeadDetailModal
+          lead={detailLead}
+          assignee={detailLead.assignedToId ? usersById.get(detailLead.assignedToId) : undefined}
+          users={users ?? []}
+          onEdit={() => {
+            setEditingLead(detailLead);
+            setDetailLeadId(null);
+          }}
+          onClose={() => setDetailLeadId(null)}
+        />
+      )}
+      {editingLead && (
+        <EditLeadModal
+          lead={editingLead}
+          users={users ?? []}
+          canAssign={canAssignLeads}
+          onClose={() => setEditingLead(null)}
+        />
+      )}
     </Stack>
   );
 }
@@ -1076,6 +1246,13 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
 export function Accounts({ onNavigate }: { onNavigate: Nav }) {
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: contacts, isLoading: contactsLoading } = useContacts();
+  const { data: users } = useUsers();
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+
+  // Owner and parent are stored as ids; resolve them to names here so the modal
+  // stays a presentation component and does its own lookups nowhere.
+  const usersById = new Map((users ?? []).map((u) => [String(u.id), u]));
+  const accountsById = new Map((accounts ?? []).map((a) => [String(a.id), a]));
 
   return (
     <Stack>
@@ -1090,6 +1267,7 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
               name={a.name}
               sub={`${a.industry ?? "—"}${a.relationshipValue ? " · " + formatCurrency(a.relationshipValue) : ""}`}
               badge={a.aiSentimentScore != null ? { label: `Sentiment ${a.aiSentimentScore}%`, variant: a.aiSentimentScore >= 50 ? "green" : "amber" } : undefined}
+              onClick={() => setSelectedAccount(a)}
             />
           ))}
         {!accountsLoading && (accounts ?? []).length === 0 && <EmptyState message="No accounts yet. Add an account to get started." />}
@@ -1108,6 +1286,20 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
           ))}
         {!contactsLoading && (contacts ?? []).length === 0 && <EmptyState message="No contacts yet" />}
       </Card>
+      {selectedAccount && (
+        <AccountDetailModal
+          // Re-read from the list so the modal reflects the latest fetch rather
+          // than the row captured at click time.
+          account={accountsById.get(String(selectedAccount.id)) ?? selectedAccount}
+          ownerName={selectedAccount.ownerId ? usersById.get(String(selectedAccount.ownerId))?.fullName : undefined}
+          parentName={
+            selectedAccount.parentAccountId
+              ? accountsById.get(String(selectedAccount.parentAccountId))?.name
+              : undefined
+          }
+          onClose={() => setSelectedAccount(null)}
+        />
+      )}
     </Stack>
   );
 }
@@ -1195,91 +1387,50 @@ export function Workflow({ onNavigate }: { onNavigate: Nav }) {
 }
 
 /* ============ S07 RPA Bot Control Room ============ */
-const botStatusVariant: Record<string, BadgeVariant> = {
-  REGISTERED: "blue",
-  SCHEDULED: "amber",
-  RUNNING: "green",
-  ERROR: "red",
-  DEPLOYED: "green",
-};
 
-export function RPA({ onNavigate }: { onNavigate: Nav }) {
-  const { user } = useAuth();
-  const canManageBots = user?.role === "ADMIN" || user?.role === "MANAGER";
-  const { data: bots, isLoading: botsLoading } = useRpaBots();
+export function RPA() {
+  // The automations are deployed in SAP Build Process Automation and pointed
+  // at from configuration, so this page reports them rather than managing
+  // them: there is no bot to create here, and removing a row would change
+  // nothing about what runs.
+  const { data: automations, isLoading } = useSapAutomations();
   const { data: runs, isLoading: runsLoading } = useRpaBotRuns();
-  const deleteBot = useDeleteRpaBot();
 
-  const rows = bots ?? [];
+  const rows = automations ?? [];
   const runsList = runs ?? [];
   const today = new Date().toDateString();
-  const tasksToday = runsList.filter((r) => new Date(r.startedAt).toDateString() === today).reduce((sum, r) => sum + r.tasksCompleted, 0);
-  const runningCount = rows.filter((b) => b.status === "RUNNING").length;
-  const scheduledCount = rows.filter((b) => b.status === "SCHEDULED").length;
-
-  const lastRunByBot = new Map<string, RpaBotRun>();
-  for (const run of runsList) {
-    if (!lastRunByBot.has(run.botId)) lastRunByBot.set(run.botId, run);
-  }
-
-  const handleRemove = (id: string, name: string) => {
-    if (!window.confirm(`Remove bot "${name}"? This can't be undone.`)) return;
-    deleteBot.mutate(id, {
-      onError: (err) =>
-        toast.error("Failed to remove bot", {
-          description: err instanceof Error ? err.message : "This bot may have run history that must be preserved.",
-        }),
-      onSuccess: () => toast.success(`${name} removed`),
-    });
-  };
+  const tasksToday = runsList
+    .filter((r) => new Date(r.startedAt).toDateString() === today)
+    .reduce((sum, r) => sum + r.tasksCompleted, 0);
+  const wiredUp = rows.filter((b) => b.configured).length;
 
   return (
     <Stack>
-      <ActionBar
-        left={[]}
-        right={
-          canManageBots
-            ? [
-                { label: "Deploy bot", icon: Zap, onClick: () => onNavigate("F06") },
-                { label: "Create bot", icon: Plus, variant: "primary", onClick: () => onNavigate("F01") },
-              ]
-            : []
-        }
-      />
-      <MetricGrid columns={4}>
-        <MetricCard label="Total bots" value={botsLoading ? "—" : String(rows.length)} />
-        <MetricCard label="Running" value={botsLoading ? "—" : String(runningCount)} />
-        <MetricCard label="Scheduled" value={botsLoading ? "—" : String(scheduledCount)} />
+      <MetricGrid columns={3}>
+        <MetricCard label="Automations" value={isLoading ? "—" : String(rows.length)} />
+        <MetricCard label="Wired up" value={isLoading ? "—" : String(wiredUp)} />
         <MetricCard label="Tasks today" value={runsLoading ? "—" : String(tasksToday)} />
       </MetricGrid>
-      <Card title="Bot registry">
-        <Table headers={["Bot name", "Platform", "Last run", "Tasks done", "Status", ""]} cols="2fr 1fr 1fr 1fr 1fr 0.7fr">
-          {rows.map((r) => {
-            const lastRun = lastRunByBot.get(r.id);
-            return (
-              <TableRow key={r.id}>
-                <Cell>
-                  <div style={{ fontWeight: 500 }}>{r.name}</div>
-                </Cell>
-                <Cell muted>{r.platform.replace(/_/g, " ")}</Cell>
-                <Cell muted>{lastRun ? new Date(lastRun.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</Cell>
-                <Cell muted>{lastRun?.tasksCompleted ?? 0}</Cell>
-                <Cell><Badge label={r.status} variant={botStatusVariant[r.status] ?? "blue"} /></Cell>
-                <Cell>
-                  {canManageBots && (
-                    <button
-                      onClick={() => handleRemove(r.id, r.name)}
-                      style={{ border: "none", background: "transparent", color: colors.danger, fontSize: 12, cursor: "pointer", padding: 0 }}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </Cell>
-              </TableRow>
-            );
-          })}
-          {botsLoading && <LoadingState />}
-          {!botsLoading && rows.length === 0 && <EmptyState message="No bots registered yet" />}
+      <Card title="SAP automations">
+        <Table headers={["Bot name", "Runs when", "Platform", "Status"]} cols="1.6fr 2fr 1fr 1fr">
+          {rows.map((r) => (
+            <TableRow key={r.name}>
+              <Cell>
+                <div style={{ fontWeight: 500 }}>{r.name}</div>
+              </Cell>
+              <Cell muted>{r.trigger}</Cell>
+              <Cell muted>{r.platform}</Cell>
+              <Cell>
+                {/* Configured means a definition id is set, which is what
+                    decides whether the bot runs at all. */}
+                <Badge
+                  label={r.configured ? "Active" : "Not configured"}
+                  variant={r.configured ? "green" : "amber"}
+                />
+              </Cell>
+            </TableRow>
+          ))}
+          {isLoading && <LoadingState />}
         </Table>
       </Card>
     </Stack>
@@ -1597,7 +1748,7 @@ function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           <Button label="Cancel" onClick={onClose} />
-          <Button label={updateUser.isPending ? "Saving…" : "Save changes"} variant="primary" onClick={save} />
+          <Button label={updateUser.isPending ? "Saving…" : "Save changes"} icon={Pencil} variant="primary" onClick={save} />
         </div>
       </div>
     </div>

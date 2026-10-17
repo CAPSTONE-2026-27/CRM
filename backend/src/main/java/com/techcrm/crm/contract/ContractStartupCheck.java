@@ -1,7 +1,7 @@
 package com.techcrm.crm.contract;
 
 import com.techcrm.crm.contract.document.DocxGenerationService;
-import com.techcrm.crm.contract.email.MailjetProperties;
+import com.techcrm.crm.mail.EmailSender;
 import com.techcrm.crm.contract.template.ContractTemplateService;
 import com.techcrm.crm.deal.DealStages;
 import org.slf4j.Logger;
@@ -17,7 +17,7 @@ import java.util.List;
  * Reports what the contract module can and cannot do, once, at startup.
  *
  * Deliberately logs rather than fails. A missing LibreOffice or an unset
- * Mailjet key is a legitimate state for a developer machine, and refusing to
+ * email credential is a legitimate state for a developer machine, and refusing to
  * boot the whole CRM over it would be wrong. What is not acceptable is finding
  * out at 5pm, from a sales executive, that contracts have been silently
  * DOCX-only for a week — so each gap is stated plainly here, with the setting
@@ -34,16 +34,16 @@ public class ContractStartupCheck {
 
     private final ContractProperties properties;
     private final ContractTemplateService templateService;
-    private final MailjetProperties mailjetProperties;
+    private final EmailSender emailSender;
     private final DocxGenerationService docxGenerationService;
 
     public ContractStartupCheck(ContractProperties properties,
                                 ContractTemplateService templateService,
-                                MailjetProperties mailjetProperties,
+                                EmailSender emailSender,
                                 DocxGenerationService docxGenerationService) {
         this.properties = properties;
         this.templateService = templateService;
-        this.mailjetProperties = mailjetProperties;
+        this.emailSender = emailSender;
         this.docxGenerationService = docxGenerationService;
     }
 
@@ -78,9 +78,13 @@ public class ContractStartupCheck {
                     + "and cannot be emailed to the customer");
         }
 
-        if (!mailjetProperties.isConfigured()) {
-            log.warn("Mailjet is not configured (mailjet.api-key / mailjet.secret-key / mailjet.from-email) - "
-                    + "POST /api/contracts/{id}/send-email will return 503");
+        if (!emailSender.isConfigured()) {
+            log.warn("Email provider '{}' is not configured ({}) - "
+                    + "POST /api/contracts/{id}/send-email will return 503",
+                    emailSender.provider(),
+                    "smtp".equals(emailSender.provider())
+                            ? "email.smtp.host / email.smtp.username / email.smtp.password"
+                            : "mailjet.api-key / mailjet.secret-key / mailjet.from-email");
         }
     }
 

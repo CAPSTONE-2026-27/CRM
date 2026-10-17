@@ -13,6 +13,7 @@ import type {
   DealWorkspace,
   Lead,
   LeadMeeting,
+  LeadPipelineStage,
   LeadStats,
   ManagerDecision,
   ManagerReview,
@@ -86,6 +87,20 @@ export function useLeads(params: LeadSearchParams) {
   });
 }
 
+/** Open leads for the pipeline board's lead columns. Under ["leads"], so every
+ *  lead mutation that refreshes the list refreshes the board too. */
+export const usePipelineLeads = () =>
+  useQuery({ queryKey: ["leads", "pipeline"], queryFn: () => api.get<Lead[]>("/leads/pipeline") });
+
+export function useUpdateLeadStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: LeadPipelineStage }) =>
+      api.patch<Lead>(`/leads/${id}/stage`, { stage }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
 export const useLeadStats = () =>
   useQuery({ queryKey: ["leads", "stats"], queryFn: () => api.get<LeadStats>("/leads/stats"), refetchInterval: 8000 });
 
@@ -104,6 +119,21 @@ export function useUpdateLead() {
 }
 
 export type PastedEmailInput = { from?: string; subject?: string; body: string };
+
+/**
+ * The fields a pasted email yields, without creating anything.
+ *
+ * The wizard validates a lead before creating it, and validation needs the
+ * fields the email actually carries — which only the parser knows. So this
+ * runs first, its result is validated, and creation follows.
+ */
+export function useParseEmailLead() {
+  return useMutation({
+    mutationFn: (input: PastedEmailInput) =>
+      api.post<Record<string, unknown>>("/leads/parse-email", input),
+  });
+}
+
 export type LeadCreationResult = { lead: Lead; missingFields: string[] };
 export function useCreateLeadFromEmail() {
   const qc = useQueryClient();
@@ -145,6 +175,64 @@ export type SaveMeetingInput = MeetingFormInput & {
   scoreChangeReason?: string;
 };
 
+export type NegotiatedTermsInput = {
+  finalAmount?: number;
+  paymentTerms?: string;
+  deliveryTimeline?: string;
+};
+
+/**
+ * Records what was agreed during negotiation.
+ *
+ * The backend accepts this only while the deal is at NEGOTIATION, and blank
+ * fields are left alone rather than cleared — so a representative who settles
+ * on a price without renegotiating the terms does not wipe them.
+ *
+ * What is recorded here is what the contract carries: the document assembler
+ * reads the deal's own terms, and the contract bot sends none of its own.
+ */
+export function useRecordNegotiatedTerms(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: NegotiatedTermsInput) =>
+      api.post<Deal>(`/deals/${dealId}/negotiated-terms`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+}
+
+/** One deal, fetched on demand. Skipped while the id is absent. */
+export const useDeal = (dealId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["deals", dealId],
+    queryFn: () => api.get<Deal>(`/deals/${dealId}`),
+    enabled: Boolean(dealId),
+  });
+
+export type ScheduleMeetingInput = { meetingDate: string; meetingTime: string; meetingLink: string };
+export type ScheduleMeetingResult = {
+  leadId: string;
+  leadName: string;
+  leadEmail: string;
+  meetingDate: string;
+  meetingTime: string;
+  meetingLink: string;
+  /** False when no scheduling bot is configured or the platform refused —
+   *  the meeting is booked, but the lead has not been told. */
+  invitationStarted: boolean;
+};
+
+/** Books a meeting and asks the scheduler bot to invite the lead. */
+export function useScheduleMeeting(leadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ScheduleMeetingInput) =>
+      api.post<ScheduleMeetingResult>(`/leads/${leadId}/meetings/schedule`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
 export const useLeadMeetings = (leadId: string | undefined) =>
   useQuery({
     queryKey: ["lead-meetings", leadId],
@@ -176,11 +264,33 @@ export function useSaveMeeting(leadId: string) {
 export const useAccounts = () => useList<Account>("accounts", "/accounts");
 export const useCreateAccount = () => useCreate<Account, Record<string, unknown>>("accounts", "/accounts");
 
+/** PUT replaces every field, so callers send the whole account, not a patch. */
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => api.put<Account>(`/accounts/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+  });
+}
+
 export const useContacts = () => useList<Contact>("contacts", "/contacts");
 export const useCreateContact = () => useCreate<Contact, Partial<Contact>>("contacts", "/contacts");
 
 export const useDeals = () => useList<Deal>("deals", "/deals");
 export const useCreateDeal = () => useCreate<Deal, Record<string, unknown>>("deals", "/deals");
+/** Chooses who a deal's proposals and contracts are addressed to. */
+export function useSetPrimaryContact(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (contactId: string | null) =>
+      api.put<Deal>(`/deals/${dealId}/primary-contact`, { contactId: contactId == null ? null : Number(contactId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["deal-workspace", dealId] });
+    },
+  });
+}
+
 export function useUpdateDealStage() {
   const qc = useQueryClient();
   return useMutation({
@@ -210,6 +320,21 @@ function useLeadFlowMutation<TInput>(path: (leadId: string) => string) {
 export const useAssignLead = () =>
   useLeadFlowMutation<{ assignedToId: string }>((id) => `/leads/${id}/assign`);
 
+/**
+ * Records a person's qualification verdict.
+ *
+ * For the leads the scoring model never reached — those sit at PENDING, and a
+ * lead stuck there is one nobody can act on.
+ */
+export function useQualifyLead(leadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ qualified, reason }: { qualified: boolean; reason?: string }) =>
+      api.post<Lead>(`/leads/${leadId}/qualify`, { qualified, reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
 export const useUpdateContactStatus = () =>
   useLeadFlowMutation<{ contactStatus: ContactStatus; contactNotes?: string }>(
     (id) => `/leads/${id}/contact-status`
@@ -221,21 +346,39 @@ export type ConversionResult = {
   opportunityId: string;
   accountId: string;
   accountCreated: boolean;
+  contactId: string;
+  contactCreated: boolean;
 };
 
-export type ConvertLeadInput = {
-  leadId: string;
-  meetingScheduledAt?: string;
-  meetingMode?: string;
-  meetingParticipants?: string;
-};
+/** Flow step 6. Creates a deal and an account, so those lists go stale too.
+ *  The lead id is the whole input; the endpoint reads no body. */
+/**
+ * Asks the opportunity bot to convert a lead.
+ *
+ * Resolves once the automation has been started, not once the opportunity
+ * exists — the automation calls the conversion endpoint itself a moment later.
+ * The caches are invalidated anyway, and the deal appears on the next refetch.
+ *
+ * A 409 means the lead is not ready: already converted, unqualified, or scored
+ * as something other than HOT. The message says which.
+ */
+export function useConvertLeadViaBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId }: { leadId: string }) =>
+      api.post<ConversionResult | undefined>(`/leads/${leadId}/convert-via-bot`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["deals"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
 
-/** Flow step 6. Creates a deal and an account, so those lists go stale too. */
 export function useConvertLead() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ leadId, ...body }: ConvertLeadInput) =>
-      api.post<ConversionResult>(`/leads/${leadId}/convert`, body),
+    mutationFn: ({ leadId }: { leadId: string }) => api.post<ConversionResult>(`/leads/${leadId}/convert`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["deals"] });
@@ -391,6 +534,22 @@ export function useDeployRpaBot() {
 }
 
 export const useRpaBotRuns = () => useList<RpaBotRun>("rpa-bot-runs", "/rpa-bot-runs");
+
+export type SapAutomation = {
+  name: string;
+  trigger: string;
+  platform: string;
+  /** Whether a definition id is configured — a bot without one starts nothing. */
+  configured: boolean;
+  definitionId: string | null;
+};
+
+/** The SAP automations this CRM starts, read from configuration. */
+export const useSapAutomations = () =>
+  useQuery({
+    queryKey: ["rpa-bots", "automations"],
+    queryFn: () => api.get<SapAutomation[]>("/rpa-bots/automations"),
+  });
 
 export const useWorkflows = () => useList<WorkflowDefinition>("workflows", "/workflows");
 export const useCreateWorkflow = () => useCreate<WorkflowDefinition, Record<string, unknown>>("workflows", "/workflows");

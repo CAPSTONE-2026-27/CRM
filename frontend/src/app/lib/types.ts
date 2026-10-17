@@ -1,3 +1,5 @@
+import type { BadgeVariant } from "../tokens";
+
 export type Role = "ADMIN" | "MANAGER" | "SALES_REP" | "SUPPORT_AGENT" | "MARKETING";
 
 // Mirrors UserResponse from the API. Adding a field that the API does not
@@ -53,6 +55,7 @@ export type Lead = {
   purchaseTimeline?: PurchaseTimeline | null;
 
   sourceChannel?: string | null;
+  billingAddress?: string | null;
   captureMethod?: "WEB_FORM" | "EMAIL_PARSING" | "RPA_BOT_IMPORT" | "CSV_IMPORT";
   notes?: string | null;
   aiScore?: number | null;
@@ -76,6 +79,9 @@ export type Lead = {
   contactStatusUpdatedAt?: string | null;
   contactNotes?: string | null;
 
+  // Which lead column of the pipeline board the lead sits in.
+  pipelineStage: LeadPipelineStage;
+
   // Flow step 6 — set once the lead becomes an opportunity, never cleared.
   convertedDealId?: string | null;
   convertedAt?: string | null;
@@ -85,6 +91,11 @@ export type Lead = {
 };
 
 export type QualificationStatus = "PENDING" | "QUALIFIED" | "UNQUALIFIED";
+
+/** The board columns that hold open leads rather than deals. Mirrors
+ *  DealStages.LEAD_PHASE; moving a lead past these means converting it. */
+export type LeadPipelineStage = "PROSPECTING" | "QUALIFICATION" | "MEETING_SCHEDULED";
+export const LEAD_PIPELINE_STAGES: LeadPipelineStage[] = ["PROSPECTING", "QUALIFICATION", "MEETING_SCHEDULED"];
 
 export type ContactStatus =
   | "NOT_CONTACTED"
@@ -101,18 +112,47 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
   NOT_INTERESTED: "Not interested",
 };
 
+/**
+ * How a lead's qualification reads on screen.
+ *
+ * Shared rather than local to one screen: the lead list, the detail header and
+ * the Qualify control all have to agree, and a lead showing "Qualified" in one
+ * place and "Pending" in another would be a real bug, not a cosmetic one.
+ */
+export function qualificationLabel(lead: Lead): string {
+  // The verdict only — the model's probability is shown beside it on the lead
+  // detail panel, where there is room to explain what the number means.
+  if (lead.qualificationStatus === "QUALIFIED") return "Qualified";
+  return lead.qualificationStatus === "UNQUALIFIED" ? "Unqualified" : "Pending";
+}
+
+export function qualificationVariant(lead: Lead): BadgeVariant {
+  if (lead.qualificationStatus === "QUALIFIED") return "green";
+  return lead.qualificationStatus === "UNQUALIFIED" ? "red" : "amber";
+}
+
 /** Only these two mean the customer is willing to meet, so only these convert.
  *  Mirrors CONVERTIBLE_CONTACT_STATUSES in LeadConversionService. */
 export const CONVERTIBLE_CONTACT_STATUSES: ContactStatus[] = ["MEETING_SCHEDULED", "INTERESTED"];
 
+// Mirrors AccountDtos.AccountResponse. The list and detail endpoints return the
+// same shape, so everything here is available without a second fetch.
 export type Account = {
   id: string;
   name: string;
   industry?: string | null;
+  annualRevenue?: string | number | null;
   employeeCount?: string | null;
+  billingAddress?: string | null;
+  parentAccountId?: string | null;
+  ownerId?: string | null;
   relationshipValue?: string | number | null;
   aiSentimentScore?: number | null;
+  emailIntegrationEnabled?: boolean;
+  telephonyIntegrationEnabled?: boolean;
+  docRepoSyncEnabled?: boolean;
   createdAt: string;
+  updatedAt?: string | null;
 };
 
 export type Contact = {
@@ -121,6 +161,7 @@ export type Contact = {
   fullName: string;
   jobTitle?: string | null;
   email?: string | null;
+  phone?: string | null;
   role?: string | null;
   isPrimary: boolean;
 };
@@ -129,22 +170,26 @@ export type Contact = {
 // stages rather than replacing them — existing deals still sit on PROSPECTING
 // and QUALIFICATION.
 export type DealStage =
-  | "OPPORTUNITY_CREATED"
-  | "MEETING_SCHEDULED"
   | "PROSPECTING"
   | "QUALIFICATION"
+  | "MEETING_SCHEDULED"
+  | "OPPORTUNITY_CREATED"
+  | "DEAL_MEETING"
   | "PROPOSAL"
   | "NEGOTIATION"
+  | "CONTRACT"
   | "CLOSED_WON"
   | "CLOSED_LOST";
 
 export const DEAL_STAGE_LABELS: Record<DealStage, string> = {
-  OPPORTUNITY_CREATED: "Opportunity created",
-  MEETING_SCHEDULED: "Meeting scheduled",
   PROSPECTING: "Prospecting",
   QUALIFICATION: "Qualification",
+  MEETING_SCHEDULED: "Lead meeting",
+  OPPORTUNITY_CREATED: "Opportunity created",
+  DEAL_MEETING: "Deal meeting",
   PROPOSAL: "Proposal",
   NEGOTIATION: "Negotiation",
+  CONTRACT: "Contract",
   CLOSED_WON: "Closed won",
   CLOSED_LOST: "Closed lost",
 };
@@ -152,10 +197,14 @@ export const DEAL_STAGE_LABELS: Record<DealStage, string> = {
 /** The workflow order the progress tracker walks. Closed lost is deliberately
  *  absent — it is an exit, not a step forward. */
 export const DEAL_FLOW_STEPS: DealStage[] = [
-  "OPPORTUNITY_CREATED",
+  "PROSPECTING",
+  "QUALIFICATION",
   "MEETING_SCHEDULED",
+  "OPPORTUNITY_CREATED",
+  "DEAL_MEETING",
   "PROPOSAL",
   "NEGOTIATION",
+  "CONTRACT",
   "CLOSED_WON",
 ];
 
@@ -200,6 +249,8 @@ export type Deal = {
   // Opportunity identity and the deal flow's own fields.
   opportunityId?: string | null;
   leadId?: string | null;
+  /** Who proposals and contracts for this deal are addressed to. */
+  primaryContactId?: string | null;
   meetingScheduledAt?: string | null;
   meetingMode?: string | null;
   meetingParticipants?: string | null;
@@ -207,6 +258,15 @@ export type Deal = {
   riskLevel?: RiskLevel | null;
   closingReason?: string | null;
   closedAt?: string | null;
+
+  expectedCloseDate?: string | null;
+
+  // Agreed during negotiation, and what the contract is drawn up from: the
+  // document assembler reads these off the deal when the request carries none,
+  // and the contract bot sends none of its own.
+  paymentTerms?: string | null;
+  deliveryTimeline?: string | null;
+  termsAgreedAt?: string | null;
 };
 
 export type ScoreBand = "HIGH" | "MEDIUM" | "LOW" | "VERY LOW";
@@ -398,7 +458,7 @@ export type AuditLogEntry = {
   occurredAt: string;
 };
 
-// Lead Output module — one record per customer meeting, permanently linked to
+// Meeting module — one record per customer meeting, permanently linked to
 // its lead. History is append-only; a new meeting never replaces an older one.
 export type LeadMeeting = {
   id: string;

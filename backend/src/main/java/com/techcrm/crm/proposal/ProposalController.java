@@ -124,8 +124,8 @@ public class ProposalController {
      * <b>200</b> {@code SENT}, or {@code ALREADY_SENT} when a retry found it
      * already emailed and nothing was sent twice. <b>404</b> no such proposal,
      * <b>409</b> no PDF, or a proposal not ready or no longer current,
-     * <b>400</b> no recipient address, <b>502</b> Mailjet refused it (the reason
-     * is in the audit log), <b>503</b> Mailjet is not configured.
+     * <b>400</b> no recipient address, <b>502</b> the email provider refused it (the reason
+     * is in the audit log), <b>503</b> the provider is not configured.
      */
     @PostMapping("/{proposalId}/send-email")
     public ProposalEmailResponse sendEmail(@AuthenticationPrincipal AuthenticatedUser caller,

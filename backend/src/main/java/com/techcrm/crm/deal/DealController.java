@@ -53,7 +53,30 @@ public class DealController {
         return dealService.updateStage(caller, id, request.stage(), request.closingReason());
     }
 
+    /** Sets who this deal's proposals and contracts go to. <b>400</b> when the
+     *  contact is unknown or belongs to another account. */
+    @PutMapping("/{id}/primary-contact")
+    public DealResponse primaryContact(@AuthenticationPrincipal AuthenticatedUser caller,
+                                       @PathVariable Long id,
+                                       @RequestBody DealDtos.PrimaryContactRequest request) {
+        return dealService.setPrimaryContact(caller, id, request.contactId());
+    }
+
     /** Deal flow step 2 — schedule the customer meeting. */
+    /**
+     * Records the terms agreed during negotiation, so the contract carries them.
+     *
+     * <b>200</b> the updated deal. <b>409</b> the deal is not in Negotiation,
+     * <b>404</b> no such deal in this organization, <b>400</b> a non-positive
+     * amount or an over-long term.
+     */
+    @PostMapping("/{id}/negotiated-terms")
+    public DealResponse negotiatedTerms(@AuthenticationPrincipal AuthenticatedUser caller,
+                                        @PathVariable Long id,
+                                        @Valid @RequestBody DealDtos.NegotiatedTermsRequest request) {
+        return dealService.recordNegotiatedTerms(caller, id, request);
+    }
+
     @PostMapping("/{id}/schedule-meeting")
     public DealResponse scheduleMeeting(@AuthenticationPrincipal AuthenticatedUser caller,
                                         @PathVariable Long id,

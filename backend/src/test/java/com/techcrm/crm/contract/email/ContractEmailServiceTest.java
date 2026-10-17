@@ -9,6 +9,9 @@ import com.techcrm.crm.contract.ContractRecordService;
 import com.techcrm.crm.contract.ContractRepository;
 import com.techcrm.crm.contract.ContractStatus;
 import com.techcrm.crm.contract.document.DocumentStorageService;
+import com.techcrm.crm.mail.EmailDeliveryException;
+import com.techcrm.crm.mail.EmailSender;
+import com.techcrm.crm.mail.OutboundEmail;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,21 +53,21 @@ class ContractEmailServiceTest {
     @Mock ContractRecordService recordService;
     @Mock DocumentStorageService storageService;
     @Mock ContractEmailTemplates templates;
-    @Mock MailjetClient mailjetClient;
+    @Mock EmailSender emailSender;
     @Mock AuditLogService auditLogService;
     @Mock AuditLogRepository auditLogRepository;
 
-    MailjetProperties properties = new MailjetProperties();
     ContractEmailService service;
 
     private static final byte[] PDF = "%PDF-1.7 contract".getBytes();
 
     @BeforeEach
     void setUp() {
-        properties.setFromName("Piyush Pawar");
-        properties.setFromEmail("sales@techcrm.example");
+        when(emailSender.provider()).thenReturn("smtp");
+        when(emailSender.fromName()).thenReturn("Piyush Pawar");
+        when(emailSender.fromEmail()).thenReturn("sales@techcrm.example");
         service = new ContractEmailService(contractRepository, recordService, storageService, templates,
-                mailjetClient, properties, auditLogService, auditLogRepository);
+                emailSender, auditLogService, auditLogRepository);
 
         // contract() is GENERATED with a PDF and a contact — ready to email.
         when(contractRepository.findByIdAndOrganizationId(anyLong(), anyLong())).thenReturn(Optional.of(contract()));
@@ -72,10 +75,10 @@ class ContractEmailServiceTest {
                 any(), any(), any(), any())).thenReturn(Optional.empty());
         when(storageService.exists(anyString())).thenReturn(true);
         when(storageService.read(anyString())).thenReturn(PDF);
-        when(mailjetClient.isConfigured()).thenReturn(true);
+        when(emailSender.isConfigured()).thenReturn(true);
         when(templates.render(any())).thenReturn(
                 new ContractEmailTemplates.Rendered("Subject", "<p>html</p>", "text"));
-        when(mailjetClient.send(any())).thenReturn("uuid-123");
+        when(emailSender.send(any())).thenReturn("uuid-123");
         when(recordService.markEmailed(anyLong())).thenReturn(contract());
     }
 
@@ -89,20 +92,20 @@ class ContractEmailServiceTest {
     void emailsAGeneratedContractsPdfToItsContact() {
         var result = service.send(caller(), 42L, null);
 
-        ArgumentCaptor<MailjetClient.Email> email = ArgumentCaptor.forClass(MailjetClient.Email.class);
-        verify(mailjetClient).send(email.capture());
+        ArgumentCaptor<OutboundEmail> email = ArgumentCaptor.forClass(OutboundEmail.class);
+        verify(emailSender).send(email.capture());
         assertThat(email.getValue().toEmail()).isEqualTo("asha.menon@northwind.example");
         assertThat(email.getValue().toName()).isEqualTo("Asha Menon");
         assertThat(email.getValue().attachmentName()).isEqualTo("CTR-000042.pdf");
         assertThat(email.getValue().attachment()).isEqualTo(PDF);
-        assertThat(email.getValue().customId()).isEqualTo("CTR-000042");
+        assertThat(email.getValue().reference()).isEqualTo("CTR-000042");
 
         assertThat(result.status()).isEqualTo("SENT");
         assertThat(result.mailjetMessageId()).isEqualTo("uuid-123");
         assertThat(result.attachmentBytes()).isEqualTo(PDF.length);
 
         verify(auditLogService).record(eq(ORG_ID), eq(USER_ID), eq(ContractEmailService.EMAILED),
-                eq("CONTRACT"), eq("42"), contains("mailjetMessageId=uuid-123"));
+                eq("CONTRACT"), eq("42"), contains("provider=smtp;messageId=uuid-123"));
     }
 
     /** No signature step any more: an email is what puts the contract in front
@@ -146,8 +149,8 @@ class ContractEmailServiceTest {
     void theRecipientCanBeOverridden() {
         service.send(caller(), 42L, new SendContractEmailRequest("me@company.com", "Test Person", null));
 
-        ArgumentCaptor<MailjetClient.Email> email = ArgumentCaptor.forClass(MailjetClient.Email.class);
-        verify(mailjetClient).send(email.capture());
+        ArgumentCaptor<OutboundEmail> email = ArgumentCaptor.forClass(OutboundEmail.class);
+        verify(emailSender).send(email.capture());
         assertThat(email.getValue().toEmail()).isEqualTo("me@company.com");
         assertThat(email.getValue().toName()).isEqualTo("Test Person");
     }
@@ -166,12 +169,26 @@ class ContractEmailServiceTest {
 
         var result = service.send(caller(), 42L, null);
 
-        verify(mailjetClient, never()).send(any());
+        verify(emailSender, never()).send(any());
         verify(recordService, never()).markEmailed(anyLong());
         assertThat(result.status()).isEqualTo("ALREADY_SENT");
         assertThat(result.mailjetMessageId()).isEqualTo("uuid-first");
         assertThat(result.sentTo()).isEqualTo("asha.menon@northwind.example");
         assertThat(result.attachmentBytes()).isEqualTo(82637);
+    }
+
+    @Test
+    void aRetryReadsTheMessageIdFromANewFormatEntry() {
+        AuditLog earlier = new AuditLog();
+        earlier.setDetail("sentTo=asha.menon@northwind.example;provider=smtp;messageId=<abc@mail>;attachmentBytes=82637");
+        when(auditLogRepository.findFirstByOrganizationIdAndEntityTypeAndEntityIdAndActionOrderByOccurredAtDesc(
+                ORG_ID, "CONTRACT", "42", ContractEmailService.EMAILED)).thenReturn(Optional.of(earlier));
+
+        var result = service.send(caller(), 42L, null);
+
+        verify(emailSender, never()).send(any());
+        assertThat(result.status()).isEqualTo("ALREADY_SENT");
+        assertThat(result.mailjetMessageId()).isEqualTo("<abc@mail>");
     }
 
     @Test
@@ -185,7 +202,7 @@ class ContractEmailServiceTest {
 
         var result = service.send(caller(), 42L, new SendContractEmailRequest(null, null, true));
 
-        verify(mailjetClient).send(any());
+        verify(emailSender).send(any());
         assertThat(result.status()).isEqualTo("SENT");
     }
 
@@ -195,7 +212,7 @@ class ContractEmailServiceTest {
                 .thenReturn(Optional.of(withStatus(ContractStatus.DRAFTING)));
 
         assertStatus(() -> service.send(caller(), 42L, null), HttpStatus.CONFLICT);
-        verify(mailjetClient, never()).send(any());
+        verify(emailSender, never()).send(any());
     }
 
     /** Superseded, failed, signed or rejected: not a document to put in front of
@@ -209,7 +226,7 @@ class ContractEmailServiceTest {
 
             assertStatus(() -> service.send(caller(), 42L, null), HttpStatus.CONFLICT);
         }
-        verify(mailjetClient, never()).send(any());
+        verify(emailSender, never()).send(any());
     }
 
     @Test
@@ -236,17 +253,17 @@ class ContractEmailServiceTest {
     }
 
     @Test
-    void unconfiguredMailjetIsServiceUnavailable() {
-        when(mailjetClient.isConfigured()).thenReturn(false);
+    void anUnconfiguredProviderIsServiceUnavailable() {
+        when(emailSender.isConfigured()).thenReturn(false);
 
         assertStatus(() -> service.send(caller(), 42L, null), HttpStatus.SERVICE_UNAVAILABLE);
     }
 
-    /** Mailjet's reason goes to the audit log; the response stays generic, and
-     *  the contract is not marked SENT. */
+    /** The provider's reason goes to the audit log; the response stays generic,
+     *  and the contract is not marked SENT. */
     @Test
-    void aMailjetFailureIsRecordedAndBecomesABadGateway() {
-        when(mailjetClient.send(any())).thenThrow(new MailjetException("Sender not validated"));
+    void aProviderFailureIsRecordedAndBecomesABadGateway() {
+        when(emailSender.send(any())).thenThrow(new EmailDeliveryException("Sender not validated"));
 
         assertThatThrownBy(() -> service.send(caller(), 42L, null))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> {

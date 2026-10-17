@@ -2,9 +2,12 @@ package com.techcrm.crm.deal;
 
 import com.techcrm.crm.account.AccountRepository;
 import com.techcrm.crm.auth.AuthenticatedUser;
+import com.techcrm.crm.contact.Contact;
+import com.techcrm.crm.contact.ContactRepository;
 import com.techcrm.crm.deal.DealDtos.DealRequest;
 import com.techcrm.crm.deal.DealDtos.DealResponse;
 import com.techcrm.crm.onboarding.CustomerOnboardingService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +23,21 @@ public class DealService {
     private final AccountRepository accountRepository;
     private final DealScoringClient dealScoringClient;
     private final CustomerOnboardingService onboardingService;
+    private final ContactRepository contactRepository;
+    private final ApplicationEventPublisher events;
 
     public DealService(DealRepository dealRepository,
                        AccountRepository accountRepository,
                        DealScoringClient dealScoringClient,
-                       CustomerOnboardingService onboardingService) {
+                       CustomerOnboardingService onboardingService,
+                       ContactRepository contactRepository,
+                       ApplicationEventPublisher events) {
         this.dealRepository = dealRepository;
         this.accountRepository = accountRepository;
         this.dealScoringClient = dealScoringClient;
         this.onboardingService = onboardingService;
+        this.contactRepository = contactRepository;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -90,6 +99,30 @@ public class DealService {
         return DealResponse.from(dealRepository.save(deal));
     }
 
+    /**
+     * Chooses who this deal's proposals and contracts are addressed to.
+     *
+     * The contact must belong to the deal's account: a proposal addressed to
+     * someone at another company would be a data leak, not a typo. Null clears
+     * the choice.
+     */
+    @Transactional
+    public DealResponse setPrimaryContact(AuthenticatedUser caller, Long id, Long contactId) {
+        Deal deal = require(caller, id);
+        if (contactId == null) {
+            deal.setPrimaryContactId(null);
+            return DealResponse.from(dealRepository.save(deal));
+        }
+        Contact contact = contactRepository.findByIdAndOrganizationId(contactId, caller.organizationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Contact not found"));
+        if (!contact.getAccountId().equals(deal.getAccountId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Contact " + contactId + " does not belong to this deal's account");
+        }
+        deal.setPrimaryContactId(contact.getId());
+        return DealResponse.from(dealRepository.save(deal));
+    }
+
     /** Deal flow step 2 — books the customer meeting and advances the stage. */
     @Transactional
     public DealResponse scheduleMeeting(AuthenticatedUser caller, Long id,
@@ -99,12 +132,52 @@ public class DealService {
         deal.setMeetingMode(mode == null ? null : mode.trim().toUpperCase());
         deal.setMeetingParticipants(participants);
 
-        // Only advances a deal that hasn't moved past this point — re-booking a
+        // Only advances a deal that hasn't reached this point — re-booking a
         // meeting on a deal already in negotiation must not drag it backwards.
-        if (DealStages.OPPORTUNITY_CREATED.equals(deal.getStage())) {
+        // Compared by position rather than against one named stage, so booking a
+        // meeting on a deal still at Prospecting or Qualification advances it.
+        if (DealStages.isBefore(deal.getStage(), DealStages.MEETING_SCHEDULED)) {
             deal.setStage(DealStages.MEETING_SCHEDULED);
         }
         return DealResponse.from(dealRepository.save(deal));
+    }
+
+    /**
+     * Records what was agreed during negotiation.
+     *
+     * Restricted to a deal actually in Negotiation. Terms agreed before the
+     * customer has the offer are premature, and terms changed after the contract
+     * stage has been reached would silently disagree with a document that may
+     * already be with the customer -- the contract snapshots its line items at
+     * generation, so a later edit here would not reach it anyway.
+     *
+     * Absent fields leave the existing value alone rather than clearing it: a
+     * negotiation that moved only the price sends only the price.
+     */
+    @Transactional
+    public DealResponse recordNegotiatedTerms(AuthenticatedUser caller, Long id,
+                                              DealDtos.NegotiatedTermsRequest request) {
+        Deal deal = require(caller, id);
+
+        if (!DealStages.NEGOTIATION.equals(deal.getStage())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Deal is in stage " + deal.getStage() + "; terms can only be agreed during "
+                            + DealStages.NEGOTIATION);
+        }
+
+        if (request.finalAmount() != null) {
+            deal.setValue(request.finalAmount());
+        }
+        if (request.paymentTerms() != null && !request.paymentTerms().isBlank()) {
+            deal.setPaymentTerms(request.paymentTerms().trim());
+        }
+        if (request.deliveryTimeline() != null && !request.deliveryTimeline().isBlank()) {
+            deal.setDeliveryTimeline(request.deliveryTimeline().trim());
+        }
+        deal.setTermsAgreedAt(OffsetDateTime.now());
+
+        Deal saved = dealRepository.save(deal);
+        return DealResponse.from(saved);
     }
 
     /**
@@ -116,7 +189,16 @@ public class DealService {
      */
     private void applyStageTransition(AuthenticatedUser caller, Deal deal, String rawStage, String closingReason) {
         String stage = normaliseStage(rawStage);
+        String previousStage = deal.getStage();
         deal.setStage(stage);
+
+        // Announced only on a real move. A save that leaves the stage alone —
+        // renaming a deal, editing its value — must not start a document bot,
+        // and the pipeline board sends the current stage on every drag whether
+        // the column changed or not.
+        if (!stage.equals(previousStage)) {
+            events.publishEvent(new DealStageChanged(caller.organizationId(), deal.getId(), stage));
+        }
 
         if (!DealStages.isClosed(stage)) {
             // Reopening a deal clears the closure: leaving a stale "lost to
@@ -160,6 +242,11 @@ public class DealService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account not found"));
 
         deal.setName(request.name());
+        // The primary contact belongs to the old account; keeping it would
+        // address the new company's proposals to the old company's person.
+        if (deal.getAccountId() != null && !deal.getAccountId().equals(request.accountId())) {
+            deal.setPrimaryContactId(null);
+        }
         deal.setAccountId(request.accountId());
         deal.setValue(request.value());
         if (request.currency() != null) deal.setCurrency(request.currency());

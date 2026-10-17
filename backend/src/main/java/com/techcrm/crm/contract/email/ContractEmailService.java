@@ -11,6 +11,9 @@ import com.techcrm.crm.contract.ContractRecordService;
 import com.techcrm.crm.contract.ContractRepository;
 import com.techcrm.crm.contract.ContractStatus;
 import com.techcrm.crm.contract.document.DocumentStorageService;
+import com.techcrm.crm.mail.EmailDeliveryException;
+import com.techcrm.crm.mail.EmailSender;
+import com.techcrm.crm.mail.OutboundEmail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -35,10 +38,13 @@ import java.util.regex.Pattern;
  * than anything SAP Build Process Automation will carry between steps.
  *
  * <b>Idempotent.</b> The platform retries a step whose response it did not get,
- * and a timeout after Mailjet accepted the message would otherwise email the
- * customer twice. A contract that has already been emailed gets the earlier
+ * and a timeout after the provider accepted the message would otherwise email
+ * the customer twice. A contract that has already been emailed gets the earlier
  * result back unless {@code resend} is set. The record of that send is its audit
  * entry, so no schema change was needed for it.
+ *
+ * Delivery goes through {@link EmailSender} — college SMTP or Mailjet, chosen by
+ * {@code email.provider} — so nothing here depends on which one is in use.
  */
 @Service
 public class ContractEmailService {
@@ -60,8 +66,7 @@ public class ContractEmailService {
     private final ContractRecordService recordService;
     private final DocumentStorageService storageService;
     private final ContractEmailTemplates templates;
-    private final MailjetClient mailjetClient;
-    private final MailjetProperties properties;
+    private final EmailSender emailSender;
     private final AuditLogService auditLogService;
     private final AuditLogRepository auditLogRepository;
 
@@ -69,16 +74,14 @@ public class ContractEmailService {
                                 ContractRecordService recordService,
                                 DocumentStorageService storageService,
                                 ContractEmailTemplates templates,
-                                MailjetClient mailjetClient,
-                                MailjetProperties properties,
+                                EmailSender emailSender,
                                 AuditLogService auditLogService,
                                 AuditLogRepository auditLogRepository) {
         this.contractRepository = contractRepository;
         this.recordService = recordService;
         this.storageService = storageService;
         this.templates = templates;
-        this.mailjetClient = mailjetClient;
-        this.properties = properties;
+        this.emailSender = emailSender;
         this.auditLogService = auditLogService;
         this.auditLogRepository = auditLogRepository;
     }
@@ -117,7 +120,7 @@ public class ContractEmailService {
                     "No email address to send contract " + contract.getContractNumber() + " to");
         }
 
-        if (!mailjetClient.isConfigured()) {
+        if (!emailSender.isConfigured()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Email delivery is not configured on this server");
         }
@@ -127,14 +130,15 @@ public class ContractEmailService {
 
         String messageId;
         try {
-            messageId = mailjetClient.send(new MailjetClient.Email(
+            messageId = emailSender.send(new OutboundEmail(
                     recipientEmail, recipientName,
                     email.subject(), email.text(), email.html(),
                     contract.getContractNumber(),
                     contract.getContractNumber() + ".pdf",
                     pdf));
-        } catch (MailjetException e) {
-            log.error("Mailjet rejected the email for contract {}", contract.getContractNumber(), e);
+        } catch (EmailDeliveryException e) {
+            log.error("{} rejected the email for contract {}", emailSender.provider(),
+                    contract.getContractNumber(), e);
             auditLogService.record(caller.organizationId(), caller.userId(), EMAIL_FAILED,
                     ENTITY, String.valueOf(contract.getId()), e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
@@ -145,9 +149,10 @@ public class ContractEmailService {
         // customer, and this entry is what stops a retry from sending it again.
         auditLogService.record(caller.organizationId(), caller.userId(), EMAILED,
                 ENTITY, String.valueOf(contract.getId()),
-                "sentTo=" + recipientEmail + ";mailjetMessageId=" + messageId + ";attachmentBytes=" + pdf.length);
-        log.info("Contract {} emailed to {} (Mailjet {}, {} byte attachment)",
-                contract.getContractNumber(), recipientEmail, messageId, pdf.length);
+                "sentTo=" + recipientEmail + ";provider=" + emailSender.provider()
+                        + ";messageId=" + messageId + ";attachmentBytes=" + pdf.length);
+        log.info("Contract {} emailed to {} ({} {}, {} byte attachment)",
+                contract.getContractNumber(), recipientEmail, emailSender.provider(), messageId, pdf.length);
 
         try {
             Contract sent = recordService.markEmailed(contract.getId());
@@ -170,8 +175,8 @@ public class ContractEmailService {
         values.put("signerName", recipientName == null ? "" : recipientName);
         values.put("contractNumber", contract.getContractNumber());
         values.put("contractTitle", contract.getContractType().displayName());
-        values.put("senderName", properties.getFromName());
-        values.put("senderEmail", properties.getFromEmail());
+        values.put("senderName", emailSender.fromName());
+        values.put("senderEmail", emailSender.fromEmail());
         return values;
     }
 
@@ -189,7 +194,12 @@ public class ContractEmailService {
         }
         return new ContractEmailResponse(
                 String.valueOf(contract.getId()), contract.getContractNumber(), "ALREADY_SENT",
-                fields.get("sentTo"), fields.get("mailjetMessageId"), bytes, entry.getOccurredAt());
+                fields.get("sentTo"), messageId(fields), bytes, entry.getOccurredAt());
+    }
+
+    /** Entries written before the SMTP option existed call it mailjetMessageId. */
+    private static String messageId(Map<String, String> fields) {
+        return fields.containsKey("messageId") ? fields.get("messageId") : fields.get("mailjetMessageId");
     }
 
     private static String firstNonBlank(String... values) {

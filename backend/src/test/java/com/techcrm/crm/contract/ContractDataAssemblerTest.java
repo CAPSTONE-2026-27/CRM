@@ -130,6 +130,17 @@ class ContractDataAssemblerTest {
          * than left to the generic "too early" case below.
          */
         @Test
+        void rejectsADealStillAtNegotiation() {
+            Deal negotiating = deal();
+            negotiating.setStage(DealStages.NEGOTIATION);
+
+            assertThatThrownBy(() -> assembler.assemble(caller(), negotiating, BARE))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .extracting(e -> ((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.CONFLICT);
+        }
+
+        @Test
         void rejectsADealStillAtProposal() {
             Deal atProposal = deal();
             atProposal.setStage(DealStages.PROPOSAL);
@@ -153,7 +164,7 @@ class ContractDataAssemblerTest {
 
         @Test
         void acceptsEveryConfiguredStage() {
-            for (String stage : List.of(DealStages.NEGOTIATION, DealStages.CLOSED_WON)) {
+            for (String stage : List.of(DealStages.CONTRACT, DealStages.CLOSED_WON)) {
                 Deal deal = deal();
                 deal.setStage(stage);
                 assertThat(assembler.assemble(caller(), deal, BARE)).isNotNull();

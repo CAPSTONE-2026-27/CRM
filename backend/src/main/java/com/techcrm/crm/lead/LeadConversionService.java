@@ -3,6 +3,8 @@ package com.techcrm.crm.lead;
 import com.techcrm.crm.account.Account;
 import com.techcrm.crm.account.AccountRepository;
 import com.techcrm.crm.auth.AuthenticatedUser;
+import com.techcrm.crm.contact.Contact;
+import com.techcrm.crm.contact.ContactRepository;
 import com.techcrm.crm.deal.Deal;
 import com.techcrm.crm.deal.DealRepository;
 import com.techcrm.crm.deal.DealStages;
@@ -20,6 +22,14 @@ import java.util.List;
 /**
  * Lead flow step 6 — turns a lead into an opportunity.
  *
+ * One lead becomes three records, the standard lead-conversion split: the
+ * company becomes an Account, the person becomes a Contact, and the sale
+ * becomes a Deal whose primary contact is that person. Existing accounts (by
+ * name) and contacts (by email on that account) are reused rather than
+ * duplicated. The lead's billing address fills an account that has none.
+ * Together that is everything proposal and contract generation require, so a
+ * converted deal can be quoted without anyone editing the account first.
+ *
  * The lead is not consumed: it keeps its history and gains a pointer to the deal
  * it produced. That link is what lets a deal's score be traced back to the lead
  * score it started from, which the sales manager's view depends on.
@@ -33,30 +43,27 @@ public class LeadConversionService {
 
     private static final Logger log = LoggerFactory.getLogger(LeadConversionService.class);
 
-    /** Contact outcomes that mean the customer is willing to meet. Only these
-     *  convert — "No Response" becoming an opportunity would make the pipeline
-     *  a list of hopes rather than of deals. */
-    private static final List<String> CONVERTIBLE_CONTACT_STATUSES =
-            List.of("MEETING_SCHEDULED", "INTERESTED");
-
     private final LeadRepository leadRepository;
     private final DealRepository dealRepository;
     private final AccountRepository accountRepository;
+    private final ContactRepository contactRepository;
 
     public LeadConversionService(LeadRepository leadRepository,
                                  DealRepository dealRepository,
-                                 AccountRepository accountRepository) {
+                                 AccountRepository accountRepository,
+                                 ContactRepository contactRepository) {
         this.leadRepository = leadRepository;
         this.dealRepository = dealRepository;
         this.accountRepository = accountRepository;
+        this.contactRepository = contactRepository;
     }
 
-    public record ConversionResult(Long dealId, String opportunityId, Long accountId, boolean accountCreated) {
+    public record ConversionResult(Long dealId, String opportunityId, Long accountId, boolean accountCreated,
+                                   Long contactId, boolean contactCreated) {
     }
 
     @Transactional
-    public ConversionResult convert(AuthenticatedUser caller, Long leadId, OffsetDateTime meetingScheduledAt,
-                                    String meetingMode, String meetingParticipants) {
+    public ConversionResult convert(AuthenticatedUser caller, Long leadId) {
 
         Lead lead = leadRepository.findByIdAndOrganizationId(leadId, caller.organizationId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lead not found"));
@@ -71,21 +78,26 @@ public class LeadConversionService {
                     "Only qualified leads can become opportunities.");
         }
 
-        if (!CONVERTIBLE_CONTACT_STATUSES.contains(lead.getContactStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "The customer has not agreed to a meeting yet. Set the contact status to "
-                            + "Meeting scheduled or Interested first.");
-        }
+        // Contact status is deliberately not a gate. It used to be — only a
+        // lead marked "Meeting scheduled" or "Interested" could convert — but
+        // the scoring model now decides readiness, and requiring both meant a
+        // representative had to set a field by hand before the automation
+        // would touch a lead the model had already called HOT.
 
         AccountLookup account = findOrCreateAccount(lead, caller.organizationId());
+        ContactLookup contact = findOrCreateContact(lead, account.id(), caller.organizationId());
 
         Deal deal = new Deal();
         deal.setOrganizationId(caller.organizationId());
         deal.setName(opportunityName(lead));
         deal.setAccountId(account.id());
         deal.setValue(lead.getEstimatedDealValue() == null ? BigDecimal.ZERO : lead.getEstimatedDealValue());
+        // Every converted lead lands on OPPORTUNITY_CREATED: on the board, the
+        // columns before it hold leads, and conversion is the drag into it.
+        // Meetings are booked on the deal afterwards (DealService), not here.
         deal.setStage(DealStages.OPPORTUNITY_CREATED);
         deal.setLeadId(lead.getId());
+        deal.setPrimaryContactId(contact.id());
         // Carried across so the deal-scoring model starts from what the lead
         // model already concluded rather than from a default.
         deal.setLeadScore(lead.getAiScore() == null ? null : lead.getAiScore().doubleValue());
@@ -93,13 +105,6 @@ public class LeadConversionService {
         deal.setProbability(lead.getQualificationProbability() == null
                 ? null
                 : (int) Math.round(lead.getQualificationProbability()));
-
-        if (meetingScheduledAt != null) {
-            deal.setMeetingScheduledAt(meetingScheduledAt);
-            deal.setMeetingMode(meetingMode);
-            deal.setMeetingParticipants(meetingParticipants);
-            deal.setStage(DealStages.MEETING_SCHEDULED);
-        }
 
         Deal saved = dealRepository.save(deal);
         // The reference is derived from the id, so it can only be set after the
@@ -112,7 +117,8 @@ public class LeadConversionService {
         leadRepository.save(lead);
 
         log.info("Converted lead {} to opportunity {} (deal {})", lead.getId(), saved.getOpportunityId(), saved.getId());
-        return new ConversionResult(saved.getId(), saved.getOpportunityId(), account.id(), account.created());
+        return new ConversionResult(saved.getId(), saved.getOpportunityId(), account.id(), account.created(),
+                contact.id(), contact.created());
     }
 
     private record AccountLookup(Long id, boolean created) {
@@ -135,6 +141,12 @@ public class LeadConversionService {
                 .orElse(null);
 
         if (existing != null) {
+            // Fill a gap, never overwrite: an address already on the account
+            // was entered deliberately and may be more current than the lead's.
+            if (isBlank(existing.getBillingAddress()) && !isBlank(lead.getBillingAddress())) {
+                existing.setBillingAddress(lead.getBillingAddress().trim());
+                accountRepository.save(existing);
+            }
             return new AccountLookup(existing.getId(), false);
         }
 
@@ -145,7 +157,47 @@ public class LeadConversionService {
         account.setEmployeeCount(lead.getEmployeeCount());
         account.setRelationshipValue(lead.getEstimatedDealValue());
         account.setOwnerId(lead.getAssignedToId());
+        account.setBillingAddress(isBlank(lead.getBillingAddress()) ? null : lead.getBillingAddress().trim());
         return new AccountLookup(accountRepository.save(account).getId(), true);
+    }
+
+    private record ContactLookup(Long id, boolean created) {
+    }
+
+    /**
+     * The lead's person, as a contact on the account.
+     *
+     * Matched by email, the one field that identifies a person; by name only
+     * when the lead has no email. A second deal with the same customer then
+     * reuses their contact instead of adding a duplicate. A new contact is
+     * marked primary only when the account has no primary yet, so converting a
+     * lead never demotes someone a rep already chose.
+     */
+    private ContactLookup findOrCreateContact(Lead lead, Long accountId, Long organizationId) {
+        List<Contact> existing = contactRepository.findForAccount(accountId, organizationId);
+
+        Contact match = existing.stream()
+                .filter(c -> isBlank(lead.getEmail())
+                        ? c.getFullName() != null && c.getFullName().trim().equalsIgnoreCase(lead.getFullName().trim())
+                        : c.getEmail() != null && c.getEmail().trim().equalsIgnoreCase(lead.getEmail().trim()))
+                .findFirst()
+                .orElse(null);
+        if (match != null) {
+            return new ContactLookup(match.getId(), false);
+        }
+
+        Contact contact = new Contact();
+        contact.setOrganizationId(organizationId);
+        contact.setAccountId(accountId);
+        contact.setFullName(lead.getFullName());
+        contact.setEmail(isBlank(lead.getEmail()) ? null : lead.getEmail().trim());
+        contact.setPhone(isBlank(lead.getPhone()) ? null : lead.getPhone().trim());
+        contact.setPrimary(existing.stream().noneMatch(Contact::isPrimary));
+        return new ContactLookup(contactRepository.save(contact).getId(), true);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private String opportunityName(Lead lead) {

@@ -60,8 +60,9 @@ public class EmailLeadParser {
                 "Email",        // sourceChannel
                 "EMAIL_PARSING",// captureMethod
                 notes,
-                null,           // status
-                null            // assignedToId
+                null,            // status
+                null,            // assignedToId
+                null             // billingAddress — not derivable from an email
         );
     }
 

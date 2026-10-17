@@ -43,15 +43,18 @@ public class LeadController {
     private final LeadImportService leadImportService;
     private final EmailLeadParser emailLeadParser;
     private final LeadConversionService leadConversionService;
+    private final LeadConversionBotService conversionBotService;
 
     public LeadController(LeadService leadService,
                           LeadImportService leadImportService,
                           EmailLeadParser emailLeadParser,
-                          LeadConversionService leadConversionService) {
+                          LeadConversionService leadConversionService,
+                          LeadConversionBotService conversionBotService) {
         this.leadService = leadService;
         this.leadImportService = leadImportService;
         this.emailLeadParser = emailLeadParser;
         this.leadConversionService = leadConversionService;
+        this.conversionBotService = conversionBotService;
     }
 
     @PostMapping
@@ -66,6 +69,21 @@ public class LeadController {
      *  rather than the async fire-and-poll pattern CSV import uses. Handy
      *  for testing/using email-sourced leads before a real mailbox is wired
      *  up (see ImapPollingService). */
+    /**
+     * Turns a pasted email into lead fields without creating anything.
+     *
+     * The wizard validates before it creates, and validation needs the fields
+     * the email actually carries — which only the parser knows. So the email
+     * path parses here, validates what came out, and creates separately,
+     * exactly as the form path does. {@link #createFromEmail} remains for
+     * callers that want both in one step.
+     */
+    @PostMapping("/parse-email")
+    public LeadRequest parseEmail(@AuthenticationPrincipal AuthenticatedUser caller,
+                                  @Valid @RequestBody PastedEmailRequest request) {
+        return emailLeadParser.parsePasted(request.from(), request.subject(), request.body());
+    }
+
     @PostMapping("/from-email")
     public ResponseEntity<LeadCreationResult> createFromEmail(@AuthenticationPrincipal AuthenticatedUser caller, @Valid @RequestBody PastedEmailRequest request) {
         LeadRequest leadRequest = emailLeadParser.parsePasted(request.from(), request.subject(), request.body());
@@ -116,6 +134,21 @@ public class LeadController {
         return leadService.stats(caller);
     }
 
+    /** Open leads for the pipeline board's Prospecting, Qualification and
+     *  Meeting columns. Unpaged and capped; see {@link LeadService#pipelineLeads}. */
+    @GetMapping("/pipeline")
+    public List<LeadResponse> pipeline(@AuthenticationPrincipal AuthenticatedUser caller) {
+        return leadService.pipelineLeads(caller);
+    }
+
+    /** Moves an open lead between the board's lead columns. */
+    @PatchMapping("/{id}/stage")
+    public LeadResponse updateStage(@AuthenticationPrincipal AuthenticatedUser caller,
+                                    @PathVariable Long id,
+                                    @Valid @RequestBody LeadFlowDtos.StageRequest request) {
+        return leadService.updatePipelineStage(caller, id, request.stage());
+    }
+
     @GetMapping("/{id}")
     public LeadResponse getOne(@AuthenticationPrincipal AuthenticatedUser caller, @PathVariable Long id) {
         return leadService.findById(caller, id);
@@ -142,6 +175,18 @@ public class LeadController {
         return leadService.assign(caller, id, request.assignedToId());
     }
 
+    /**
+     * A person's qualification verdict, for a lead the scoring model never
+     * reached. Those sit at PENDING, and a lead stuck there is one nobody can
+     * act on.
+     */
+    @PostMapping("/{id}/qualify")
+    public LeadResponse qualify(@AuthenticationPrincipal AuthenticatedUser caller,
+                                @PathVariable Long id,
+                                @Valid @RequestBody LeadFlowDtos.QualifyRequest request) {
+        return leadService.qualify(caller, id, request.qualified(), request.reason());
+    }
+
     /** Flow step 5 — record the outcome of first contact. */
     @PostMapping("/{id}/contact-status")
     public LeadResponse contactStatus(@AuthenticationPrincipal AuthenticatedUser caller,
@@ -150,26 +195,50 @@ public class LeadController {
         return leadService.updateContactStatus(caller, id, request.contactStatus(), request.contactNotes());
     }
 
-    /** Flow step 6 — convert a qualified, interested lead into an opportunity. */
+    /**
+     * Asks the opportunity bot to convert this lead.
+     *
+     * <b>202</b> once the automation has been started — not once the
+     * opportunity exists. The automation calls {@link #convert} itself a moment
+     * later, so the caller refreshes and the deal appears.
+     *
+     * <b>409</b> when the lead is not ready: already converted, unqualified, or
+     * scored as something other than HOT. The message says which.
+     */
+    @PostMapping("/{id}/convert-via-bot")
+    public ResponseEntity<LeadFlowDtos.ConversionResponse> convertViaBot(
+            @AuthenticationPrincipal AuthenticatedUser caller,
+            @PathVariable Long id) {
+
+        if (!conversionBotService.isConfigured()) {
+            // No automation is wired up on this installation, so the CRM does
+            // the converting itself — the readiness check above still applies,
+            // and the caller cannot tell the difference beyond the status code.
+            conversionBotService.requireReadyToConvert(caller, id);
+            return convert(caller, id);
+        }
+
+        conversionBotService.requestConversion(caller, id);
+        return ResponseEntity.accepted().build();
+    }
+
+    /** Flow step 6 — convert a qualified lead into an opportunity. The lead id
+     *  is the whole input; no request body is read. */
     @PostMapping("/{id}/convert")
     public ResponseEntity<LeadFlowDtos.ConversionResponse> convert(
             @AuthenticationPrincipal AuthenticatedUser caller,
-            @PathVariable Long id,
-            @RequestBody(required = false) LeadFlowDtos.ConvertRequest request) {
+            @PathVariable Long id) {
 
-        LeadFlowDtos.ConvertRequest body = request == null
-                ? new LeadFlowDtos.ConvertRequest(null, null, null)
-                : request;
-
-        LeadConversionService.ConversionResult result = leadConversionService.convert(
-                caller, id, body.meetingScheduledAt(), body.meetingMode(), body.meetingParticipants());
+        LeadConversionService.ConversionResult result = leadConversionService.convert(caller, id);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(new LeadFlowDtos.ConversionResponse(
                 String.valueOf(id),
                 String.valueOf(result.dealId()),
                 result.opportunityId(),
                 String.valueOf(result.accountId()),
-                result.accountCreated()));
+                result.accountCreated(),
+                String.valueOf(result.contactId()),
+                result.contactCreated()));
     }
 
     /**

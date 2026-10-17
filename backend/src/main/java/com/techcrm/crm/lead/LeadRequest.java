@@ -49,7 +49,10 @@ public record LeadRequest(
         @Size(max = 30)   String captureMethod,
         @Size(max = 1000) String notes,
         @Size(max = 30)   String status,
-        @Size(max = 64)   String assignedToId
+        @Size(max = 64)   String assignedToId,
+
+        /** Copied to the account on conversion; proposals and contracts need it. */
+        @Size(max = 500)  String billingAddress
 ) {
 
     /** The only accepted purchaseTimeline values, in descending urgency.

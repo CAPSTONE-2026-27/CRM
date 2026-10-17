@@ -1,5 +1,6 @@
 package com.techcrm.crm.lead;
 
+import com.techcrm.crm.deal.DealStages;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -110,6 +111,19 @@ public class Lead {
 
     @Column(name = "contact_notes", columnDefinition = "text")
     private String contactNotes;
+
+    /** Copied to the account on conversion when the account has none; a
+     *  proposal or contract cannot be generated without an address (see V31). */
+    @Column(name = "billing_address", length = 500)
+    private String billingAddress;
+
+    /* ---- Pipeline board placement (see V30) ----
+     * Which of the board's lead columns this open lead sits in:
+     * PROSPECTING | QUALIFICATION | MEETING_SCHEDULED. Moving past these means
+     * converting it, at which point the deal's own stage takes over. */
+
+    @Column(name = "pipeline_stage", nullable = false, length = 30)
+    private String pipelineStage = DealStages.PROSPECTING;
 
     /* ---- Conversion (flow step 6) ----
      * Set once and never cleared: a converted lead keeps pointing at the deal

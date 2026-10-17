@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { colors } from "../../tokens";
 import { Badge, Button } from "./ui";
-import { useAssignLead, useConvertLead, useUpdateContactStatus } from "../../lib/queries";
+import { useAssignLead, useQualifyLead } from "../../lib/queries";
 import { useAuth } from "../../lib/auth";
 import {
   CONTACT_STATUS_LABELS,
@@ -22,40 +22,33 @@ import {
  * button is disabled.
  */
 
-const CONTACT_OPTIONS: ContactStatus[] = [
-  "NOT_CONTACTED",
-  "MEETING_SCHEDULED",
-  "INTERESTED",
-  "NO_RESPONSE",
-  "NOT_INTERESTED",
-];
-
-export function LeadFlowPanel({
-  lead,
-  users,
-  onConverted,
-}: {
-  lead: Lead;
-  users: UserRow[];
-  onConverted?: (dealId: string, opportunityId: string) => void;
-}) {
+export function LeadFlowPanel({ lead, users }: { lead: Lead; users: UserRow[] }) {
   const { user } = useAuth();
   const canAssign = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   const [assignee, setAssignee] = useState(lead.assignedToId ?? "");
-  const [contactStatus, setContactStatus] = useState<ContactStatus>(lead.contactStatus);
-  const [contactNotes, setContactNotes] = useState(lead.contactNotes ?? "");
-  const [meetingAt, setMeetingAt] = useState("");
-  const [meetingMode, setMeetingMode] = useState("ONLINE");
-  const [participants, setParticipants] = useState("");
 
   const assign = useAssignLead();
-  const updateContact = useUpdateContactStatus();
-  const convert = useConvertLead();
+  const qualify = useQualifyLead(lead.id);
 
   const qualified = lead.qualificationStatus === "QUALIFIED";
-  const converted = Boolean(lead.convertedDealId);
-  const canConvert = qualified && !converted && CONVERTIBLE_CONTACT_STATUSES.includes(lead.contactStatus);
+
+  const decide = (isQualified: boolean) =>
+    qualify.mutate(
+      { qualified: isQualified },
+      {
+        onSuccess: () =>
+          toast.success(isQualified ? "Lead qualified" : "Lead disqualified", {
+            description: isQualified
+              ? "It can now be assigned and converted."
+              : "It will not be converted to an opportunity.",
+          }),
+        onError: (err) =>
+          toast.error("Couldn't record the decision", {
+            description: err instanceof Error ? err.message : undefined,
+          }),
+      }
+    );
 
   const handleAssign = () => {
     if (!assignee) {
@@ -67,38 +60,6 @@ export function LeadFlowPanel({
       {
         onSuccess: () => toast.success("Lead assigned"),
         onError: (err) => toast.error("Couldn't assign the lead", { description: err instanceof Error ? err.message : undefined }),
-      }
-    );
-  };
-
-  const handleContact = () => {
-    updateContact.mutate(
-      { leadId: lead.id, contactStatus, contactNotes: contactNotes.trim() || undefined },
-      {
-        onSuccess: () => toast.success(`Contact status set to ${CONTACT_STATUS_LABELS[contactStatus].toLowerCase()}`),
-        onError: (err) => toast.error("Couldn't update the contact status", { description: err instanceof Error ? err.message : undefined }),
-      }
-    );
-  };
-
-  const handleConvert = () => {
-    convert.mutate(
-      {
-        leadId: lead.id,
-        meetingScheduledAt: meetingAt ? new Date(meetingAt).toISOString() : undefined,
-        meetingMode: meetingAt ? meetingMode : undefined,
-        meetingParticipants: meetingAt ? participants.trim() || undefined : undefined,
-      },
-      {
-        onSuccess: (result) => {
-          toast.success(`Converted to ${result.opportunityId}`, {
-            description: result.accountCreated
-              ? "A new account was created for this company."
-              : "Linked to the existing account for this company.",
-          });
-          onConverted?.(result.dealId, result.opportunityId);
-        },
-        onError: (err) => toast.error("Couldn't convert the lead", { description: err instanceof Error ? err.message : undefined }),
       }
     );
   };
@@ -132,14 +93,48 @@ export function LeadFlowPanel({
             Unqualified leads cannot be assigned or converted. Edit the lead to re-score it if this looks wrong.
           </div>
         )}
+
+        {/* Only while the verdict is Pending, which means the scoring model
+            never reached this lead. A lead left there is one nobody can act
+            on, so a person decides instead. Where the model did answer, its
+            verdict stands. */}
+        {lead.qualificationStatus === "PENDING" && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 8 }}>
+              This lead was never scored, so there is no verdict. Decide it yourself.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                label={qualify.isPending ? "Saving…" : "Qualify"}
+                variant="primary"
+                onClick={() => decide(true)}
+                disabled={qualify.isPending}
+              />
+              <Button
+                label="Disqualify"
+                onClick={() => decide(false)}
+                disabled={qualify.isPending}
+              />
+            </div>
+          </div>
+        )}
       </Step>
 
       {/* ---- Step 4: assignment ---- */}
-      <Step number={4} title="Assign to a sales executive" done={lead.assignmentStatus === "ASSIGNED"}>
+      <Step number={4} title="Assign to a sales executive" last done={lead.assignmentStatus === "ASSIGNED"}>
         {lead.assignmentStatus === "ASSIGNED" && (
           <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
             Assigned to {users.find((u) => u.id === lead.assignedToId)?.fullName ?? `user ${lead.assignedToId}`}
             {lead.assignedAt && ` on ${formatDate(lead.assignedAt)}`}
+          </div>
+        )}
+        {/* A dimmed control with no explanation reads as broken rather than
+            blocked. Qualification is the gate, and it is one step above. */}
+        {canAssign && !qualified && (
+          <div style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 8 }}>
+            {lead.qualificationStatus === "UNQUALIFIED"
+              ? "Unqualified leads are not assigned to anyone."
+              : "Qualify this lead first — only qualified leads are assigned to a sales executive."}
           </div>
         )}
         {canAssign ? (
@@ -170,108 +165,6 @@ export function LeadFlowPanel({
         )}
       </Step>
 
-      {/* ---- Step 5: first contact ---- */}
-      <Step number={5} title="Contact the customer" done={lead.contactStatus !== "NOT_CONTACTED"}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {CONTACT_OPTIONS.map((option) => {
-            const active = contactStatus === option;
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setContactStatus(option)}
-                aria-pressed={active}
-                style={{
-                  border: `1px solid ${active ? colors.primary : colors.border}`,
-                  background: active ? colors.primaryLight : "#FFFFFF",
-                  color: active ? colors.primary : colors.textPrimary,
-                  borderRadius: 20,
-                  padding: "5px 12px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {CONTACT_STATUS_LABELS[option]}
-              </button>
-            );
-          })}
-        </div>
-        <textarea
-          value={contactNotes}
-          onChange={(e) => setContactNotes(e.target.value)}
-          rows={2}
-          placeholder="What happened on the call (optional)"
-          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, marginBottom: 8 }}
-        />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: colors.textTertiary }}>
-            {lead.contactStatusUpdatedAt ? `Last updated ${formatDate(lead.contactStatusUpdatedAt)}` : "Not recorded yet"}
-          </span>
-          <Button
-            label={updateContact.isPending ? "Saving…" : "Save contact status"}
-            onClick={handleContact}
-            disabled={updateContact.isPending}
-          />
-        </div>
-      </Step>
-
-      {/* ---- Step 6: conversion ---- */}
-      <Step number={6} title="Convert to opportunity" done={converted} last>
-        {converted ? (
-          <div style={{ fontSize: 12 }}>
-            <Badge label="Converted" variant="green" />
-            <div style={{ color: colors.textSecondary, marginTop: 6 }}>
-              Became deal {lead.convertedDealId}
-              {lead.convertedAt && ` on ${formatDate(lead.convertedAt)}`}. Open it from the Sales pipeline to record
-              meetings and see its score.
-            </div>
-          </div>
-        ) : (
-          <>
-            <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 10 }}>
-              {canConvert
-                ? "Creates an opportunity, links it to this lead, and carries the lead score across as the model's starting point."
-                : qualified
-                  ? "Set the contact status to Meeting scheduled or Interested first — an opportunity means the customer has agreed to talk."
-                  : "Only qualified leads can become opportunities."}
-            </div>
-            {canConvert && (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginBottom: 8 }}>
-                  <LabelledInput label="Meeting date and time (optional)">
-                    <input type="datetime-local" value={meetingAt} onChange={(e) => setMeetingAt(e.target.value)} style={inputStyle} />
-                  </LabelledInput>
-                  <LabelledInput label="Mode">
-                    <select value={meetingMode} onChange={(e) => setMeetingMode(e.target.value)} style={inputStyle} disabled={!meetingAt}>
-                      {["ONLINE", "ONSITE", "PHONE"].map((m) => (
-                        <option key={m} value={m}>
-                          {m.charAt(0) + m.slice(1).toLowerCase()}
-                        </option>
-                      ))}
-                    </select>
-                  </LabelledInput>
-                </div>
-                <input
-                  value={participants}
-                  onChange={(e) => setParticipants(e.target.value)}
-                  placeholder="Participants (optional)"
-                  disabled={!meetingAt}
-                  style={{ ...inputStyle, marginBottom: 10 }}
-                />
-              </>
-            )}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button
-                label={convert.isPending ? "Converting…" : "Convert to opportunity"}
-                variant="primary"
-                onClick={handleConvert}
-                disabled={!canConvert || convert.isPending}
-              />
-            </div>
-          </>
-        )}
-      </Step>
     </div>
   );
 }
