@@ -56,6 +56,7 @@ public class LeadImportService {
             Map.entry("productQuantity", List.of("productquantity", "quantity", "qty", "units", "unitcount", "noofunits")),
             Map.entry("purchaseTimeline", List.of("purchasetimeline", "timeline", "buyingtimeline", "purchasetime", "timeframe", "whentobuy")),
             Map.entry("sourceChannel", List.of("sourcechannel", "source", "leadsource", "channel")),
+            Map.entry("billingAddress", List.of("billingaddress", "address", "companyaddress", "officeaddress")),
             Map.entry("notes", List.of("notes", "note", "comments", "comment", "description", "remarks"))
     );
 
@@ -182,7 +183,8 @@ public class LeadImportService {
                 "CSV_IMPORT",
                 column(record, headerByField, "notes"),
                 null,
-                null
+                null,
+                column(record, headerByField, "billingAddress")
         );
     }
 

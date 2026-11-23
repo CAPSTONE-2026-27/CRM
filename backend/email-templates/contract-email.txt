@@ -1,0 +1,10 @@
+Hello ${signerName},
+
+Please find attached your ${contractTitle} (${contractNumber}) for review.
+
+Please review the contract and reply to this email to let us know whether you accept it.
+If you have any questions or would like changes, simply reply and we will be happy to help.
+
+Regards,
+${senderName}
+${senderEmail}

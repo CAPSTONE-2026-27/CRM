@@ -71,7 +71,8 @@ class LeadTenantIsolationTest {
         leads = mock(LeadRepository.class);
         users = mock(UserRepository.class);
         ai = mock(AiScoringClient.class);
-        service = new LeadService(leads, users, ai);
+        service = new LeadService(leads, users, ai,
+                mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     // ---- fixtures ---------------------------------------------------------

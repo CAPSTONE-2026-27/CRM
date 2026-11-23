@@ -53,14 +53,23 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  // An empty body is a legitimate success, not a parse failure. 204 says so by
+  // definition; 202 often does too, when the work was accepted rather than
+  // finished and there is nothing yet to describe. Checking the length rather
+  // than the status covers both, and anything else that answers with nothing.
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 

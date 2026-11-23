@@ -425,14 +425,14 @@ export function Field({
         )
       ) : onChange ? (
         <input
-          type={type === "select" ? "text" : type}
+          type={type}
           style={inputStyle}
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
         />
       ) : (
-        <input type={type === "select" ? "text" : type} style={inputStyle} defaultValue={value} placeholder={placeholder} />
+        <input type={type} style={inputStyle} defaultValue={value} placeholder={placeholder} />
       )}
     </div>
   );

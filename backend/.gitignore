@@ -39,3 +39,9 @@ application-local.yml
 
 # Local diagnostic logs
 logs/
+
+### Generated contract and proposal documents (contract.storage.root) ###
+# Customer documents with names, prices and signatories on them. The default
+# store sits inside the working directory, so it is excluded explicitly rather
+# than relying on anyone remembering to move it.
+var/

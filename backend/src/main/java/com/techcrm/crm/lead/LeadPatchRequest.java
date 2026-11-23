@@ -33,6 +33,7 @@ public record LeadPatchRequest(
         BigDecimal estimatedDealValue,
 
         @Size(max = 50) String sourceChannel,
+        @Size(max = 500) String billingAddress,
         @Size(max = 1000) String notes,
         @Size(max = 30) String status,
         @Size(max = 64) String assignedToId,

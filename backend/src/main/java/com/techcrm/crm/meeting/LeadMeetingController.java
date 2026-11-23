@@ -19,9 +19,31 @@ import java.util.List;
 public class LeadMeetingController {
 
     private final LeadMeetingService meetingService;
+    private final MeetingSchedulerBotService schedulerBotService;
 
-    public LeadMeetingController(LeadMeetingService meetingService) {
+    public LeadMeetingController(LeadMeetingService meetingService,
+                                 MeetingSchedulerBotService schedulerBotService) {
         this.meetingService = meetingService;
+        this.schedulerBotService = schedulerBotService;
+    }
+
+    /**
+     * Books a meeting and has the automation invite the lead to it.
+     *
+     * <b>202</b> with where the invitation went. Nothing about the meeting's
+     * outcome is recorded here — this is a meeting that has not happened yet,
+     * and what came of it is saved separately once it has.
+     *
+     * <b>409</b> when the lead has no email address, since there would be
+     * nobody to invite.
+     */
+    @PostMapping("/schedule")
+    public ResponseEntity<MeetingDtos.ScheduleMeetingResponse> schedule(
+            @AuthenticationPrincipal AuthenticatedUser caller,
+            @PathVariable Long leadId,
+            @Valid @RequestBody MeetingDtos.ScheduleMeetingRequest request) {
+
+        return ResponseEntity.accepted().body(schedulerBotService.schedule(caller, leadId, request));
     }
 
     @GetMapping

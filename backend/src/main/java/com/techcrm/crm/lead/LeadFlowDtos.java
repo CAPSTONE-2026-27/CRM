@@ -3,9 +3,7 @@ package com.techcrm.crm.lead;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-import java.time.OffsetDateTime;
-
-/** Request and response shapes for lead flow steps 4-6. */
+/** Request and response shapes for lead flow steps 4-6 and the pipeline board. */
 public final class LeadFlowDtos {
 
     private LeadFlowDtos() {
@@ -21,14 +19,25 @@ public final class LeadFlowDtos {
     ) {
     }
 
-    /** Meeting details are optional: a lead can convert on "Interested" alone
-     *  and have the meeting booked afterwards. Supplying them moves the new
-     *  opportunity straight to the Meeting scheduled stage. */
-    public record ConvertRequest(
-            OffsetDateTime meetingScheduledAt,
-            @Size(max = 20) String meetingMode,
-            String meetingParticipants
+    /**
+     * A person's verdict on whether a lead is worth working.
+     *
+     * The scoring model normally decides this, and does so the moment a lead is
+     * created. This exists for the leads it never reached — a model that was
+     * unavailable leaves the verdict at PENDING, and a lead stuck there is one
+     * nobody can act on.
+     *
+     * @param reason why, in the words of whoever decided. Optional, and kept
+     *        beside the model's own reasoning rather than replacing it.
+     */
+    public record QualifyRequest(
+            boolean qualified,
+            @Size(max = 500) String reason
     ) {
+    }
+
+    /** PROSPECTING | QUALIFICATION | MEETING_SCHEDULED — the board's lead columns. */
+    public record StageRequest(@NotBlank String stage) {
     }
 
     public record ConversionResponse(
@@ -36,7 +45,10 @@ public final class LeadFlowDtos {
             String dealId,
             String opportunityId,
             String accountId,
-            boolean accountCreated
+            boolean accountCreated,
+            /** The deal's primary contact, made from (or matched to) the lead's person. */
+            String contactId,
+            boolean contactCreated
     ) {
     }
 }

@@ -52,7 +52,9 @@ class DealOwnershipScopeTest {
         users = mock(UserRepository.class);
         AccountRepository accounts = mock(AccountRepository.class);
         DealScoringClient scoring = mock(DealScoringClient.class);
-        service = new DealService(deals, accounts, scoring, mock(CustomerOnboardingService.class), users);
+        service = new DealService(deals, accounts, scoring, mock(CustomerOnboardingService.class), users,
+                mock(com.techcrm.crm.contact.ContactRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
 
         when(accounts.findByIdAndOrganizationId(ACCOUNT, ORG)).thenReturn(Optional.of(new Account()));
         when(deals.save(any(Deal.class))).thenAnswer(inv -> {

@@ -37,8 +37,8 @@ public class Deal {
     @Column(name = "expected_close_date")
     private OffsetDateTime expectedCloseDate;
 
-    /** OPPORTUNITY_CREATED | MEETING_SCHEDULED | PROSPECTING | QUALIFICATION |
-     *  PROPOSAL | NEGOTIATION | CLOSED_WON | CLOSED_LOST */
+    /** PROSPECTING | QUALIFICATION | MEETING_SCHEDULED | OPPORTUNITY_CREATED |
+     *  PROPOSAL | NEGOTIATION | CONTRACT | CLOSED_WON | CLOSED_LOST */
     @Column(nullable = false, length = 30)
     private String stage = "PROSPECTING";
 
@@ -49,6 +49,11 @@ public class Deal {
     /** The lead this opportunity was converted from, when it came from one. */
     @Column(name = "lead_id")
     private Long leadId;
+
+    /** The contact this deal is with — who proposals and contracts are
+     *  addressed to. Set on conversion; changeable afterwards (see V31). */
+    @Column(name = "primary_contact_id")
+    private Long primaryContactId;
 
     /* ---- Meeting scheduling (deal flow step 2) ---- */
 
@@ -78,6 +83,47 @@ public class Deal {
 
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
+
+    /* ---- Terms agreed during negotiation (see V27) -----------------------
+     * The agreed price is `value` itself: editing it during negotiation is what
+     * "the final price" means, and the proposal keeps its own frozen line items
+     * so the earlier offer stays auditable. Only the wording of the terms needs
+     * somewhere to live. Null means the configured default applies. */
+
+    @Column(name = "payment_terms", length = 300)
+    private String paymentTerms;
+
+    @Column(name = "delivery_timeline", length = 300)
+    private String deliveryTimeline;
+
+    @Column(name = "terms_agreed_at")
+    private OffsetDateTime termsAgreedAt;
+
+    /* ---- Contract generation (see V18) ----------------------------------
+     * A second axis alongside `stage`, not a value within it: a deal can be in
+     * Negotiation with a contract already out for signature, and folding the two
+     * together would make the pipeline board lie about one or the other.
+     * Mirrored from the deal's live contract; null until one is generated. */
+
+    /** GENERATED | SENT | VIEWED | SIGNED | REJECTED | FAILED | SUPERSEDED */
+    @Column(name = "contract_status", length = 20)
+    private String contractStatus;
+
+    @Column(name = "contract_signed_at")
+    private OffsetDateTime contractSignedAt;
+
+    /* Mirrored from the deal's live proposal; null until one is generated.
+     * A second axis again, and separate from the contract columns because a deal
+     * legitimately has both at once: a signed proposal is what justifies drafting
+     * the contract that follows it. */
+
+    /** GENERATING | DRAFT | SENT_FOR_SIGNATURE | VIEWED | SIGNED | REJECTED
+     *  | FAILED | SUPERSEDED */
+    @Column(name = "proposal_status", length = 30)
+    private String proposalStatus;
+
+    @Column(name = "proposal_signed_at")
+    private OffsetDateTime proposalSignedAt;
 
     /** 0-100 */
     private Integer probability;

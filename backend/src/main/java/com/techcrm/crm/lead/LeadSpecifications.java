@@ -21,6 +21,14 @@ public final class LeadSpecifications {
         return (root, query, cb) -> cb.equal(root.get("assignedToId"), assignedToId);
     }
 
+    public static Specification<Lead> notConverted() {
+        return (root, query, cb) -> cb.isNull(root.get("convertedDealId"));
+    }
+
+    public static Specification<Lead> qualificationStatusNot(String value) {
+        return (root, query, cb) -> cb.notEqual(root.get("qualificationStatus"), value);
+    }
+
     public static Specification<Lead> fullNameContains(String value) {
         return likeField("fullName", value);
     }

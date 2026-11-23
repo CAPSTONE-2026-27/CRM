@@ -21,17 +21,17 @@ import { Profile } from "./screens/Profile";
 import { useAuth } from "./lib/auth";
 import { Toaster } from "sonner";
 
-const screenMeta: Record<ScreenId, { title: string; badge: string }> = {
-  dashboard: { title: "Dashboard", badge: "Overview" },
-  leads: { title: "Lead management", badge: "Module 2" },
-  pipeline: { title: "Sales pipeline", badge: "Module 3" },
-  accounts: { title: "Accounts & contacts", badge: "Module 4" },
-  rpa: { title: "RPA bot control room", badge: "Module 7" },
-  copilot: { title: "Deal coach", badge: "Module 10" },
-  marketing: { title: "Marketing automation", badge: "Module 11" },
-  analytics: { title: "Analytics & reporting", badge: "Module 8" },
-  security: { title: "Security & audit", badge: "Module 10" },
-  profile: { title: "My profile", badge: "Account" },
+const screenMeta: Record<ScreenId, { title: string }> = {
+  dashboard: { title: "Dashboard" },
+  leads: { title: "Lead management" },
+  pipeline: { title: "Sales pipeline" },
+  accounts: { title: "Accounts & contacts" },
+  rpa: { title: "RPA bot control room" },
+  copilot: { title: "Deal coach" },
+  marketing: { title: "Marketing automation" },
+  analytics: { title: "Analytics & reporting" },
+  security: { title: "Security & audit" },
+  profile: { title: "My profile" },
 };
 
 function initials(name: string): string {
@@ -92,7 +92,7 @@ export default function App() {
       case "accounts":
         return <Accounts onNavigate={openWizard} />;
       case "rpa":
-        return <RPA onNavigate={openWizard} />;
+        return <RPA />;
       case "copilot":
         return <Copilot />;
       case "marketing":
@@ -124,7 +124,6 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <Topbar
           title={meta.title}
-          badge={meta.badge}
           onBack={wizard ? closeWizard : undefined}
           userName={user.fullName}
           userEmail={user.email}

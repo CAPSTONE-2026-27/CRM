@@ -8,8 +8,12 @@ import { ParameterViewer } from "./ParameterViewer";
 import { ManagerReviewPanel } from "./ManagerReviewPanel";
 import { useAuth } from "../../lib/auth";
 import {
+  useAccounts,
+  useContacts,
   useDealOnboarding,
+  useDeals,
   useDealWorkspace,
+  useSetPrimaryContact,
   useUpdateDealStage,
   useUpdateOnboarding,
 } from "../../lib/queries";
@@ -36,6 +40,78 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "review", label: "Manager review" },
   { id: "history", label: "History" },
 ];
+
+/**
+ * Who this deal's proposals and contracts are addressed to.
+ *
+ * Shown with the account's billing address because the two are exactly what
+ * proposal and contract generation refuse to run without, so a missing one is
+ * flagged here, before a bot fails on it.
+ */
+export function DocumentRecipient({ dealId }: { dealId: string }) {
+  const { data: deals } = useDeals();
+  const { data: contacts } = useContacts();
+  const { data: accounts } = useAccounts();
+  const setPrimaryContact = useSetPrimaryContact(dealId);
+
+  const deal = (deals ?? []).find((d) => d.id === dealId);
+  if (!deal) return null;
+  const account = (accounts ?? []).find((a) => String(a.id) === String(deal.accountId));
+  const accountContacts = (contacts ?? []).filter((c) => String(c.accountId) === String(deal.accountId));
+  const chosen = accountContacts.find((c) => c.id === deal.primaryContactId);
+
+  const problems: string[] = [];
+  if (account && !account.billingAddress) problems.push("the account has no billing address");
+  if (accountContacts.length === 0) problems.push("the account has no contacts");
+  else if (chosen && !chosen.email) problems.push(`${chosen.fullName} has no email address`);
+  else if (!chosen && !accountContacts.some((c) => c.email)) problems.push("no contact has an email address");
+
+  const label = (c: (typeof accountContacts)[number]) =>
+    `${c.fullName}${c.jobTitle ? ` (${c.jobTitle})` : ""}${c.email ? ` · ${c.email}` : " · no email"}`;
+
+  return (
+    <div style={{ ...panelStyle, marginBottom: 14, padding: "10px 12px", fontSize: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ color: colors.textSecondary }}>Proposals &amp; contracts go to</span>
+        <select
+          value={deal.primaryContactId ?? ""}
+          disabled={setPrimaryContact.isPending || accountContacts.length === 0}
+          onChange={(e) =>
+            setPrimaryContact.mutate(e.target.value || null, {
+              onSuccess: () => toast.success("Recipient updated"),
+              onError: (err) =>
+                toast.error("Couldn't change the recipient", { description: err instanceof Error ? err.message : undefined }),
+            })
+          }
+          style={{
+            border: `0.5px solid ${colors.border}`,
+            borderRadius: 6,
+            padding: "5px 8px",
+            fontSize: 12,
+            background: "#FFFFFF",
+            color: colors.textPrimary,
+            minWidth: 240,
+          }}
+        >
+          <option value="">Account's primary contact (default)</option>
+          {accountContacts.map((c) => (
+            <option key={c.id} value={c.id}>
+              {label(c)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div style={{ color: colors.textSecondary, marginTop: 6 }}>
+        Billing address: <span style={{ color: colors.textPrimary }}>{account?.billingAddress || "—"}</span>
+      </div>
+      {problems.length > 0 && (
+        <div style={{ color: colors.danger, marginTop: 6 }}>
+          Proposals and contracts can't be generated yet: {problems.join("; ")}. Fix it under Accounts → {account?.name ?? "this account"}.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function DealWorkspace({ dealId, onClose }: { dealId: string; onClose: () => void }) {
   const { data: workspace, isLoading } = useDealWorkspace(dealId);
@@ -100,6 +176,8 @@ export function DealWorkspace({ dealId, onClose }: { dealId: string; onClose: ()
             </div>
 
             <ProgressTracker stage={workspace.stage} />
+
+            <DocumentRecipient dealId={dealId} />
 
             {workspace.meetingScheduledAt && (
               <div style={{ ...panelStyle, marginBottom: 14, padding: "10px 12px", fontSize: 12 }}>
@@ -401,7 +479,7 @@ function HistoryTimeline({
 
 /* ------------------------------------------------------------ close + onboarding */
 
-function ClosePanel({
+export function ClosePanel({
   dealId,
   stage,
   closingReason,
