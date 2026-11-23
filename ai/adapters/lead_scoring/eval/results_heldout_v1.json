@@ -1,0 +1,249 @@
+{
+  "set": "heldout",
+  "adapter": "D:\\CRM\\ai\\adapters\\lead_scoring\\weights_v1",
+  "n": 90,
+  "requirement_tier_accuracy": 0.633,
+  "qualification_accuracy": 0.911,
+  "priority_accuracy": 0.911,
+  "score_exact": 0.622,
+  "score_within_5": 0.978,
+  "score_within_10": 1.0,
+  "format_consistent": 0.967,
+  "self_inconsistent_corrected": 0.278,
+  "format_failures": {
+    "bullet_count": 3
+  },
+  "requirement_misses": [
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 25,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 10,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 30,
+      "qualification": "Warm",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 10,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 25,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 10,
+      "predicted": 15,
+      "qualification": "Warm",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Cold",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Cold",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 15,
+      "qualification": "Cold",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 0,
+      "predicted": 5,
+      "qualification": "Cold",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 5,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": null,
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": null,
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    }
+  ]
+}

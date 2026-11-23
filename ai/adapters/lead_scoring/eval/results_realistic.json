@@ -1,0 +1,135 @@
+{
+  "set": "realistic",
+  "adapter": "D:\\CRM\\ai\\adapters\\lead_scoring\\weights",
+  "n": 40,
+  "requirement_tier_accuracy": 0.575,
+  "qualification_accuracy": 0.9,
+  "priority_accuracy": 0.9,
+  "score_exact": 0.575,
+  "score_within_5": 0.975,
+  "score_within_10": 1.0,
+  "format_consistent": 1.0,
+  "self_inconsistent_corrected": 1.0,
+  "format_failures": {},
+  "requirement_misses": [
+    {
+      "id": "REAL-LS-011",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": "REAL-LS-012",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": "REAL-LS-014",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-016",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-017",
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-018",
+      "requirement_points": 10,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-019",
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-020",
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-022",
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-025",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-027",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-029",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-031",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-032",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-036",
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-037",
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-039",
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    }
+  ]
+}

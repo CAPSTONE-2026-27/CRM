@@ -65,7 +65,12 @@ public class SecurityConfig {
                                 "/api/auth/refresh", "/api/auth/logout",
                                 "/actuator/health", "/error",
                                 // The OAuth handshake runs before any CRM token exists.
-                                "/oauth2/**", "/login/oauth2/**"
+                                "/oauth2/**", "/login/oauth2/**",
+                                // Campaign email recipients and the email provider: unsubscribe,
+                                // open/click tracking and the delivery webhook. Each request is
+                                // authenticated by a signed link token or the webhook secret
+                                // (marketing.email.EmailTrackingController).
+                                "/api/marketing/public/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

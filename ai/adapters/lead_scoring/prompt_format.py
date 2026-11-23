@@ -2,10 +2,10 @@
 prompt_format.py
 ================
 Single source of truth for the instruction text, system prompt, and Llama 3.1
-chat template shared by train.py and inference.py.
+chat template shared by train.py, eval/evaluate.py and server/main.py.
 
-Why this module exists: previously train.py and inference.py each hand-wrote
-their own version of the prompt. They had drifted apart — inference.py used a
+Why this module exists: training and inference once each hand-wrote their own
+version of the prompt. They had drifted apart — inference used a
 different system prompt (one that explicitly banned "Recommended Action") and
 dropped the instruction line from the user turn entirely. That mismatch means
 the model was being asked something different at inference time than what it
@@ -23,6 +23,19 @@ INSTRUCTION = (
 
 SYSTEM_PROMPT = (
     "You are an AI CRM Lead Management Assistant.\n\n"
+    "Customer Requirement points come from what the sales executive's note means, "
+    "not its exact words:\n"
+    "- 20: a buying signal - budget approved, ready to sign, order, PO or contract "
+    "requested, vendor being finalised\n"
+    "- 15: a specific, demanding need - integration with ERP, SAP, Tally or another "
+    "system, AI or predictive scoring, workflow automation, approval or routing rules\n"
+    "- 10: a defined, standard need - contacts, lead or pipeline tracking, ticketing, "
+    "dashboards or reports, email campaigns\n"
+    "- 5: exploring - comparing vendors, asking for quotes, prices or a rate card, "
+    "an RFI or tender, surveying the market, still deciding whether to buy at all\n"
+    "- 0: no need stated - a general question, a brochure, curiosity, a student, "
+    "a newsletter sign-up\n"
+    "Asking about price or comparing options is exploring (5), never 0.\n\n"
     "Analyze the lead details and respond ONLY in this exact format. "
     "Do not add greetings, markdown, or any commentary outside the format below.\n\n"
     "Lead Score: <0-100>/100\n\n"
@@ -54,8 +67,8 @@ QUALIFICATION_BY_SCORE = [
 BULLET_POINTS_RE = re.compile(r"contributing (\d+) points")
 
 # Point tiers for the 4 scoring factors that turned out (verified by scanning
-# every (value, points) pair actually used in data/train.jsonl -- see
-# adapters/lead_scoring/data/ground_reasoning.py's docstring) to be deterministic range lookups,
+# every (value, points) pair actually used in data/train.jsonl) to be
+# deterministic range lookups,
 # not judgment calls. Only Customer Requirement requires reading free text,
 # so only its bullet is left to the model. Each tuple is (upper bound
 # inclusive, points); cutoffs sit at the midpoint of the gap between two
@@ -80,6 +93,47 @@ def _tier_points(value: int, tiers) -> int:
         if value <= cutoff:
             return pts
     return tiers[-1][1]
+
+
+# Continuous points for the three numeric factors.
+#
+# The tier lookup above made every factor 0/5/10/15/20, so every Lead Score
+# was a multiple of 5: 21 possible scores, ties between clearly different
+# leads (474 and 1,000 employees both 10), and a 5-point jump one employee
+# past a cutoff. These anchors put each tier's points at the geometric middle
+# of its range (the top and bottom tiers get a representative value), and
+# points are interpolated linearly in log(value) between anchors, clamped to
+# 0-20. A value in the middle of a tier still scores that tier, so averages
+# and the Hot/Warm/Cold mix barely move; values towards a tier's edge now
+# score towards the neighbouring tier instead of jumping to it.
+EMPLOYEES_COUNT_ANCHORS = [(25, 0), (103, 5), (459, 10), (2270, 15), (10_000, 20)]
+PRODUCT_QUANTITY_ANCHORS = [(5, 0), (23, 5), (72, 10), (226, 15), (1_000, 20)]
+DEAL_VALUE_ANCHORS = [(50_000, 0), (326_000, 5), (2_264_000, 10), (10_190_000, 15), (40_000_000, 20)]
+
+
+def _fine_points(value: float, anchors) -> int:
+    """Points for `value`, log-interpolated between (value, points) anchors."""
+    import math
+
+    if value <= anchors[0][0]:
+        return anchors[0][1]
+    for (lo_v, lo_p), (hi_v, hi_p) in zip(anchors, anchors[1:]):
+        if value <= hi_v:
+            share = math.log(value / lo_v) / math.log(hi_v / lo_v)
+            return int(round(lo_p + share * (hi_p - lo_p)))
+    return anchors[-1][1]
+
+
+def employees_points(value: int) -> int:
+    return _fine_points(value, EMPLOYEES_COUNT_ANCHORS)
+
+
+def quantity_points(value: int) -> int:
+    return _fine_points(value, PRODUCT_QUANTITY_ANCHORS)
+
+
+def deal_value_points(value: int) -> int:
+    return _fine_points(value, DEAL_VALUE_ANCHORS)
 
 
 def _employees_bullet(value: int, pts: int) -> str:
@@ -173,6 +227,9 @@ CUSTOMER_REQUIREMENT_TIERS = {
 }
 
 
+REQUIREMENT_TIERS = (0, 5, 10, 15, 20)
+
+
 def _requirement_points(raw: str) -> "int | None":
     for template, pts in CUSTOMER_REQUIREMENT_TIERS.items():
         if raw.startswith(template):
@@ -214,16 +271,16 @@ def _corrected_bullet_text(bullet: str, fields: dict) -> str:
     try:
         if bullet.startswith("Employees Count"):
             value = int(fields["Employees Count"])
-            return _employees_bullet(value, _tier_points(value, EMPLOYEES_COUNT_TIERS))
+            return _employees_bullet(value, employees_points(value))
         if bullet.startswith("Product Quantity"):
             value = int(fields["Product Quantity"])
-            return _quantity_bullet(value, _tier_points(value, PRODUCT_QUANTITY_TIERS))
+            return _quantity_bullet(value, quantity_points(value))
         if bullet.startswith("Deal Value"):
             raw = fields["Deal Value"]
             digits = re.sub(r"[^0-9]", "", raw)
             if not digits:
                 return bullet
-            return _deal_value_bullet(raw, _tier_points(int(digits), DEAL_VALUE_TIERS))
+            return _deal_value_bullet(raw, deal_value_points(int(digits)))
         if bullet.startswith("Purchase Timeline"):
             raw = fields["Purchase Timeline"]
             if raw not in TIMELINE_POINTS:
@@ -232,9 +289,19 @@ def _corrected_bullet_text(bullet: str, fields: dict) -> str:
         if bullet.startswith("Customer Requirement"):
             raw = fields["Customer Requirement"]
             pts = _requirement_points(raw)
-            if pts is None:
-                return bullet  # doesn't match a known template; trust the model
-            return _requirement_bullet(raw, pts)
+            if pts is not None:
+                return _requirement_bullet(raw, pts)
+            # Free text: the tier is the model's judgement, but it must be a
+            # tier. The retrained adapter still wrote "contributing 25 points"
+            # on 2 of 40 hand-written leads, which inflates the total past
+            # anything the data allows; snap to the nearest of 0/5/10/15/20.
+            stated = BULLET_POINTS_RE.search(bullet)
+            if stated is None:
+                return bullet
+            model_pts = int(stated.group(1))
+            if model_pts in REQUIREMENT_TIERS:
+                return bullet  # a valid tier; trust the model's reading
+            return _requirement_bullet(raw, min(REQUIREMENT_TIERS, key=lambda t: abs(t - model_pts)))
     except (KeyError, ValueError):
         return bullet
     return bullet  # unrecognized bullet
@@ -291,6 +358,41 @@ def build_user_turn(lead_input: str) -> str:
     """Combine the fixed instruction with the lead's input fields, exactly
     as every row in train.jsonl does."""
     return f"{INSTRUCTION}\n\n{lead_input}"
+
+
+# The same bytes as build_llama3_prompt(), as a tokenizer chat template, so
+# train.py can hand SFTTrainer conversational rows and use assistant_only_loss.
+# {% generation %} marks the span that carries loss. Without it the first
+# adapter was trained on the whole sequence -- the ~150-token system prompt and
+# the lead profile it was handed included -- so most of the gradient went to
+# reproducing input. Guarded by tests/test_lead_scoring_rules.py.
+CHAT_TEMPLATE = (
+    "{{- bos_token }}"
+    "{%- for message in messages %}"
+    "{%- if message['role'] == 'assistant' %}"
+    "{{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
+    "{%- generation %}"
+    "{{- message['content'] + '<|eot_id|>' }}"
+    "{%- endgeneration %}"
+    "{%- else %}"
+    "{{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' "
+    "+ message['content'] + '<|eot_id|>' }}"
+    "{%- endif %}"
+    "{%- endfor %}"
+    "{%- if add_generation_prompt %}"
+    "{{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
+    "{%- endif %}"
+)
+
+
+def build_messages(lead_input: str, output: str = None) -> list:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": build_user_turn(lead_input.strip())},
+    ]
+    if output is not None:
+        messages.append({"role": "assistant", "content": output.strip()})
+    return messages
 
 
 def build_llama3_prompt(system: str, user: str, assistant: str = "") -> str:

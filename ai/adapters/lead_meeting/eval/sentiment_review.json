@@ -34,7 +34,7 @@
     },
     "MTG-00063": {
       "customer_sentiment": "Positive",
-      "dataset_label": "Negative"
+      "dataset_label": "Positive"
     },
     "MTG-00085": {
       "customer_sentiment": "Neutral",
@@ -54,7 +54,7 @@
     },
     "MTG-00153": {
       "customer_sentiment": "Neutral",
-      "dataset_label": "Positive"
+      "dataset_label": "Neutral"
     },
     "MTG-00157": {
       "customer_sentiment": "Neutral",
@@ -114,7 +114,7 @@
     },
     "MTG-00340": {
       "customer_sentiment": "Neutral",
-      "dataset_label": "Positive"
+      "dataset_label": "Neutral"
     },
     "MTG-00346": {
       "customer_sentiment": "Positive",
@@ -122,7 +122,7 @@
     },
     "MTG-00370": {
       "customer_sentiment": "Positive",
-      "dataset_label": "Neutral"
+      "dataset_label": "Positive"
     },
     "MTG-00373": {
       "customer_sentiment": "Neutral",
@@ -177,5 +177,7 @@
     "MTG-00396",
     "MTG-00470",
     "MTG-00495"
-  ]
+  ],
+  "dataset_corrected_on": "2026-10-15",
+  "dataset_correction": "data/label_fixes.json applied these readings to the dataset, so dataset_label now equals customer_sentiment for every reviewed note. Ambiguous notes MTG-00221, MTG-00361 and MTG-00367 were relabelled Neutral there (engagement wording only); they stay excluded here."
 }

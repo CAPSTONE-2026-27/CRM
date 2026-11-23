@@ -2,6 +2,7 @@ package com.techcrm.crm.dealflow;
 
 import com.techcrm.crm.auth.AuthenticatedUser;
 import com.techcrm.crm.deal.Deal;
+import com.techcrm.crm.deal.DealAccess;
 import com.techcrm.crm.deal.DealRepository;
 import com.techcrm.crm.deal.DealScoringClient;
 import com.techcrm.crm.deal.DealStages;
@@ -486,7 +487,9 @@ public class DealFlowService {
     }
 
     private Deal requireDeal(AuthenticatedUser caller, Long dealId) {
-        Deal deal = dealRepository.findByIdAndOrganizationId(dealId, caller.organizationId())
+        // Same visibility rule as the pipeline board: a rep can only work the
+        // deals they own, so a colleague's workspace is a 404 rather than a leak.
+        Deal deal = DealAccess.findVisible(dealRepository, caller, dealId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deal not found"));
 
         // Older deals predate the opportunity reference; fill it in on first

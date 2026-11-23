@@ -1,0 +1,81 @@
+{
+  "set": "realistic",
+  "adapter": "D:\\CRM\\ai\\adapters\\deal_state\\weights",
+  "scored_as": "served (derived fields recomputed)",
+  "n": 24,
+  "json_valid": 1.0,
+  "scoreable_zero_repairs": 1.0,
+  "exact_state_all_17": 0.833,
+  "changed_recall": 0.938,
+  "unchanged_precision": 0.997,
+  "field_accuracy": {
+    "total_meetings": 1.0,
+    "lead_score": 0.875,
+    "customer_sentiment": 1.0,
+    "buying_intent": 0.958,
+    "relationship_strength": 1.0,
+    "budget_status": 1.0,
+    "decision_maker_involvement": 1.0,
+    "customer_urgency": 0.958,
+    "main_objections": 0.958,
+    "product_interest_level": 1.0,
+    "meeting_outcome": 1.0,
+    "customer_requirements": 0.958,
+    "risk_factors": 1.0,
+    "competitor_mention": 1.0,
+    "engagement_score": 1.0,
+    "implementation_readiness": 1.0,
+    "upsell_opportunity": 1.0
+  },
+  "no_json_rows": [],
+  "misses": [
+    {
+      "id": "REAL-DS-005",
+      "wrong": {
+        "lead_score": {
+          "expected": 53,
+          "actual": 63
+        },
+        "buying_intent": {
+          "expected": "Medium",
+          "actual": "High"
+        }
+      }
+    },
+    {
+      "id": "REAL-DS-007",
+      "wrong": {
+        "lead_score": {
+          "expected": 51,
+          "actual": 47
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        }
+      }
+    },
+    {
+      "id": "REAL-DS-011",
+      "wrong": {
+        "lead_score": {
+          "expected": 80,
+          "actual": 84
+        },
+        "main_objections": {
+          "expected": "Price Too High; Unfavorable Contract Terms",
+          "actual": "Price Too High"
+        }
+      }
+    },
+    {
+      "id": "REAL-DS-013",
+      "wrong": {
+        "customer_requirements": {
+          "expected": "Multi-department Rollout",
+          "actual": "Standard Package"
+        }
+      }
+    }
+  ]
+}

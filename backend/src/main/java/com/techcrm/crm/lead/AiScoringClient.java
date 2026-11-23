@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.techcrm.crm.ai.AiChatClient;
 import com.techcrm.crm.ai.AiChatClient.ChatMessage;
 import com.techcrm.crm.ai.AiJson;
+import com.techcrm.crm.ai.AiTask;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -43,7 +44,7 @@ public class AiScoringClient {
     }
 
     public AiScoreResult score(Lead lead) {
-        String reply = chatClient.complete(List.of(
+        String reply = chatClient.complete(AiTask.LEAD_SCORING, List.of(
                 ChatMessage.system(SYSTEM_PROMPT),
                 ChatMessage.user(describe(lead))));
 

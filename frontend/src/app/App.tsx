@@ -9,15 +9,13 @@ import {
   Leads,
   Pipeline,
   Accounts,
-  Cases,
-  Workflow,
   RPA,
   Copilot,
-  Marketing,
   Analytics,
   Security,
 } from "./screens/MainScreens";
 import { Wizard, WizardId, wizardMeta } from "./screens/Wizards";
+import { MarketingAutomation } from "./modules/marketing";
 import { AuthScreen, ForceChangePasswordScreen } from "./screens/Auth";
 import { Profile } from "./screens/Profile";
 import { useAuth } from "./lib/auth";
@@ -28,8 +26,6 @@ const screenMeta: Record<ScreenId, { title: string; badge: string }> = {
   leads: { title: "Lead management", badge: "Module 2" },
   pipeline: { title: "Sales pipeline", badge: "Module 3" },
   accounts: { title: "Accounts & contacts", badge: "Module 4" },
-  cases: { title: "Cases & tickets", badge: "Module 5 & 6" },
-  workflow: { title: "Workflow engine", badge: "Module 9" },
   rpa: { title: "RPA bot control room", badge: "Module 7" },
   copilot: { title: "Deal coach", badge: "Module 10" },
   marketing: { title: "Marketing automation", badge: "Module 11" },
@@ -95,16 +91,12 @@ export default function App() {
         return <Pipeline onNavigate={openWizard} />;
       case "accounts":
         return <Accounts onNavigate={openWizard} />;
-      case "cases":
-        return <Cases />;
-      case "workflow":
-        return <Workflow onNavigate={openWizard} />;
       case "rpa":
         return <RPA onNavigate={openWizard} />;
       case "copilot":
         return <Copilot />;
       case "marketing":
-        return <Marketing onNavigate={openWizard} />;
+        return <MarketingAutomation />;
       case "analytics":
         return <Analytics />;
       case "security":

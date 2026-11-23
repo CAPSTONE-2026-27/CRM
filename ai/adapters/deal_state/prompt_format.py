@@ -257,7 +257,8 @@ def build_user_turn(previous_state: dict, meeting_notes: str) -> str:
 
 # Llama 3.1 Instruct chat format, with two deliberate departures from the
 # tokenizer's stock template. Assigned to the tokenizer by BOTH train.py and
-# serve.py, so training and inference provably render the same string.
+# eval/evaluate.py; server/main.py hand-builds the identical string with
+# build_llama3_prompt(), so training and inference render the same prompt.
 #
 # 1. `{% generation %}` markers around the assistant turn. TRL's
 #    assistant_only_loss needs them to build a mask of which tokens are the

@@ -1,0 +1,18 @@
+{
+  "label": "base",
+  "heldout_rows": 102,
+  "minutes": 16.6,
+  "lead_evaluation": {
+    "n": 70,
+    "valid": 0.986,
+    "eligibility_accuracy": 0.855,
+    "rule_guard_would_fire": 0.014,
+    "score_mae": 15.087
+  },
+  "content_generation": {
+    "n": 32,
+    "valid_first_attempt": 1.0,
+    "channel_valid": 1.0,
+    "rejection_reasons": {}
+  }
+}

@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./apiClient";
+import { api, streamCopilotChat, type CopilotMessage } from "./apiClient";
 import type {
   Account,
   AuditLogEntry,
   Campaign,
-  CaseRow,
+  CoachConversation,
+  CoachHistoryMessage,
+  CoachStatus,
   Contact,
   ContactStatus,
   CustomerOnboarding,
@@ -19,12 +21,10 @@ import type {
   MeetingAnalysis,
   MeetingOutputDetail,
   PagedResponse,
-  ReportingSummary,
   RpaBot,
   RpaBotRun,
   SecuritySummary,
   UserRow,
-  WorkflowDefinition,
 } from "./types";
 
 function toQueryString(params: Record<string, string | number | undefined | null>): string {
@@ -204,6 +204,162 @@ export const useContacts = () => useList<Contact>("contacts", "/contacts");
 export const useCreateContact = () => useCreate<Contact, Partial<Contact>>("contacts", "/contacts");
 
 export const useDeals = () => useList<Deal>("deals", "/deals");
+
+// Polled lazily: the answer only changes when someone starts or stops Ollama.
+export const useCoachStatus = () =>
+  useQuery({ queryKey: ["coach-status"], queryFn: () => api.get<CoachStatus>("/copilot/status"), staleTime: 30_000 });
+
+/* ---- Deal coach conversations -------------------------------------------
+ * Everything lives in the app-wide query cache rather than in the chat
+ * screen's state, so leaving the screen loses nothing: a stream keeps writing
+ * into the cache while the user is elsewhere, and the screen shows the current
+ * state when it mounts again. The server holds the durable copy for reloads and
+ * other devices.
+ *
+ * Keys are scoped by user id, so a second account signing in on the same tab
+ * never sees the first one's chats:
+ *   ["coach-conversations", user]        the "Past chats" list
+ *   ["coach-chat", user, id | "new"]     one conversation ("new" = not yet saved)
+ *   ["coach-active", user]               which conversation is open */
+
+export type CoachChatMessage = CopilotMessage & { createdAt?: string };
+export type CoachChat = { messages: CoachChatMessage[]; streaming: boolean };
+
+const EMPTY_CHAT: CoachChat = { messages: [], streaming: false };
+const NEW_CHAT = "new";
+
+// A question with no answer yet is treated as "still being answered" for this
+// long after it was asked — longer than the backend's 180s stream timeout, so a
+// reply that is merely slow isn't written off, and a failed one stops polling.
+const COACH_PENDING_WINDOW_MS = 200_000;
+
+type UserId = string | number | undefined;
+const uid = (userId: UserId) => String(userId ?? "anonymous");
+const conversationsKey = (userId: UserId) => ["coach-conversations", uid(userId)];
+const chatKey = (userId: UserId, conversationId: string | null) => ["coach-chat", uid(userId), conversationId ?? NEW_CHAT];
+const activeKey = (userId: UserId) => ["coach-active", uid(userId)];
+
+/** A saved question whose answer is still being generated server-side. */
+export function awaitingSavedAnswer(chat: CoachChat | undefined): boolean {
+  if (!chat || chat.streaming) return false;
+  const last = chat.messages[chat.messages.length - 1];
+  if (!last || last.role !== "user" || !last.createdAt) return false;
+  return Date.now() - new Date(last.createdAt).getTime() < COACH_PENDING_WINDOW_MS;
+}
+
+export function useCoachConversations(userId: UserId) {
+  return useQuery({
+    queryKey: conversationsKey(userId),
+    enabled: userId != null,
+    queryFn: () => api.get<CoachConversation[]>("/copilot/conversations"),
+  });
+}
+
+/** The open conversation's id (null = a new, unsaved chat) and a setter. */
+export function useActiveCoachConversation(userId: UserId): [string | null, (id: string | null) => void] {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: activeKey(userId),
+    queryFn: () => null as string | null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  return [data ?? null, (id) => { qc.setQueryData<string | null>(activeKey(userId), id); }];
+}
+
+export function useCoachChat(userId: UserId, conversationId: string | null) {
+  return useQuery({
+    queryKey: chatKey(userId, conversationId),
+    enabled: userId != null,
+    queryFn: async (): Promise<CoachChat> => {
+      if (conversationId == null) return EMPTY_CHAT;
+      const saved = await api.get<CoachHistoryMessage[]>(`/copilot/conversations/${conversationId}/messages`);
+      return {
+        messages: saved.map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt })),
+        streaming: false,
+      };
+    },
+    // Fetched once per session; after that the cache is the live copy and a
+    // background refetch would overwrite an answer that is still streaming in.
+    staleTime: Infinity,
+    gcTime: Infinity,
+    // After a reload mid-answer, the question is saved but the reply isn't
+    // yet — poll until the backend finishes and stores it.
+    refetchInterval: (query) => (awaitingSavedAnswer(query.state.data) ? 3_000 : false),
+  });
+}
+
+export function useSendCoachMessage(userId: UserId) {
+  const qc = useQueryClient();
+
+  return async (conversationId: string | null, text: string): Promise<{ failed: boolean }> => {
+    // Where this answer is written. Starts as the open chat; a new chat moves
+    // to its real id once the server has saved it (onConversation below).
+    let key = chatKey(userId, conversationId);
+    const update = (fn: (chat: CoachChat) => CoachChat) =>
+      qc.setQueryData<CoachChat>(key, (chat) => fn(chat ?? EMPTY_CHAT));
+    const replaceLast = (fn: (content: string) => string) =>
+      update((chat) => {
+        const messages = [...chat.messages];
+        const last = messages[messages.length - 1];
+        messages[messages.length - 1] = { ...last, content: fn(last.content) };
+        return { ...chat, messages };
+      });
+
+    const current = qc.getQueryData<CoachChat>(key);
+    if (current?.streaming) return { failed: false };
+    const history = [...(current?.messages ?? []), { role: "user" as const, content: text }];
+    let failed = false;
+
+    update(() => ({ messages: [...history, { role: "assistant", content: "" }], streaming: true }));
+
+    await streamCopilotChat(
+      // Only role and content go to the server; timestamps are display state.
+      { conversationId, messages: history.map(({ role, content }) => ({ role, content })) },
+      {
+        onConversation: (savedId) => {
+          if (conversationId == null) {
+            const draft = qc.getQueryData<CoachChat>(key);
+            const savedKey = chatKey(userId, savedId);
+            qc.setQueryData(savedKey, draft);
+            qc.setQueryData(key, EMPTY_CHAT);
+            key = savedKey;
+            // Follow the new chat — unless the user has already opened another.
+            if (qc.getQueryData(activeKey(userId)) == null) qc.setQueryData(activeKey(userId), savedId);
+          }
+          qc.invalidateQueries({ queryKey: conversationsKey(userId) });
+        },
+        onDelta: (delta) => replaceLast((content) => content + delta),
+        onError: (message) => {
+          failed = true;
+          replaceLast(() => message);
+        },
+        onDone: () => undefined,
+      }
+    ).catch(() => {
+      failed = true;
+      replaceLast(() => "The assistant is unavailable right now. Please try again.");
+    });
+
+    update((chat) => ({ ...chat, streaming: false }));
+    // Reorders the list: this chat is now the most recent.
+    qc.invalidateQueries({ queryKey: conversationsKey(userId) });
+    return { failed };
+  };
+}
+
+export function useDeleteCoachConversation(userId: UserId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) => api.delete<void>(`/copilot/conversations/${conversationId}`),
+    onSuccess: (_data, conversationId) => {
+      qc.removeQueries({ queryKey: chatKey(userId, conversationId) });
+      if (qc.getQueryData(activeKey(userId)) === conversationId) qc.setQueryData(activeKey(userId), null);
+      qc.invalidateQueries({ queryKey: conversationsKey(userId) });
+    },
+  });
+}
+
 export const useCreateDeal = () => useCreate<Deal, Record<string, unknown>>("deals", "/deals");
 export function useUpdateDealStage() {
   const qc = useQueryClient();
@@ -360,9 +516,6 @@ export function useUpdateOnboarding(dealId: string) {
   });
 }
 
-export const useCases = () => useList<CaseRow>("cases", "/cases");
-export const useCreateCase = () => useCreate<CaseRow, Partial<CaseRow>>("cases", "/cases");
-
 export const useCampaigns = () => useList<Campaign>("campaigns", "/campaigns");
 export const useCreateCampaign = () => useCreate<Campaign, Record<string, unknown>>("campaigns", "/campaigns");
 
@@ -416,19 +569,8 @@ export function useDeployRpaBot() {
 
 export const useRpaBotRuns = () => useList<RpaBotRun>("rpa-bot-runs", "/rpa-bot-runs");
 
-export const useWorkflows = () => useList<WorkflowDefinition>("workflows", "/workflows");
-export const useCreateWorkflow = () => useCreate<WorkflowDefinition, Record<string, unknown>>("workflows", "/workflows");
-export function useActivateWorkflow() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.post<WorkflowDefinition>(`/workflows/${id}/activate`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows"] }),
-  });
-}
-
 export const useAuditLog = () =>
   useQuery({ queryKey: ["audit-log"], queryFn: () => api.get<PagedResponse<AuditLogEntry>>("/audit-log?size=20") });
 
 export const useDashboardSummary = () => useQuery({ queryKey: ["analytics", "dashboard"], queryFn: () => api.get<DashboardSummary>("/analytics/dashboard") });
-export const useReportingSummary = () => useQuery({ queryKey: ["analytics", "reporting"], queryFn: () => api.get<ReportingSummary>("/analytics/reporting") });
 export const useSecuritySummary = () => useQuery({ queryKey: ["analytics", "security"], queryFn: () => api.get<SecuritySummary>("/analytics/security") });

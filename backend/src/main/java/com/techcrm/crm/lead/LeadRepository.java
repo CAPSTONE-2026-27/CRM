@@ -16,6 +16,11 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
 
     long countByAssignedToId(Long assignedToId);
 
+    // The home dashboard's "Recent leads" card — five rows, fetched as five.
+    List<Lead> findTop5ByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
+
+    List<Lead> findTop5ByOrganizationIdAndAssignedToIdOrderByCreatedAtDesc(Long organizationId, Long assignedToId);
+
     // Narrow candidate sets for duplicate detection — the actual
     // name+email+company comparison (with null-safe equality) happens in
     // LeadService, since a DB-level "= NULL" match can't express "both

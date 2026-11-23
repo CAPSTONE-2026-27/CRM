@@ -27,7 +27,7 @@ from adapters.lead_meeting import prompt_format as meeting_fmt  # noqa: E402
 REVIEW = json.loads((MEETING_DIR / "eval" / "sentiment_review.json").read_text(encoding="utf-8"))
 DATASET = {
     row["meeting_id"]: row
-    for row in map(json.loads, (MEETING_DIR / "data" / "meeting_train.jsonl").open(encoding="utf-8"))
+    for row in map(json.loads, (MEETING_DIR / "data" / "train.jsonl").open(encoding="utf-8"))
 }
 
 
@@ -80,7 +80,7 @@ def test_review_covers_exactly_the_held_out_split():
     datasets = pytest.importorskip("datasets")
 
     dataset = datasets.load_dataset(
-        "json", data_files=str(MEETING_DIR / "data" / "meeting_train.jsonl"), split="train"
+        "json", data_files=str(MEETING_DIR / "data" / "train.jsonl"), split="train"
     ).filter(_is_valid)
     split = dataset.train_test_split(
         test_size=_train_constant("EVAL_FRACTION"), seed=_train_constant("SEED"), shuffle=True)

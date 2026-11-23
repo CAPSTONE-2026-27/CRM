@@ -4,8 +4,6 @@ import {
   UserPlus,
   BarChart3,
   Building2,
-  Ticket,
-  GitBranch,
   Bot,
   Brain,
   Megaphone,
@@ -18,8 +16,6 @@ export type ScreenId =
   | "leads"
   | "pipeline"
   | "accounts"
-  | "cases"
-  | "workflow"
   | "rpa"
   | "copilot"
   | "marketing"
@@ -37,8 +33,6 @@ const SCREEN_PERMISSION: Partial<Record<ScreenId, string>> = {
   leads: "leads",
   pipeline: "pipeline",
   accounts: "accounts",
-  cases: "cases",
-  workflow: "workflow",
   rpa: "rpa",
   copilot: "copilot",
   marketing: "marketing",
@@ -58,10 +52,10 @@ export const PERMISSION_CATALOG: { key: string; label: string }[] = [
   { key: "leads", label: "Lead management" },
   { key: "pipeline", label: "Sales pipeline" },
   { key: "accounts", label: "Accounts & contacts" },
-  { key: "cases", label: "Cases & tickets" },
-  { key: "workflow", label: "Workflow engine" },
   { key: "rpa", label: "RPA bots" },
   { key: "marketing", label: "Marketing automation" },
+  // Marketing Head: approve AI-scored leads and generated content, launch campaigns.
+  { key: "marketing_approve", label: "Marketing approvals (Marketing Head)" },
   { key: "analytics", label: "Analytics & reporting" },
   { key: "security", label: "Security & audit" },
   { key: "copilot", label: "Deal coach" },
@@ -72,8 +66,8 @@ export const PERMISSION_CATALOG: { key: string; label: string }[] = [
 export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   ADMIN: PERMISSION_CATALOG.map((p) => p.key),
   MANAGER: PERMISSION_CATALOG.map((p) => p.key),
-  SALES_REP: ["leads", "pipeline", "accounts", "copilot"],
-  SUPPORT_AGENT: ["cases", "copilot"],
+  SALES_REP: ["leads", "pipeline", "accounts", "analytics", "copilot"],
+  SUPPORT_AGENT: ["analytics", "copilot"],
   MARKETING: ["marketing", "analytics", "copilot"],
 };
 
@@ -92,13 +86,6 @@ const sections: {
       { icon: UserPlus, label: "Lead management", screen: "leads" },
       { icon: BarChart3, label: "Sales pipeline", screen: "pipeline" },
       { icon: Building2, label: "Accounts", screen: "accounts" },
-    ],
-  },
-  {
-    label: "Service",
-    items: [
-      { icon: Ticket, label: "Cases & tickets", screen: "cases" },
-      { icon: GitBranch, label: "Workflow engine", screen: "workflow" },
     ],
   },
   {

@@ -17,9 +17,10 @@ The model **never predicts the deal score**. It produces the feature vector the
 XGBoost regressor consumes. Separate concerns: the LLM reads unstructured text,
 the regressor does the numeric prediction it was trained for.
 
-One of three adapters under [`ai/adapters/`](..), next to `lead_scoring` (initial
-lead scoring from a lead profile) and `lead_meeting` (qualification-meeting
-extraction). Three tasks, three adapters, one set of base weights.
+One of four adapters under [`ai/adapters/`](..), next to `lead_scoring` (initial
+lead scoring from a lead profile), `lead_meeting` (qualification-meeting
+extraction) and `marketing` (campaign lead evaluation and copy). Four tasks,
+four adapters, one set of base weights.
 
 ## The contract is the hard part
 
@@ -53,7 +54,7 @@ actually present in the training CSV, which only ever held Low/Medium/High.
 ## Serving
 
 There is no separate deal-state server. `ai/server/main.py` loads this adapter
-from `weights/` alongside the other two, onto the same 4-bit base model, and
+from `weights/` alongside the others, onto the same 4-bit base model, and
 serves it on **:8001** — so it costs no extra VRAM.
 
 | | |
@@ -67,21 +68,40 @@ serves it on **:8001** — so it costs no extra VRAM.
 The backend uses it only when `DEAL_STATE_BASE_URL` is set; point it at
 `http://127.0.0.1:8001`.
 
+## Held-out wording
+
+The first dataset had two sentences per value and a random row split, so 72%
+of held-out sentences appeared verbatim in training and the held-out 100% was
+template recall. The generator now:
+
+* writes ~6 phrasings per value and reserves the last third of every list for
+  eval journeys only -- evidence sentences shared between the splits: 0%,
+* splits by journey (every tenth deal is held out whole), recorded in a
+  `split` column that `train.py` and `eval/evaluate.py` honour,
+* mixes prose, dash bullets and "Mtg notes:" headers, with small talk that
+  changes nothing.
+
+`eval/realistic.jsonl` holds 24 hand-written meetings in rep shorthand, each
+with a previous state and the state it should produce, including multi-step
+jumps and no-change traps. Training is 3.5 epochs (the 5-epoch run peaked at
+3.33) with early stopping, patience 2.
+
 ## Layout
 
 ```
 prompt_format.py               vocabulary, prompt, coerce_state(), version
 train.py                       QLoRA fine-tune -> weights/
-data/generate_dataset.py       synthetic journey generator
+data/generate_dataset.py       synthetic journey generator (train/eval phrasings, journey split)
 data/check_lengths.py          truncation guard
-data/train.jsonl               generated dataset (committed, 800 rows)
-eval/evaluate.py               held-out field accuracy, changed-field recall
+data/train.jsonl               generated dataset (committed, 900 rows)
+eval/evaluate.py               field accuracy, changed-field recall -> eval/results_<set>.json
 eval/evaluate_end_to_end.py    what extraction errors cost in deal-score points
+eval/build_realistic.py        writes eval/realistic.jsonl (24 hand-written meetings)
 weights/                       trained adapter (gitignored)
 logs/                          training logs (gitignored)
 ```
 
-Tests live in `ai/tests/test_contract.py`.
+Tests live in `ai/tests/test_contract.py` and `ai/tests/test_retrain_data.py`.
 
 ## Usage
 
@@ -89,23 +109,26 @@ Run from `ai/`, with `requirements-train.txt` installed:
 
 ```bash
 # 1. Generate, validating every target against the real scorer
-python adapters/deal_state/data/generate_dataset.py --rows 800 --validate
+python adapters/deal_state/data/generate_dataset.py --rows 900 --validate
 
 # 2. Confirm nothing truncates
 python adapters/deal_state/data/check_lengths.py
 
-# 3. Train (needs the GPU free — stop server/main.py first)
+# 3. Train — stops server/main.py, trains, restarts it (the two don't fit in 16GB together)
+python tools/train_offline.py deal_state
+# or, with the server already stopped:
 python adapters/deal_state/train.py
 
 # 4. Evaluate
-python adapters/deal_state/eval/evaluate.py
+python adapters/deal_state/eval/evaluate.py                    # held-out journeys
+python adapters/deal_state/eval/evaluate.py --set realistic    # hand-written meetings
 python adapters/deal_state/eval/evaluate_end_to_end.py --limit 30
 
-# 5. Serve (all three adapters)
+# 5. Serve (all adapters)
 python server/main.py            # :8001
 
 # Tests (live-bundle tests skip cleanly without xgboost installed)
-python -m pytest tests/test_contract.py -v
+python -m pytest tests/test_contract.py tests/test_retrain_data.py -v
 ```
 
 ## API
@@ -193,7 +216,7 @@ almost none above 70 — the model would learn that high scores barely exist.
 ## Environment
 
 The base weights live in `ai/base-model/Llama-3.1-8B-Instruct` and are shared by
-all three adapters; set `CRM_BASE_MODEL` to train against a copy elsewhere. This
+all four adapters; set `CRM_BASE_MODEL` to train against a copy elsewhere. This
 adapter trains into `weights/` and logs into `logs/`.
 
 `ai/requirements-train.txt` notes one unresolved issue: `xgboost/requirements.txt`

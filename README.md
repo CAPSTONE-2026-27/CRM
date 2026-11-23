@@ -10,9 +10,9 @@ lead scoring and post-meeting analysis driven by an LLM.
 .
 ├── frontend/               React 18 + Vite + TypeScript single-page app
 ├── backend/                Spring Boot REST API (Java 21)
-├── ai/                     Llama 3.1 server + three LoRA adapters
-│   ├── server/             main.py — serves all three adapters from one base model
-│   ├── adapters/           lead_scoring · lead_meeting · deal_state
+├── ai/                     Llama 3.1 server + four LoRA adapters
+│   ├── server/             main.py — serves all four adapters from one base model
+│   ├── adapters/           lead_scoring · lead_meeting · deal_state · marketing
 │   ├── base-model/         Llama-3.1-8B-Instruct (not in git)
 │   └── tests/  tools/      test suite · smoke and system tests
 ├── xgboost/                Deal-score regressor
@@ -25,6 +25,7 @@ lead scoring and post-meeting analysis driven by an LLM.
 | [`backend/`](backend/) | Spring Boot 4, JPA, Flyway, Spring Security | `http://localhost:8080` |
 | [`xgboost/`](xgboost/) | Python, XGBoost, FastAPI | `http://127.0.0.1:8000` |
 | [`ai/`](ai/) | Python, PyTorch/PEFT, FastAPI | `http://127.0.0.1:8001` |
+| Ollama (deal coach) | Qwen3 4B Instruct | `http://localhost:11434` |
 
 The API serves everything under `/api`, e.g. `http://localhost:8080/api/leads`.
 
@@ -87,7 +88,13 @@ python -m uvicorn serve_api:app --port 8000   # needs xgboost/requirements.txt
 # 5. LLM server (separate terminal; optional — AI features degrade without it)
 cd ai
 python server/main.py                         # :8001, needs ai/server/requirements.txt
+
+# 6. Deal coach model (once; optional — the coach falls back to the :8001 server)
+ollama pull qwen3:4b-instruct                 # Ollama serves it on :11434
 ```
+
+Use the `-instruct` tag for the coach. Plain `qwen3:4b` is the thinking build,
+which writes its reasoning into the reply.
 
 The base model and adapter weights are not in git. Place them at
 `ai/base-model/Llama-3.1-8B-Instruct/` and `ai/adapters/<name>/weights/`; the
@@ -108,6 +115,7 @@ Everything is environment-overridable; local developer values belong in
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL connection |
 | `JWT_ACCESS_SECRET` | Signing key for access tokens |
 | `AI_BASE_URL`, `AI_MODEL_NAME`, `AI_API_KEY` | OpenAI-compatible model endpoint |
+| `AI_COACH_BASE_URL`, `AI_COACH_MODEL` | Deal coach's Ollama server and model (default `qwen3:4b-instruct`) |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | Google sign-in |
 | `MICROSOFT_CLIENT_ID` / `_SECRET`, `MICROSOFT_TENANT_ID` | Microsoft sign-in |
 | `FRONTEND_URL` | Where OAuth returns the browser after sign-in |
@@ -126,6 +134,18 @@ degrade rather than fail.
   hosted API works unchanged by setting the three `AI_*` variables. An
   unreachable model degrades gracefully; it never blocks a user from saving
   their own work.
+- **Deal coach** — Qwen3 4B Instruct on a local Ollama, separate from the Llama
+  server so chat never queues behind lead scoring. Each question carries a
+  snapshot of the caller's own CRM data (a rep sees their own deals and leads,
+  a manager sees the organization's), with totals, forecasts and overdue dates
+  computed in Java rather than by the model. Guardrails live in
+  [`CoachGuardrails`](backend/src/main/java/com/techcrm/crm/ai/coach/CoachGuardrails.java):
+  a prompt-injection pre-filter, bounded history, snapshot sanitising, and a
+  system prompt that keeps the coach on-topic, grounded and read-only.
+- **Pipeline visibility** — `SALES_REP` and `SUPPORT_AGENT` see only the deals
+  they own on the pipeline board, the deal workspace and the coach; `ADMIN` and
+  `MANAGER` see the whole organization. Enforced in
+  [`DealAccess`](backend/src/main/java/com/techcrm/crm/deal/DealAccess.java).
 - **RPA bots** — Spring `@Async` for event- and manually-triggered runs,
   `@Scheduled` for the hourly follow-up sweep. No broker required; see
   `BotExecutionService` for the trade-offs that choice implies.

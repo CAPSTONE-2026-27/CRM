@@ -13,14 +13,16 @@ public final class PermissionDefaults {
 
     private static final List<String> ALL = List.of(
             "leads", "pipeline", "accounts", "cases", "workflow",
-            "rpa", "marketing", "analytics", "security", "copilot"
+            "rpa", "marketing", "marketing_approve", "analytics", "security", "copilot"
     );
 
     private static final Map<Role, List<String>> DEFAULTS = Map.of(
             Role.ADMIN, ALL,
             Role.MANAGER, ALL,
-            Role.SALES_REP, List.of("leads", "pipeline", "accounts", "copilot"),
-            Role.SUPPORT_AGENT, List.of("cases", "copilot"),
+            // Analytics is role-aware server-side (AnalyticsAccess): a rep sees
+            // only their own book, a support agent only support figures.
+            Role.SALES_REP, List.of("leads", "pipeline", "accounts", "analytics", "copilot"),
+            Role.SUPPORT_AGENT, List.of("cases", "analytics", "copilot"),
             Role.MARKETING, List.of("marketing", "analytics", "copilot")
     );
 

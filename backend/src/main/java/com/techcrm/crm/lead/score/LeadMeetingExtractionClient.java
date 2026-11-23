@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.techcrm.crm.ai.AiChatClient;
 import com.techcrm.crm.ai.AiChatClient.ChatMessage;
 import com.techcrm.crm.ai.AiJson;
+import com.techcrm.crm.ai.AiTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +35,7 @@ public class LeadMeetingExtractionClient {
     private static final Logger log = LoggerFactory.getLogger(LeadMeetingExtractionClient.class);
 
     /**
-     * Mirrors meeting_prompt_format.SYSTEM_PROMPT in Llama3_CRM word for word.
+     * Mirrors SYSTEM_PROMPT in ai/adapters/lead_meeting/prompt_format.py word for word.
      *
      * It must: the adapter was fine-tuned against that exact string, and a
      * reworded prompt at inference is a different prompt than the one trained
@@ -75,6 +76,16 @@ public class LeadMeetingExtractionClient {
             further evaluation; Low when they were gathering information only.
             - customer_urgency is High when a date, deadline or compelling event was \
             named; Medium when a rough timeframe was given; Low when none was.
+            - product_interest_level counts how much of the product they want: High when \
+            most of the platform or three or more areas; Medium when the core or two \
+            areas, such as lead management and email automation; Low when one narrow \
+            feature and they dismissed the rest.
+            - customer_sentiment is how the customer reacted to us and our product: \
+            Positive when they were warm, enthusiastic, impressed or complimentary; \
+            Negative when they were sceptical of us, pushed back, or questioned whether \
+            to continue; Neutral when businesslike or reserved, or when the notes \
+            describe no reaction. Frustration with their current system is not \
+            negative sentiment.
 
             Respond with ONLY the JSON object below. No prose, no markdown fences, no \
             explanation, no score.
@@ -139,7 +150,7 @@ public class LeadMeetingExtractionClient {
 
     /** Returns null when the model is unreachable or returned no JSON. */
     public ExtractionResult extract(ExtractionRequest request) {
-        String reply = chatClient.complete(List.of(
+        String reply = chatClient.complete(AiTask.MEETING_EXTRACTION, List.of(
                 ChatMessage.system(SYSTEM_PROMPT),
                 ChatMessage.user(INSTRUCTION + "\n\n" + request.meetingNotes().trim())));
 

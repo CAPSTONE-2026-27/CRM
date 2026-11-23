@@ -82,7 +82,8 @@ class TestLiveBundle:
     """Round-trip every emittable value through the real scorer."""
 
     @pytest.fixture(scope="class")
-    def bundle(self):
+    @classmethod
+    def bundle(cls):
         pytest.importorskip("xgboost", reason="xgboost not installed")
         pytest.importorskip("pandas")
         bundle = _load_bundle()
@@ -278,7 +279,8 @@ class TestGeneratedDataset:
     """
 
     @pytest.fixture(scope="class")
-    def rows(self):
+    @classmethod
+    def rows(cls):
         with TRAIN_JSONL.open(encoding="utf-8") as handle:
             return [json.loads(line) for line in handle]
 

@@ -65,8 +65,9 @@ management:
 #
 # Defaults now target the local fine-tuned model served by
 # Llama3_CRM/scripts/main.py (start it with `python scripts/main.py`). That
-# server routes internally: lead scoring runs through the LoRA adapter, the
-# other three modules run the base Llama 3.1 8B Instruct.
+# server routes internally: lead scoring, meeting extraction and deal state run
+# through their LoRA adapters, deal analysis runs the base Llama 3.1 8B Instruct.
+# The deal coach is served separately — see ai.coach below.
 #
 # Port 8001, not 8000: XgBoost/serve_api.py already owns 8000, and
 # deal-scoring.base-url below points at it.
@@ -88,6 +89,43 @@ ai:
   # tokens of JSON in one reply — at 30s that call times out mid-generation and
   # every deal silently falls through to the heuristic analyser.
   request-timeout-ms: ${AI_REQUEST_TIMEOUT_MS:180000}
+  # The deal coach (Module 10) runs on its own model: Qwen3 4B Instruct served by
+  # Ollama, not the fine-tuned Llama server above. See DealCoachController.
+  #
+  # Setup, once:   ollama pull qwen3:4b-instruct
+  # Ollama listens on 11434 and starts with Windows after install; `ollama serve`
+  # starts it by hand. Llama 8B (4-bit, ~6.5GB) and Qwen 4B (~3.5GB with an 8K
+  # context) fit together on a 16GB card.
+  #
+  # Use the -instruct tag. Plain `qwen3:4b` is now the thinking build: it writes
+  # its reasoning into the reply and ignores think:false, so answers arrive
+  # slowly and prefixed with chain-of-thought.
+  coach:
+    base-url: ${AI_COACH_BASE_URL:http://localhost:11434}
+    model: ${AI_COACH_MODEL:qwen3:4b-instruct}
+    request-timeout-ms: ${AI_COACH_TIMEOUT_MS:120000}
+    # Low: the coach quotes figures from the CRM data block, and sampling hotter
+    # makes a 4B model drift off them.
+    temperature: ${AI_COACH_TEMPERATURE:0.2}
+    # Ollama's default window would truncate the data block from the front,
+    # dropping the system prompt — guardrails first. 8K holds it at its caps
+    # (25 deals, 15 active + 15 converted leads) plus 12 turns of history.
+    context-tokens: ${AI_COACH_CONTEXT_TOKENS:8192}
+    max-output-tokens: ${AI_COACH_MAX_OUTPUT_TOKENS:700}
+    # How long Ollama keeps the model in VRAM between questions. Reloading costs
+    # a few seconds on the first question after it expires.
+    keep-alive: ${AI_COACH_KEEP_ALIVE:30m}
+    # When Ollama is down, send the same grounded prompt to ai.base-url instead
+    # of failing the chat.
+    fallback-to-default: ${AI_COACH_FALLBACK:true}
+    # Answers generate on the coach's own bounded pool, not the common
+    # ForkJoinPool: a generation blocks for up to request-timeout-ms, and the
+    # common pool is core-count sized and shared with every parallel stream in
+    # the app. Ollama serves one or two generations at a time, so queueing past
+    # this tells the user the coach is busy rather than holding a connection open
+    # until it expires.
+    max-concurrent-chats: ${AI_COACH_MAX_CONCURRENT:4}
+    max-queued-chats: ${AI_COACH_MAX_QUEUED:16}
 # The XGBoost deal scorer (XgBoost/serve_api.py). Previously undeclared here and
 # left to the client's own @Value defaults, which made the port invisible to
 # anyone reading this file.
@@ -134,3 +172,34 @@ app:
     # has no per-message tenant signal, so this is a fixed assumption for
     # v1 (one mailbox = one org). Find your org id via GET /api/auth/me.
     organization-id:
+# Marketing Automation email (module 11). All optional: without an SMTP host,
+# a verified sender and a public base URL, campaigns can be prepared and
+# approved but not launched, and the UI shows "configuration required".
+# Put real credentials in application-local.yml or environment variables.
+marketing:
+  email:
+    smtp:
+      host: ${MARKETING_SMTP_HOST:}
+      port: ${MARKETING_SMTP_PORT:587}
+      username: ${MARKETING_SMTP_USERNAME:}
+      password: ${MARKETING_SMTP_PASSWORD:}
+      # STARTTLS (port 587) | SSL (port 465) | NONE (local test servers only)
+      security: ${MARKETING_SMTP_SECURITY:STARTTLS}
+    # Default From address; must be verified with the email provider.
+    from-address: ${MARKETING_EMAIL_FROM:}
+    # Further verified senders campaigns may use: addresses or @domains, comma-separated.
+    verified-senders: ${MARKETING_EMAIL_VERIFIED_SENDERS:}
+    # Public URL of this backend as recipients reach it, e.g. https://crm.example.com.
+    # Required: every email carries an unsubscribe link served from here.
+    public-base-url: ${MARKETING_PUBLIC_BASE_URL:}
+    # Signs unsubscribe/tracking links; defaults to the JWT access secret.
+    link-secret: ${MARKETING_LINK_SECRET:${app.jwt.access-secret}}
+    # Enables POST /api/marketing/public/webhooks/email (header X-Marketing-Webhook-Secret).
+    webhook-secret: ${MARKETING_WEBHOOK_SECRET:}
+    # Sender's postal address for the email footer (required by anti-spam law in many countries).
+    postal-address: ${MARKETING_POSTAL_ADDRESS:}
+    tracking-enabled: ${MARKETING_EMAIL_TRACKING:true}
+    max-attempts: 3
+  delivery:
+    # Emails sent per campaign per dispatcher tick (every 15 s): 50 = up to 200/min.
+    batch-size: ${MARKETING_EMAIL_BATCH_SIZE:50}

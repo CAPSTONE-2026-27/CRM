@@ -23,6 +23,11 @@ datasets==5.0.0
 # not fit a 16GB card alongside optimizer state and activations.
 bitsandbytes==0.49.2
 
+# --- marketing retraining loop ----------------------------------------------
+# adapters/marketing/data/collect_feedback.py reads review decisions from the
+# CRM's PostgreSQL database (tools/retrain.py runs it weekly).
+psycopg[binary]==3.3.4
+
 # --- contract validation against the XGBoost deal scorer --------------------
 # Needed only by the deal-state contract tests (TestLiveBundle),
 # adapters/deal_state/data/generate_dataset.py --validate and
