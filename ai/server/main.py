@@ -11,7 +11,7 @@ speaking that same wire format from this machine. No Java changes.
 
 Two models' worth of behaviour out of one set of weights
 -------------------------------------------------------
-The fine-tuned LoRA in ``outputs/lead_management_llama3_lora`` was trained on
+The fine-tuned LoRA in ``adapters/lead_scoring/weights`` was trained on
 500 examples of exactly one task — lead scoring — emitting a fixed *plain text*
 format ("Lead Score: 85/100 / Qualification: Hot / • five bullets"). It has
 never seen meeting analysis, 14-parameter deal extraction, or open-ended chat,
@@ -39,8 +39,8 @@ Endpoints
   GET  /health                Readiness, including whether weights are loaded.
 
 Run:
-    python scripts/main.py
-    # or: uvicorn scripts.main:app --host 0.0.0.0 --port 8000
+    python server/main.py            # from ai/
+    # or: uvicorn server.main:app --host 0.0.0.0 --port 8001
 """
 
 from __future__ import annotations
@@ -54,12 +54,12 @@ import threading
 import time
 import traceback
 import uuid
-from contextlib import asynccontextmanager, contextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Iterator, List, Optional
 
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from transformers import (
@@ -99,23 +99,23 @@ ADAPTER_PATH = Path(
     os.getenv("CRM_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_scoring" / "weights")
 )
 
-# The qualification-meeting extraction adapter (scripts/train_meeting.py).
+# The qualification-meeting extraction adapter (adapters/lead_meeting/train.py).
 # Separate from the capture-time scorer above: different task, different
 # training data, independently retrainable. Both attach to one base model.
 MEETING_ADAPTER_PATH = Path(
     os.getenv("CRM_MEETING_ADAPTER_PATH", AI_ROOT / "adapters" / "lead_meeting" / "weights")
 )
 
-# The deal-state adapter, trained in ../DealIntelligence_CRM. Third adapter on
+# The deal-state adapter (adapters/deal_state/train.py). Third adapter on
 # the same base weights: a LoRA is ~160MB of low-rank deltas against a ~6.5GB
 # quantised base, so attaching it here costs almost nothing, while running its
 # own server would mean a second full copy of the base model — two processes do
 # not fit on a 16GB card.
 #
-# This is the only direction the two projects may depend on each other. That
-# project's tests assert it imports nothing from here (it must stay runnable
-# standalone); nothing forbids the reverse, and the reverse is what lets one
-# process serve all three tasks.
+# Dependency direction is one-way: adapters/deal_state imports nothing from
+# server/ (it must stay trainable and evaluable on its own), while this server
+# imports its prompt module — which is what lets one process serve all three
+# tasks.
 DEAL_STATE_ADAPTER_PATH = Path(
     os.getenv(
         "CRM_DEAL_STATE_ADAPTER_PATH",
@@ -139,19 +139,38 @@ except ImportError as _deal_import_error:  # noqa: BLE001 - optional dependency
         _DEAL_STATE_DIR, _deal_import_error,
     )
 
+# The marketing-automation adapter (adapters/marketing/train.py). Fourth
+# adapter on the same base: per-lead campaign evaluation and grounded campaign
+# copy for Module 11. Optional — without it marketing requests run on the base
+# model exactly as they did before the adapter existed.
+MARKETING_ADAPTER_PATH = Path(
+    os.getenv("CRM_MARKETING_ADAPTER_PATH", AI_ROOT / "adapters" / "marketing" / "weights")
+)
+
+# Its prompt module reads the Java prompt files, so it needs the backend tree
+# next to ai/. Optional for the same reason as deal_state's.
+try:
+    from adapters.marketing import prompt_format as marketing_fmt
+except (ImportError, FileNotFoundError) as _marketing_import_error:  # noqa: BLE001
+    marketing_fmt = None
+    log.warning("Marketing prompt module unavailable (%s) — marketing requests will use the base model.",
+                _marketing_import_error)
+
 # PEFT adapter names, used with set_adapter() to switch per request.
 LEAD_SCORING_ADAPTER = "lead_scoring"
 MEETING_ADAPTER = "meeting_extraction"
 DEAL_STATE_ADAPTER = "deal_state"
+MARKETING_ADAPTER = "marketing"
 
 # Set at load time. Read by the router so a request can fall back to the base
 # model rather than failing when the adapter is absent.
 MEETING_ADAPTER_READY = False
 DEAL_STATE_ADAPTER_READY = False
+MARKETING_ADAPTER_READY = False
 
 # A full 17-field state is ~450 tokens; 768 leaves room for longer objection
 # lists without letting a runaway generation hold the inference lock. Matches
-# DEAL_INTEL_MAX_NEW_TOKENS in that project's serve.py.
+# the 768 adapters/deal_state/eval/evaluate.py measures the adapter at.
 DEAL_STATE_MAX_NEW_TOKENS = int(os.getenv("CRM_DEAL_STATE_MAX_NEW_TOKENS", "768"))
 
 SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
@@ -159,6 +178,12 @@ SERVED_MODEL_NAME = os.getenv("CRM_SERVED_MODEL_NAME", "crm-llama-3.1-8b-lora")
 # A 5-field JSON object is ~60 tokens; 200 leaves room for a stray preamble
 # without letting a runaway generation hold the inference lock.
 MEETING_MAX_NEW_TOKENS = int(os.getenv("CRM_MEETING_MAX_NEW_TOKENS", "200"))
+
+# The reply is five values from three-word vocabularies, so the same label
+# ("High", "Medium") legitimately repeats across fields. The generic 1.05 penalty
+# pushes against exactly that. 1.02 is what lead_meeting eval/evaluate.py measures the
+# adapter at, and what the deal-state route already uses for the same reason.
+MEETING_REPETITION_PENALTY = 1.02
 
 # Deal analysis asks for 14 parameters, each with a value, confidence and an
 # explanation — roughly 900 tokens of JSON. Capping lower silently truncates the
@@ -214,7 +239,7 @@ def load_model() -> None:
             tokenizer.pad_token = tokenizer.eos_token
         log.info("Tokenizer loaded.")
 
-        # 4-bit for the same reason train.py and inference.py use it: an fp16 8B
+        # 4-bit for the same reason the train.py scripts use it: an fp16 8B
         # needs ~16GB for weights alone, which does not reliably fit on a 16GB
         # card alongside activations. Loading fp16 here makes Accelerate silently
         # offload layers to CPU and generation becomes invisibly slow.
@@ -258,10 +283,10 @@ def load_model() -> None:
             log.warning(
                 "No meeting adapter at %s — extraction requests will run the "
                 "BASE model and read meetings poorly. Train it with "
-                "scripts/train_meeting.py.", MEETING_ADAPTER_PATH)
+                "adapters/lead_meeting/train.py.", MEETING_ADAPTER_PATH)
 
         # The third adapter: deal state. Same reasoning as the second — optional,
-        # so a clone without ../DealIntelligence_CRM still serves the other two
+        # so a clone without the deal-state weights still serves the other two
         # tasks. Unlike meeting extraction there is no base-model fallback: the
         # deal-state contract is a 17-field JSON state the XGBoost scorer accepts
         # verbatim, and an untrained model does not produce that reliably. The
@@ -274,8 +299,20 @@ def load_model() -> None:
             deal_state_adapter_loaded = False
             log.warning(
                 "No deal-state adapter at %s — /v1/deal-state will return 503. "
-                "Train it with ../DealIntelligence_CRM/scripts/train.py.",
+                "Train it with adapters/deal_state/train.py.",
                 DEAL_STATE_ADAPTER_PATH)
+
+        # The fourth adapter: marketing automation. Optional, with a base-model
+        # fallback: the Java side validates every marketing reply and retries or
+        # falls back on its own, so the untuned base model is a safe default.
+        if marketing_fmt is not None and (MARKETING_ADAPTER_PATH / "adapter_config.json").exists():
+            peft_model.load_adapter(str(MARKETING_ADAPTER_PATH), adapter_name=MARKETING_ADAPTER)
+            marketing_adapter_loaded = True
+            log.info("Marketing adapter attached.")
+        else:
+            marketing_adapter_loaded = False
+            log.info("No marketing adapter at %s — marketing requests use the base model.",
+                     MARKETING_ADAPTER_PATH)
 
         # Leave the lead-scoring adapter active: load_adapter() makes the most
         # recently loaded one current, and every route sets what it needs via
@@ -287,12 +324,15 @@ def load_model() -> None:
         model = peft_model
         globals()["MEETING_ADAPTER_READY"] = meeting_adapter_loaded
         globals()["DEAL_STATE_ADAPTER_READY"] = deal_state_adapter_loaded
+        globals()["MARKETING_ADAPTER_READY"] = marketing_adapter_loaded
 
         attached = ["lead-scoring"]
         if meeting_adapter_loaded:
             attached.append("meeting-extraction")
         if deal_state_adapter_loaded:
             attached.append("deal-state")
+        if marketing_adapter_loaded:
+            attached.append("marketing")
         log.info("Adapters attached: %s. Server ready.", ", ".join(attached))
     except Exception as exc:  # noqa: BLE001 - startup diagnostics
         _load_error = f"{type(exc).__name__}: {exc}"
@@ -303,18 +343,31 @@ def load_model() -> None:
 # ============================================================
 # REQUEST ROUTING
 # ============================================================
-# Which of the CRM's four call sites a request came from is decided by the
-# system prompt it carries. Those prompts are compile-time constants in the Java
-# source, so matching on their opening clause is stable — but only as stable as
-# the Java string. If AiScoringClient's SYSTEM_PROMPT is ever reworded, this
-# marker must be reworded with it, or lead scoring silently falls back to the
-# base model. Guarded by tests/test_bridge.py.
+# Which call site a request came from is decided first by the X-CRM-Task header
+# the Java clients send, so a reworded prompt can no longer silently reroute a
+# task to the wrong model. A header rather than the OpenAI "model" field because
+# the backend can point at a hosted provider, which would reject an unknown model
+# name but ignores an unknown header.
+#
+# Requests without the header (older backends, curl, other clients) are still
+# routed by the system prompt they carry, matched on its opening clause. That
+# fallback is only as stable as the Java string: if AiScoringClient's
+# SYSTEM_PROMPT is ever reworded, this marker must be reworded with it, or an
+# untagged lead-scoring request falls back to the base model. Guarded by
+# tests/test_bridge.py.
+
+TASK_HEADER = "X-CRM-Task"
+TASK_LEAD_SCORING = "lead-scoring"
+TASK_MEETING_EXTRACTION = "meeting-extraction"
+TASK_MARKETING = "marketing"
+TASK_GENERAL = "general"
+KNOWN_TASKS = (TASK_LEAD_SCORING, TASK_MEETING_EXTRACTION, TASK_MARKETING, TASK_GENERAL)
 
 LEAD_SCORING_MARKER = "you are a crm lead-scoring assistant"
 
 # The qualification-meeting extraction prompt, from
 # LeadMeetingExtractionClient.SYSTEM_PROMPT in the Java source and
-# meeting_prompt_format.SYSTEM_PROMPT here — all three must stay identical.
+# lead_meeting prompt_format.SYSTEM_PROMPT here — all three must stay identical.
 # Same fragility as the marker above: reword the Java prompt without rewording
 # this and extraction silently falls back to the base model, which produces
 # plausible-looking values it did not read from the notes.
@@ -336,6 +389,34 @@ def is_meeting_extraction(system_text: str) -> bool:
 def wants_json(system_text: str) -> bool:
     lowered = system_text.lower()
     return any(marker in lowered for marker in JSON_MARKERS)
+
+
+# The marketing prompts' opening clauses ("You are the campaign audience
+# analyst", "You are the campaign copywriter"), owned by
+# adapters/marketing/prompt_format.py. PromptLibrary.java refuses to start if
+# either prompt loses its marker, so a reworded prompt fails at boot instead of
+# silently routing marketing to the base model.
+def is_marketing(system_text: str) -> bool:
+    return marketing_fmt is not None and marketing_fmt.is_marketing(system_text)
+
+
+def resolve_task(task_header: Optional[str], system_text: str) -> str:
+    """The route for one request: the X-CRM-Task header when it names a known
+    task, otherwise whatever the system prompt's marker says."""
+    if task_header:
+        task = task_header.strip().lower()
+        if task in KNOWN_TASKS:
+            return task
+        # Not a 400: a typo in one Java client should degrade to the old
+        # prompt-based routing, not take that feature offline.
+        log.warning("Unknown %s %r — routing by system prompt instead", TASK_HEADER, task_header)
+    if is_lead_scoring(system_text):
+        return TASK_LEAD_SCORING
+    if is_meeting_extraction(system_text):
+        return TASK_MEETING_EXTRACTION
+    if is_marketing(system_text):
+        return TASK_MARKETING
+    return TASK_GENERAL
 
 
 # ============================================================
@@ -670,6 +751,16 @@ def _adapter_context(adapter: Optional[str]):
             model.set_adapter(previous)
 
 
+def _decoding_overrides(adapter: Optional[str]) -> dict:
+    """Per-adapter decoding that differs from generate_text's defaults.
+
+    Returned as kwargs so a route with nothing to override passes nothing.
+    """
+    if adapter == MEETING_ADAPTER:
+        return {"repetition_penalty": MEETING_REPETITION_PENALTY}
+    return {}
+
+
 def generate_text(prompt: str, *, adapter: Optional[str], max_new_tokens: int,
                   temperature: float, repetition_penalty: float = 1.05) -> str:
     """Blocking generation. Raises on failure so the caller can return HTTP 5xx."""
@@ -772,7 +863,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="CRM Local LLM Server", lifespan=lifespan)
 
 
-def _plan(request: ChatCompletionRequest) -> tuple[str, Optional[str], int, float, Optional[tuple]]:
+def _plan(
+    request: ChatCompletionRequest, task_header: Optional[str] = None
+) -> tuple[str, Optional[str], int, float, Optional[tuple]]:
     """Decide how to answer one request.
 
     Returns (prompt, adapter, max_new_tokens, temperature, lead_context),
@@ -781,8 +874,9 @@ def _plan(request: ChatCompletionRequest) -> tuple[str, Optional[str], int, floa
     """
     system_text = "\n".join(m.content for m in request.messages if m.role == "system")
     user_text = "\n".join(m.content for m in request.messages if m.role == "user")
+    task = resolve_task(task_header, system_text)
 
-    if is_lead_scoring(system_text):
+    if task == TASK_LEAD_SCORING:
         crm_fields = parse_crm_lead_message(user_text)
         lead_input, present = build_lead_input(crm_fields)
         prompt = build_llama3_prompt(SYSTEM_PROMPT, build_user_turn(lead_input))
@@ -791,9 +885,9 @@ def _plan(request: ChatCompletionRequest) -> tuple[str, Optional[str], int, floa
                  LEAD_SCORING_ADAPTER, present or "none")
         return prompt, LEAD_SCORING_ADAPTER, max_new, 0.0, (lead_input, present)
 
-    if is_meeting_extraction(system_text):
+    if task == TASK_MEETING_EXTRACTION:
         # Rendered through the extraction task's own chat template — the same
-        # one train_meeting.py installed, carrying {% generation %} markers and
+        # one adapters/lead_meeting/train.py installed, carrying {% generation %} markers and
         # no date preamble. Rendering through the tokenizer's stock template
         # instead would infer on a measurably different prompt than the adapter
         # was trained on, and the replies would stay well-formed while quietly
@@ -815,6 +909,20 @@ def _plan(request: ChatCompletionRequest) -> tuple[str, Optional[str], int, floa
         # Greedy: the reply is five values from closed vocabularies, so sampling
         # buys nothing and costs the determinism the audit trail depends on.
         return prompt, adapter, max_new, 0.0, None
+
+    if task == TASK_MARKETING and MARKETING_ADAPTER_READY:
+        # The request's own system and user text, rendered through the
+        # adapter's training template (no date preamble). The system text is
+        # PromptLibrary's file, which is also what training read, so passing it
+        # through keeps the two identical by construction.
+        prompt = marketing_fmt.build_llama3_prompt(system_text, user_text)
+        max_new = request.max_tokens or DEFAULT_MAX_NEW_TOKENS
+        # The backend's own choice: 0.0 for lead evaluation, 0.4 for copy.
+        temperature = request.temperature if request.temperature is not None else 0.0
+        log.info("route=marketing adapter=%s task=%s temp=%.2f", MARKETING_ADAPTER,
+                 "lead-evaluation" if marketing_fmt.is_lead_evaluation(system_text) else "content",
+                 temperature)
+        return prompt, MARKETING_ADAPTER, max_new, temperature, None
 
     prompt = build_prompt_from_messages(request.messages)
     max_new = request.max_tokens or DEFAULT_MAX_NEW_TOKENS
@@ -849,6 +957,7 @@ def health():
             "lead_scoring": model is not None,
             "meeting_extraction": MEETING_ADAPTER_READY,
             "deal_state": DEAL_STATE_ADAPTER_READY,
+            "marketing": MARKETING_ADAPTER_READY,
         },
         "error": _load_error,
     }
@@ -858,12 +967,10 @@ def health():
 # DEAL STATE
 # ============================================================
 #
-# Mirrors POST /v1/deal-state in ../DealIntelligence_CRM/scripts/serve.py, so a
-# caller moves between the two by changing a base URL and nothing else. That
-# service stays runnable standalone — it is the reference implementation and the
-# thing its test suite exercises; this route exists so the task can be served
-# from the same process as the other two adapters instead of a second copy of
-# the base model.
+# The deal-state project's standalone serve.py was retired when it moved into
+# adapters/deal_state; this route keeps its request/response contract (pinned
+# on the Java side by DealStateClientTest), so the task is served from the same
+# process as the other two adapters instead of a second copy of the base model.
 #
 # Kept as its own route rather than folded into /v1/chat/completions: the
 # request is a previous state plus notes, not a message list, and the reply has
@@ -909,7 +1016,7 @@ def deal_state(request: DealStateRequest):
 
     # Hand-built rather than routed through tokenizer.apply_chat_template.
     #
-    # serve.py installs this project's own template onto its tokenizer and
+    # evaluate.py installs this project's own template onto its tokenizer and
     # renders through that. Doing the same here would mutate the tokenizer the
     # lead-scoring and meeting routes share. It is unnecessary anyway: that
     # template emits bos + header/content/eot per message with content trimmed,
@@ -921,7 +1028,7 @@ def deal_state(request: DealStateRequest):
         messages[0]["content"].strip(), messages[1]["content"].strip())
 
     try:
-        # Greedy, and repetition_penalty 1.02 to match serve.py: the output is a
+        # Greedy, and repetition_penalty 1.02 to match eval/evaluate.py: the output is a
         # fixed schema over a closed vocabulary, and the contract promises
         # deterministic output.
         reply = generate_text(
@@ -949,6 +1056,14 @@ def deal_state(request: DealStateRequest):
     else:
         state, repairs = deal_fmt.coerce_state(raw)
         repairs = previous_repairs + repairs
+        # total_meetings, lead_score, relationship_strength and engagement_score
+        # are fixed functions of the other fields — the rules the training
+        # targets were built with — and the adapter's arithmetic on them is the
+        # least reliable thing it emits. Computed, not trusted. Not counted as
+        # repairs: the result is exact, not a guess.
+        state, derived = deal_fmt.apply_derived_fields(previous, state)
+        if derived:
+            log.info("deal-state derived fields recomputed: %s", "; ".join(derived))
 
     changed = [
         field for field in deal_fmt.FIELD_ORDER
@@ -975,14 +1090,17 @@ def deal_state(request: DealStateRequest):
 
 @app.post("/v1/chat/completions")
 @app.post("/chat/completions")
-def chat_completions(request: ChatCompletionRequest):
+def chat_completions(
+    request: ChatCompletionRequest,
+    x_crm_task: Optional[str] = Header(default=None, alias=TASK_HEADER),
+):
     """OpenAI-compatible. This is the endpoint the CRM backend calls."""
     unavailable = _not_ready()
     if unavailable is not None:
         return unavailable
 
     try:
-        prompt, adapter, max_new, temperature, lead_context = _plan(request)
+        prompt, adapter, max_new, temperature, lead_context = _plan(request, x_crm_task)
     except Exception as exc:  # noqa: BLE001
         log.error("Request planning failed: %s", exc)
         traceback.print_exc()
@@ -1000,7 +1118,8 @@ def chat_completions(request: ChatCompletionRequest):
 
     try:
         text = generate_text(
-            prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
+            prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature,
+            **_decoding_overrides(adapter),
         )
         if lead_context is not None:
             text = lead_scoring_json(text, *lead_context)
@@ -1046,8 +1165,9 @@ def _sse_chunks(
         if lead_context is not None:
             # Streaming a JSON bridge would emit the pre-bridge text format, so
             # the built object is sent as one chunk. Nothing streams this route
-            # in practice — only the deal coach streams, and it takes the base
-            # path below.
+            # in practice — the only streaming caller is the deal coach, which
+            # now runs on Qwen via Ollama and reaches this server only as its
+            # fallback, through the base path below.
             text = generate_text(
                 prompt, adapter=adapter, max_new_tokens=max_new, temperature=temperature
             )
@@ -1117,7 +1237,7 @@ if __name__ == "__main__":
     # One worker deliberately: the model is several GB and every additional
     # worker process would load its own copy.
     #
-    # Port 8001, not 8000 — XgBoost/serve_api.py already owns 8000 and
+    # Port 8001, not 8000 — xgboost/serve_api.py already owns 8000 and
     # DealScoringClient defaults to it. Two servers on one port fails loudly at
     # startup if you are lucky and silently misroutes if you are not.
     uvicorn.run(app, host=os.getenv("CRM_HOST", "0.0.0.0"), port=int(os.getenv("CRM_PORT", "8001")))

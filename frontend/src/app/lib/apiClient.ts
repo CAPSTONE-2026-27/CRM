@@ -115,8 +115,14 @@ export type CopilotMessage = { role: "user" | "assistant"; content: string };
 // Manual SSE parsing over fetch (not EventSource) since we need a Bearer
 // header, which EventSource cannot send.
 export async function streamCopilotChat(
-  messages: CopilotMessage[],
-  handlers: { onDelta: (text: string) => void; onError: (message: string) => void; onDone: () => void }
+  request: { conversationId: string | null; messages: CopilotMessage[] },
+  handlers: {
+    // Sent first: the conversation this question was saved to (new or existing).
+    onConversation?: (id: string) => void;
+    onDelta: (text: string) => void;
+    onError: (message: string) => void;
+    onDone: () => void;
+  }
 ) {
   const res = await fetch(`${API_BASE_URL}/copilot/chat`, {
     method: "POST",
@@ -125,8 +131,15 @@ export async function streamCopilotChat(
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify(request),
   });
+
+  // A 404 (the chat was deleted) or similar arrives as a normal response, not a
+  // stream of events.
+  if (!res.ok) {
+    handlers.onError(res.status === 404 ? "This chat no longer exists." : "The assistant is unavailable right now. Please try again.");
+    return;
+  }
 
   if (!res.body) {
     handlers.onError("No response stream from server");
@@ -159,14 +172,15 @@ export async function streamCopilotChat(
       const rawData = field("data");
       if (!event || rawData === undefined) continue;
 
-      let data: { text?: string; message?: string };
+      let data: { text?: string; message?: string; id?: number | string };
       try {
         data = JSON.parse(rawData);
       } catch {
         continue; // a partial or malformed frame — wait for the next one
       }
 
-      if (event === "delta") handlers.onDelta(data.text ?? "");
+      if (event === "conversation" && data.id != null) handlers.onConversation?.(String(data.id));
+      else if (event === "delta") handlers.onDelta(data.text ?? "");
       else if (event === "error") handlers.onError(data.message ?? "The assistant failed.");
       else if (event === "done") handlers.onDone();
     }

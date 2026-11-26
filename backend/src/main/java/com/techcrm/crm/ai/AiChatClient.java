@@ -170,6 +170,15 @@ public class AiChatClient {
      * must never block a user from saving their own work.
      */
     public String complete(List<ChatMessage> messages) {
+        return complete(null, messages);
+    }
+
+    /**
+     * As {@link #complete(List)}, tagged with an {@link AiTask} so the model
+     * server routes it to that task's adapter regardless of the prompt wording.
+     * A null task sends no header.
+     */
+    public String complete(String task, List<ChatMessage> messages) {
         if (!configured) {
             log.debug("AI base URL is not configured; skipping model call");
             return null;
@@ -178,6 +187,9 @@ public class AiChatClient {
             ChatResponse response = restClient.post()
                     .uri("/chat/completions")
                     .contentType(MediaType.APPLICATION_JSON)
+                    .headers(headers -> {
+                        if (task != null) headers.set(AiTask.HEADER, task);
+                    })
                     .body(new ChatRequest(model, messages))
                     .retrieve()
                     .body(ChatResponse.class);

@@ -208,6 +208,30 @@ export const DEAL_FLOW_STEPS: DealStage[] = [
   "CLOSED_WON",
 ];
 
+/** GET /copilot/status — which model the deal coach runs on and what it can see. */
+export type CoachStatus = {
+  provider: string;
+  model: string;
+  available: boolean;
+  scope: string;
+};
+
+/** One past deal coach chat, from GET /copilot/conversations. */
+export type CoachConversation = {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** One saved deal coach message, from GET /copilot/conversations/{id}/messages. */
+export type CoachHistoryMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
 export type Deal = {
   id: string;
   name: string;
@@ -394,17 +418,6 @@ export type CustomerOnboarding = {
   completedAt?: string | null;
 };
 
-export type CaseRow = {
-  id: string;
-  caseNumber: number;
-  subject: string;
-  source?: string | null;
-  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  status: "OPEN" | "IN_PROGRESS" | "ESCALATED" | "RESOLVED" | "CLOSED";
-  slaDeadline?: string | null;
-  createdAt: string;
-};
-
 export type Campaign = {
   id: string;
   name: string;
@@ -434,17 +447,6 @@ export type RpaBotRun = {
   startedAt: string;
   finishedAt?: string | null;
   logs?: string | null;
-};
-
-export type WorkflowNode = { type: "TRIGGER" | "CONDITION" | "AI" | "RPA" | "ACTION" | "LOG"; title: string; label: string; operation?: string; order: number };
-
-export type WorkflowDefinition = {
-  id: string;
-  name: string;
-  triggerEvent?: string | null;
-  isActive: boolean;
-  nodes: WorkflowNode[];
-  createdAt: string;
 };
 
 // Mirrors AuditLogResponse from the API.
@@ -510,14 +512,6 @@ export type DashboardSummary = {
   recentLeads: Lead[];
   pipelineByStage: { stage: DealStage; _sum: { value: string | number | null }; _count: { _all: number } }[];
   recentBotRuns: RpaBotRun[];
-};
-
-export type ReportingSummary = {
-  revenueMtd: string | number;
-  winRatePct: number;
-  avgDealSize: string | number | null;
-  churnRiskCount: number;
-  revenueTrend: { month: string; revenue: string | number }[];
 };
 
 export type SecuritySummary = {

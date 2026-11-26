@@ -1,0 +1,364 @@
+{
+  "set": "heldout",
+  "adapter": "D:\\CRM\\ai\\adapters\\deal_state\\weights_v1",
+  "scored_as": "served (derived fields recomputed)",
+  "n": 77,
+  "json_valid": 1.0,
+  "scoreable_zero_repairs": 0.974,
+  "exact_state_all_17": 0.701,
+  "changed_recall": 0.914,
+  "unchanged_precision": 0.982,
+  "field_accuracy": {
+    "total_meetings": 1.0,
+    "lead_score": 0.805,
+    "customer_sentiment": 0.961,
+    "buying_intent": 0.922,
+    "relationship_strength": 0.961,
+    "budget_status": 0.987,
+    "decision_maker_involvement": 1.0,
+    "customer_urgency": 0.935,
+    "main_objections": 0.961,
+    "product_interest_level": 0.974,
+    "meeting_outcome": 1.0,
+    "customer_requirements": 0.935,
+    "risk_factors": 0.909,
+    "competitor_mention": 1.0,
+    "engagement_score": 0.948,
+    "implementation_readiness": 1.0,
+    "upsell_opportunity": 1.0
+  },
+  "no_json_rows": [],
+  "misses": [
+    {
+      "id": 3,
+      "wrong": {
+        "lead_score": {
+          "expected": 77,
+          "actual": 67
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "wrong": {
+        "risk_factors": {
+          "expected": "Timeline Conflict",
+          "actual": "No Risk Identified"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "wrong": {
+        "risk_factors": {
+          "expected": "Budget Constraints",
+          "actual": "Economic Uncertainty"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "wrong": {
+        "customer_requirements": {
+          "expected": "Standard Package",
+          "actual": "Compliance-driven Requirements"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "wrong": {
+        "lead_score": {
+          "expected": 93,
+          "actual": 88
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Competitor Pressure"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "wrong": {
+        "lead_score": {
+          "expected": 68,
+          "actual": 63
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Competitor Pressure"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "wrong": {
+        "lead_score": {
+          "expected": 84,
+          "actual": 74
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "wrong": {
+        "lead_score": {
+          "expected": 29,
+          "actual": 33
+        },
+        "product_interest_level": {
+          "expected": "Medium",
+          "actual": "High"
+        },
+        "engagement_score": {
+          "expected": 72,
+          "actual": 78
+        }
+      }
+    },
+    {
+      "id": 24,
+      "wrong": {
+        "lead_score": {
+          "expected": 75,
+          "actual": 69
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        },
+        "main_objections": {
+          "expected": "Budget Not Allocated",
+          "actual": "No Objections"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "wrong": {
+        "lead_score": {
+          "expected": 42,
+          "actual": 47
+        },
+        "customer_sentiment": {
+          "expected": "Negative",
+          "actual": "Neutral"
+        },
+        "relationship_strength": {
+          "expected": 3.0,
+          "actual": 4.0
+        },
+        "engagement_score": {
+          "expected": 60,
+          "actual": 72
+        }
+      }
+    },
+    {
+      "id": 28,
+      "wrong": {
+        "lead_score": {
+          "expected": 49,
+          "actual": 45
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Competitor Pressure"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "wrong": {
+        "customer_sentiment": {
+          "expected": "Positive",
+          "actual": "Neutral"
+        },
+        "relationship_strength": {
+          "expected": 4.0,
+          "actual": 3.0
+        },
+        "customer_urgency": {
+          "expected": "Low",
+          "actual": "Medium"
+        },
+        "engagement_score": {
+          "expected": 72,
+          "actual": 59
+        }
+      }
+    },
+    {
+      "id": 32,
+      "wrong": {
+        "lead_score": {
+          "expected": 16,
+          "actual": 12
+        },
+        "product_interest_level": {
+          "expected": "Medium",
+          "actual": "Low"
+        },
+        "customer_requirements": {
+          "expected": "Basic Feature Set",
+          "actual": "Customized Integration"
+        },
+        "engagement_score": {
+          "expected": 72,
+          "actual": 65
+        }
+      }
+    },
+    {
+      "id": 34,
+      "wrong": {
+        "customer_requirements": {
+          "expected": "Enterprise-grade Security",
+          "actual": "Basic Feature Set"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "wrong": {
+        "lead_score": {
+          "expected": 39,
+          "actual": 29
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 51,
+      "wrong": {
+        "lead_score": {
+          "expected": 32,
+          "actual": 28
+        },
+        "main_objections": {
+          "expected": "Lack of Internal Buy-in",
+          "actual": "Lack of Internal Buy-in; Budget Not Allocated"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "wrong": {
+        "customer_requirements": {
+          "expected": "Standard Package",
+          "actual": "Basic Feature Set"
+        },
+        "risk_factors": {
+          "expected": "Budget Constraints",
+          "actual": "Economic Uncertainty"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "wrong": {
+        "customer_requirements": {
+          "expected": "Enterprise-grade Security",
+          "actual": "Standard Package"
+        }
+      }
+    },
+    {
+      "id": 56,
+      "wrong": {
+        "lead_score": {
+          "expected": 71,
+          "actual": 67
+        },
+        "main_objections": {
+          "expected": "No Objections",
+          "actual": "Budget Not Allocated"
+        }
+      }
+    },
+    {
+      "id": 59,
+      "wrong": {
+        "lead_score": {
+          "expected": 38,
+          "actual": 45
+        },
+        "budget_status": {
+          "expected": "Not Allocated",
+          "actual": "Under Review"
+        }
+      }
+    },
+    {
+      "id": 68,
+      "wrong": {
+        "lead_score": {
+          "expected": 75,
+          "actual": 65
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        },
+        "risk_factors": {
+          "expected": "Budget Constraints",
+          "actual": "Economic Uncertainty"
+        }
+      }
+    },
+    {
+      "id": 71,
+      "wrong": {
+        "lead_score": {
+          "expected": 64,
+          "actual": 49
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        },
+        "customer_urgency": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 77,
+      "wrong": {
+        "customer_sentiment": {
+          "expected": "Negative",
+          "actual": "Neutral"
+        },
+        "relationship_strength": {
+          "expected": 1.0,
+          "actual": 2.0
+        }
+      }
+    }
+  ]
+}

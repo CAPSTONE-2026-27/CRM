@@ -1,0 +1,93 @@
+{
+  "set": "realistic",
+  "adapter": "D:\\CRM\\ai\\adapters\\lead_scoring\\weights",
+  "n": 40,
+  "requirement_tier_accuracy": 0.725,
+  "qualification_accuracy": 0.9,
+  "priority_accuracy": 0.9,
+  "score_exact": 0.725,
+  "score_within_5": 1.0,
+  "score_within_10": 1.0,
+  "format_consistent": 1.0,
+  "self_inconsistent_corrected": 0.975,
+  "format_failures": {},
+  "requirement_misses": [
+    {
+      "id": "REAL-LS-009",
+      "requirement_points": 5,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-010",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": "REAL-LS-011",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Cold"
+    },
+    {
+      "id": "REAL-LS-013",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-014",
+      "requirement_points": 5,
+      "predicted": 0,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-022",
+      "requirement_points": 10,
+      "predicted": 5,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-025",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-028",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Hot",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-030",
+      "requirement_points": 15,
+      "predicted": 20,
+      "qualification": "Warm",
+      "predicted_qualification": "Hot"
+    },
+    {
+      "id": "REAL-LS-032",
+      "requirement_points": 15,
+      "predicted": 10,
+      "qualification": "Warm",
+      "predicted_qualification": "Warm"
+    },
+    {
+      "id": "REAL-LS-037",
+      "requirement_points": 20,
+      "predicted": 15,
+      "qualification": "Hot",
+      "predicted_qualification": "Warm"
+    }
+  ]
+}

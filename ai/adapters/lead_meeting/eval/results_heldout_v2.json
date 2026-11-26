@@ -1,0 +1,219 @@
+{
+  "set": "heldout",
+  "adapter": "D:\\CRM\\ai\\adapters\\lead_meeting\\weights",
+  "n": 75,
+  "json_valid": 1.0,
+  "needed_repair": 0.0,
+  "all_5_correct": 0.867,
+  "meeting_score_mae": 1.87,
+  "priority_band_match": 0.907,
+  "field_accuracy": {
+    "customer_sentiment": 0.987,
+    "buying_intent": 0.96,
+    "decision_maker_involvement": 0.933,
+    "customer_urgency": 1.0,
+    "product_interest_level": 0.96
+  },
+  "majority_floor": {
+    "customer_sentiment": 0.427,
+    "buying_intent": 0.493,
+    "decision_maker_involvement": 0.493,
+    "customer_urgency": 0.387,
+    "product_interest_level": 0.48
+  },
+  "below_floor": [],
+  "sentiment_vs_review": 1.0,
+  "confusion": {
+    "customer_sentiment": {
+      "Positive->Neutral": 1
+    },
+    "buying_intent": {
+      "Low->High": 1,
+      "High->Low": 1,
+      "High->Medium": 1
+    },
+    "decision_maker_involvement": {
+      "Indirect->Present": 2,
+      "Indirect->Absent": 1,
+      "Present->Absent": 1,
+      "Present->Indirect": 1
+    },
+    "customer_urgency": {},
+    "product_interest_level": {
+      "Medium->Low": 2,
+      "High->Medium": 1
+    }
+  },
+  "misses": [
+    {
+      "id": "MTG-00157",
+      "expected": {
+        "customer_sentiment": "Neutral",
+        "buying_intent": "Low",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      },
+      "actual": {
+        "customer_sentiment": "Neutral",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      }
+    },
+    {
+      "id": "MTG-00187",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Medium"
+      },
+      "actual": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      }
+    },
+    {
+      "id": "MTG-00478",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "Medium",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      },
+      "actual": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "Medium",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      }
+    },
+    {
+      "id": "MTG-00001",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "High",
+        "product_interest_level": "High"
+      },
+      "actual": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "High",
+        "product_interest_level": "High"
+      }
+    },
+    {
+      "id": "MTG-00162",
+      "expected": {
+        "customer_sentiment": "Negative",
+        "buying_intent": "Low",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Medium"
+      },
+      "actual": {
+        "customer_sentiment": "Negative",
+        "buying_intent": "Low",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      }
+    },
+    {
+      "id": "MTG-S00051",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "High",
+        "product_interest_level": "High"
+      },
+      "actual": {
+        "customer_sentiment": "Neutral",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "High",
+        "product_interest_level": "High"
+      }
+    },
+    {
+      "id": "MTG-S00172",
+      "expected": {
+        "customer_sentiment": "Negative",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      },
+      "actual": {
+        "customer_sentiment": "Negative",
+        "buying_intent": "Low",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Low"
+      }
+    },
+    {
+      "id": "MTG-S00131",
+      "expected": {
+        "customer_sentiment": "Neutral",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "Medium",
+        "product_interest_level": "High"
+      },
+      "actual": {
+        "customer_sentiment": "Neutral",
+        "buying_intent": "Medium",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "Medium",
+        "product_interest_level": "Medium"
+      }
+    },
+    {
+      "id": "MTG-S00071",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "Medium",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "Low",
+        "product_interest_level": "High"
+      },
+      "actual": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "Medium",
+        "decision_maker_involvement": "Absent",
+        "customer_urgency": "Low",
+        "product_interest_level": "High"
+      }
+    },
+    {
+      "id": "MTG-S00133",
+      "expected": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Present",
+        "customer_urgency": "High",
+        "product_interest_level": "Medium"
+      },
+      "actual": {
+        "customer_sentiment": "Positive",
+        "buying_intent": "High",
+        "decision_maker_involvement": "Indirect",
+        "customer_urgency": "High",
+        "product_interest_level": "Medium"
+      }
+    }
+  ]
+}

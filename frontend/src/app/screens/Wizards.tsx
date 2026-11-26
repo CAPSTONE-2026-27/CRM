@@ -38,8 +38,6 @@ import {
   useCreateRpaBot,
   useDeployRpaBot,
   useRpaBots,
-  useCreateWorkflow,
-  useActivateWorkflow,
   useCreateCampaign,
 } from "../lib/queries";
 import { PERMISSION_CATALOG, ROLE_DEFAULT_PERMISSIONS } from "../components/crm/Sidebar";
@@ -70,14 +68,13 @@ import {
   UserCheck,
 } from "lucide-react";
 
-export type WizardId = "F01" | "F02" | "F03" | "F04" | "F05" | "F06" | "F07" | "F08";
+export type WizardId = "F01" | "F02" | "F03" | "F04" | "F06" | "F07" | "F08";
 
 export const wizardMeta: Record<WizardId, { title: string }> = {
   F01: { title: "RPA bot creation" },
   F02: { title: "User creation" },
   F03: { title: "Lead creation" },
   F04: { title: "Account creation" },
-  F05: { title: "New workflow" },
   F06: { title: "Deploy bot" },
   F07: { title: "New deal" },
   F08: { title: "New campaign" },
@@ -99,7 +96,7 @@ function SubLabel({ children }: { children: React.ReactNode }) {
 const F01_STEPS = ["Select trigger", "Choose platform", "Define actions", "Set credentials", "Review & save"];
 
 const F01_TRIGGERS = [
-  { icon: Webhook, label: "Webhook", sub: "From workflow engine" },
+  { icon: Webhook, label: "Webhook", sub: "Inbound HTTP call" },
   { icon: Clock, label: "Scheduled", sub: "Cron / interval" },
   { icon: User, label: "Manual", sub: "On-demand run" },
 ];
@@ -532,7 +529,7 @@ function F02Review({ form, mfa, permissions }: { form: F02Form; mfa: boolean; pe
 /* ============ F03 Create Lead ============ */
 const F03_STEPS = ["Capture method", "Lead details", "Result"];
 
-const F03_CAPTURE_METHODS = ["WEB_FORM", "EMAIL_PARSING", "RPA_BOT_IMPORT"] as const;
+const F03_CAPTURE_METHODS = ["WEB_FORM", "EMAIL_PARSING"] as const;
 // Matches the backend's @DecimalMax on LeadRequest.estimatedDealValue — the
 // DB column is NUMERIC(15,2), which overflows at 10^13.
 const MAX_DEAL_VALUE = 9_999_999_999_999.99;
@@ -1133,187 +1130,6 @@ function F04Review({ name, industry, employeeCount }: { name: string; industry: 
               </div>
             ))}
           </div>
-        </div>
-      </Stack>
-    </Card>
-  );
-}
-
-/* ============ F05 New Workflow ============ */
-const F05_STEPS = ["Name & trigger", "Build flow", "Test", "Activate"];
-
-type F05Form = { name: string; triggerEvent: string; scope: string; runMode: string };
-
-function F05({ onCancel }: { onCancel: () => void }) {
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState<F05Form>({
-    name: "",
-    triggerEvent: "Lead score > 80",
-    scope: "All records",
-    runMode: "Real-time",
-  });
-  const set = <K extends keyof F05Form>(key: K) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
-  const createWorkflow = useCreateWorkflow();
-  const activateWorkflow = useActivateWorkflow();
-
-  const primaryLabel = step < 3 ? `Next: ${F05_STEPS[step + 1]}` : "Activate workflow";
-  const primaryIcon = step === 3 ? Zap : undefined;
-
-  const handlePrimary = async () => {
-    if (step === 0 && !form.name.trim()) {
-      toast.error("Workflow name is required");
-      return;
-    }
-    if (step < 3) {
-      setStep((s) => s + 1);
-      return;
-    }
-    try {
-      // Nodes match the canvas shown in the "Build flow" step above — the
-      // visual builder doesn't yet expose its live state back to the wizard.
-      const workflow = await createWorkflow.mutateAsync({
-        name: form.name,
-        triggerEvent: form.triggerEvent,
-        scope: form.scope,
-        runMode: form.runMode,
-        nodes: [
-          { type: "TRIGGER", title: "Trigger", label: "Score > 80", order: 0 },
-          { type: "CONDITION", title: "Condition", label: "Region = APAC?", order: 1 },
-          { type: "AI", title: "AI action", label: "Draft intro email", order: 2 },
-          { type: "ACTION", title: "Notify", label: "Alert sales lead", order: 3 },
-        ],
-      });
-      await activateWorkflow.mutateAsync(workflow.id);
-      toast.success("Workflow activated", {
-        description: `'${form.name}' is now live and listening for triggers.`,
-      });
-      onCancel();
-    } catch (err) {
-      toast.error("Failed to activate workflow", { description: err instanceof Error ? err.message : undefined });
-    }
-  };
-
-  const handleSaveDraft = () => {
-    toast.success("Draft saved", {
-      description: "You can resume this workflow anytime from the Workflow engine.",
-    });
-  };
-
-  return (
-    <Stack>
-      <Stepper steps={F05_STEPS} current={step} />
-
-      {step === 0 && (
-        <Card title="Name & trigger">
-          <Stack>
-            <AIInsightBox text="Give the workflow a name and choose the event that starts it. AI will suggest matching building blocks in the next step." />
-            <FieldGrid>
-              <Field label="Workflow name" value={form.name} onChange={set("name")} placeholder="e.g. High-value lead escalation" />
-              <Field label="Trigger event" type="select" value={form.triggerEvent} onChange={set("triggerEvent")} options={["Lead score > 80", "Case SLA breach", "Deal stage change", "Scheduled (daily)"]} />
-              <Field label="Scope" type="select" value={form.scope} onChange={set("scope")} options={["All records", "My team", "Specific segment"]} />
-              <Field label="Run mode" type="select" value={form.runMode} onChange={set("runMode")} options={["Real-time", "Batched (hourly)", "Scheduled"]} />
-            </FieldGrid>
-          </Stack>
-        </Card>
-      )}
-
-      {step === 1 && (
-        <Card title="Build flow">
-          <Stack>
-            <AIInsightBox text="Drag building blocks onto the canvas, then drag them left or right to reorder. Remove a step with the × on each node." />
-            <WorkflowBuilder
-              initialNodes={[
-                { type: "trigger", title: "Trigger", label: "Score > 80" },
-                { type: "condition", title: "Condition", label: "Region = APAC?" },
-                { type: "ai", title: "AI action", label: "Draft intro email" },
-                { type: "action", title: "Notify", label: "Alert sales lead" },
-              ]}
-            />
-          </Stack>
-        </Card>
-      )}
-
-      {step === 2 && <F05Test />}
-      {step === 3 && <F05Activate name={form.name} triggerEvent={form.triggerEvent} runMode={form.runMode} />}
-
-      <F03Footer
-        onCancel={onCancel}
-        onBack={step > 0 ? () => setStep((s) => s - 1) : undefined}
-        onNext={handlePrimary}
-        onSaveDraft={handleSaveDraft}
-        primaryLabel={primaryLabel}
-        primaryIcon={primaryIcon}
-      />
-    </Stack>
-  );
-}
-
-/* ---- F05 step 3: Test ---- */
-function F05Test() {
-  const steps = [
-    { status: "pass", label: "Trigger fired — sample lead 'David Kim' (score 84)" },
-    { status: "pass", label: "Condition evaluated — Region = APAC → true" },
-    { status: "pass", label: "AI action — intro email drafted (142 words)" },
-    { status: "warning", label: "Notify — sales lead has no Slack channel linked" },
-  ];
-  return (
-    <Card title="Test workflow">
-      <Stack>
-        <AIInsightBox text="A dry run was executed against a sample record. No live data was changed." />
-        <FieldGrid>
-          <Field label="Test record" type="select" options={["Sample: David Kim (score 84)", "Sample: Emma Wilson (score 91)", "Pick a live lead"]} />
-          <Field label="Mode" type="select" options={["Dry run (no side effects)", "Live test"]} />
-        </FieldGrid>
-        <div>
-          <SubLabel>Execution trace</SubLabel>
-          <Stack gap={6}>
-            {steps.map((s) => (
-              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `0.5px solid ${colors.border}`, borderRadius: 6, fontSize: 12 }}>
-                {s.status === "pass" ? <Check size={15} color={colors.success} /> : <AlertTriangle size={15} color="#BA7517" />}
-                <span style={{ color: colors.textPrimary }}>{s.label}</span>
-              </div>
-            ))}
-          </Stack>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: colors.successLight, border: `0.5px solid ${colors.success}`, borderRadius: 6, padding: "10px 12px" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: colors.success }}>3 of 4 steps passed</span>
-          <Badge label="Ready to activate" variant="green" />
-        </div>
-      </Stack>
-    </Card>
-  );
-}
-
-/* ---- F05 step 4: Activate ---- */
-function F05Activate({ name, triggerEvent, runMode }: { name: string; triggerEvent: string; runMode: string }) {
-  const [toggles, setToggles] = useState([true, true, false]);
-  const summary = [
-    { label: "Workflow name", value: name || "—" },
-    { label: "Trigger", value: triggerEvent },
-    { label: "Steps", value: "4 (Trigger → Condition → AI → Notify)" },
-    { label: "Run mode", value: runMode },
-    { label: "Last test", value: "3 of 4 passed" },
-  ];
-  return (
-    <Card title="Activate">
-      <Stack>
-        <AIInsightBox text="Review the workflow before it goes live. Once active, it runs automatically whenever the trigger fires." />
-        <div>
-          <SubLabel>Summary</SubLabel>
-          <div style={{ border: `0.5px solid ${colors.border}`, borderRadius: 6, overflow: "hidden" }}>
-            {summary.map((r, i) => (
-              <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", fontSize: 12, background: i % 2 ? colors.bgSecondary : "#FFFFFF" }}>
-                <span style={{ color: colors.textSecondary }}>{r.label}</span>
-                <span style={{ color: colors.textPrimary, fontWeight: 500 }}>{r.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <SubLabel>Activation options</SubLabel>
-          {["BPMN 2.0 compliant export", "Log every execution step", "Notify me on first run"].map((label, i) => (
-            <ToggleRow key={label} label={label} on={toggles[i]} onChange={() => setToggles((t) => t.map((v, j) => (j === i ? !v : v)))} />
-          ))}
         </div>
       </Stack>
     </Card>
@@ -2083,8 +1899,6 @@ export function Wizard({ id, onCancel }: { id: WizardId; onCancel: () => void })
       return <F03 onCancel={onCancel} />;
     case "F04":
       return <F04 onCancel={onCancel} />;
-    case "F05":
-      return <F05 onCancel={onCancel} />;
     case "F06":
       return <F06 onCancel={onCancel} />;
     case "F07":

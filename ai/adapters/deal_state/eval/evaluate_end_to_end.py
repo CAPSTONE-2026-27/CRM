@@ -18,7 +18,7 @@ about — not whether field 11 was right, but whether the deal came out scored
 the same.
 
 Run:
-    python scripts/evaluate_end_to_end.py --limit 30
+    python adapters/deal_state/eval/evaluate_end_to_end.py --limit 30
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import prompt_format as fmt  # noqa: E402
-from evaluate import generate, held_out_rows, load  # noqa: E402
+from evaluate import generate, held_out_rows, load, served_state  # noqa: E402
 from train import OUTPUT_DIR  # noqa: E402
 
 # eval/ -> deal_state/ -> adapters/ -> ai/ -> repo root
@@ -66,6 +66,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--adapter", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--raw", action="store_true",
+                        help="score with the adapter's own derived numerics, not the served ones")
     args = parser.parse_args()
 
     score = load_scorer()
@@ -93,7 +95,7 @@ def main() -> int:
 
         reply = generate(tokenizer, model, messages[:2])
         raw = fmt.extract_state(reply)
-        actual, _ = fmt.coerce_state(raw or {})
+        _, actual, _ = served_state(messages, raw or {}, raw_numerics=args.raw)
 
         try:
             reference = score(expected)

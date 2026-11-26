@@ -19,13 +19,26 @@ The metrics below score what actually matters:
   changed_recall      of the fields that SHOULD have moved, how many did
   unchanged_precision of the fields that should NOT have moved, how many stayed
 
+By default the state is scored as server/main.py serves it: coerced, then the
+four derived numerics recomputed by fmt.apply_derived_fields(). --raw scores
+the adapter's own values for those fields instead, which is what to watch when
+retraining.
+
 The last two are the real test. A model that copies the previous state verbatim
 scores ~90% field accuracy — most fields do not move in a given meeting — while
 being useless. changed_recall catches exactly that: it would be 0.
 
+Two test sets:
+  heldout    the eval journeys in data/train.jsonl (unseen phrasings)
+  realistic  eval/realistic.jsonl -- hand-written meeting notes in rep shorthand,
+             each with a previous state and the state it should produce
+
+Results go to eval/results_<set>.json.
+
 Run (after training):
-    python scripts/evaluate.py
-    python scripts/evaluate.py --limit 40 --adapter outputs/deal_state_llama3_lora/checkpoint-150
+    python adapters/deal_state/eval/evaluate.py
+    python adapters/deal_state/eval/evaluate.py --set realistic
+    python adapters/deal_state/eval/evaluate.py --limit 40 --adapter adapters/deal_state/weights/checkpoint-150
 """
 
 from __future__ import annotations
@@ -42,7 +55,10 @@ from peft import PeftModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import prompt_format as fmt  # noqa: E402
-from train import DATA_PATH, EVAL_FRACTION, MODEL_PATH, OUTPUT_DIR, SEED, _is_valid  # noqa: E402
+from train import DATA_PATH, MODEL_PATH, OUTPUT_DIR, _is_valid, split_dataset  # noqa: E402
+
+EVAL_DIR = Path(__file__).resolve().parent
+REALISTIC_PATH = EVAL_DIR / "realistic.jsonl"
 
 
 def load(adapter_path: Path):
@@ -78,9 +94,34 @@ def held_out_rows(limit: int | None):
     from datasets import load_dataset
 
     dataset = load_dataset("json", data_files=str(DATA_PATH), split="train").filter(_is_valid)
-    split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
-    rows = list(split["test"])
+    rows = list(split_dataset(dataset)[1])
     return rows[:limit] if limit else rows
+
+
+def realistic_rows(limit: int | None):
+    """eval/realistic.jsonl, in the same `messages` shape as a training row."""
+    rows = [json.loads(line) for line in REALISTIC_PATH.open(encoding="utf-8") if line.strip()]
+    rows = [{"id": r["id"], "messages": fmt.build_messages(r["previous_state"], r["meeting_notes"],
+                                                           fmt.render_state(r["expected_state"]))}
+            for r in rows]
+    return rows[:limit] if limit else rows
+
+
+def same_value(field: str, a, b) -> bool:
+    """Field equality as the scorer sees it. main_objections becomes one
+    indicator column per token, so the order they are listed in is irrelevant."""
+    if field == "main_objections":
+        return set(str(a).split("; ")) == set(str(b).split("; "))
+    return str(a) == str(b)
+
+
+def served_state(messages, raw: dict, raw_numerics: bool = False) -> tuple:
+    """(previous, state, repairs) exactly as /v1/deal-state would produce them."""
+    previous, _ = fmt.coerce_state(fmt.extract_state(messages[1]["content"]))
+    state, repairs = fmt.coerce_state(raw)
+    if not raw_numerics:
+        state, _ = fmt.apply_derived_fields(previous, state)
+    return previous, state, repairs
 
 
 def generate(tokenizer, model, messages) -> str:
@@ -107,14 +148,18 @@ def main() -> int:
     parser.add_argument("--adapter", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--limit", type=int, default=None,
                         help="evaluate only the first N held-out rows")
+    parser.add_argument("--raw", action="store_true",
+                        help="score the adapter's own derived numerics instead of the "
+                             "recomputed values the server returns")
+    parser.add_argument("--set", dest="test_set", choices=["heldout", "realistic"], default="heldout")
     args = parser.parse_args()
 
     if not (args.adapter / "adapter_config.json").exists():
         print(f"No adapter at {args.adapter}. Train first, or pass --adapter.")
         return 1
 
-    rows = held_out_rows(args.limit)
-    print(f"Evaluating {args.adapter.name} on {len(rows)} held-out rows...\n")
+    rows = held_out_rows(args.limit) if args.test_set == "heldout" else realistic_rows(args.limit)
+    print(f"Evaluating {args.adapter.name} on {len(rows)} {args.test_set} rows...\n")
 
     tokenizer, model = load(args.adapter)
 
@@ -123,6 +168,7 @@ def main() -> int:
     changed_hit = changed_total = 0
     unchanged_hit = unchanged_total = 0
     failures = []
+    misses = []
 
     for index, row in enumerate(rows, 1):
         messages = row["messages"]
@@ -138,18 +184,17 @@ def main() -> int:
             continue
         totals["json_valid"] += 1
 
-        _, repairs = fmt.coerce_state(raw)
+        _, actual, repairs = served_state(messages, raw, raw_numerics=args.raw)
         if not repairs:
             totals["scoreable"] += 1
 
-        actual, _ = fmt.coerce_state(raw)
-        if all(str(actual[f]) == str(expected[f]) for f in fmt.FIELD_ORDER):
+        if all(same_value(f, actual[f], expected[f]) for f in fmt.FIELD_ORDER):
             totals["exact_state"] += 1
 
         for field in fmt.FIELD_ORDER:
-            same = str(actual[field]) == str(expected[field])
+            same = same_value(field, actual[field], expected[field])
             field_correct[field] += same
-            should_change = str(previous[field]) != str(expected[field])
+            should_change = not same_value(field, previous[field], expected[field])
             if should_change:
                 changed_total += 1
                 changed_hit += same
@@ -157,8 +202,12 @@ def main() -> int:
                 unchanged_total += 1
                 unchanged_hit += same
 
+        wrong = {f: {"expected": expected[f], "actual": actual[f]}
+                 for f in fmt.FIELD_ORDER if not same_value(f, actual[f], expected[f])}
+        if wrong:
+            misses.append({"id": row.get("id", index), "wrong": wrong})
         print(f"  [{index:3d}/{len(rows)}] "
-              f"{'exact' if all(str(actual[f]) == str(expected[f]) for f in fmt.FIELD_ORDER) else 'partial'}"
+              f"{'exact' if not wrong else 'partial: ' + ', '.join(wrong)}"
               f"{'' if not repairs else f'  ({len(repairs)} repairs)'}")
 
     n = len(rows)
@@ -182,6 +231,28 @@ def main() -> int:
         print(f"\n{len(failures)} row(s) produced no JSON:")
         for index, why, sample in failures[:5]:
             print(f"  row {index}: {why} — {sample}")
+
+    def rate(a, b):
+        return round(a / b, 3) if b else None
+
+    results = {
+        "set": args.test_set,
+        "adapter": str(args.adapter),
+        "scored_as": "raw adapter numerics" if args.raw else "served (derived fields recomputed)",
+        "n": n,
+        "json_valid": rate(totals["json_valid"], n),
+        "scoreable_zero_repairs": rate(totals["scoreable"], n),
+        "exact_state_all_17": rate(totals["exact_state"], n),
+        "changed_recall": rate(changed_hit, changed_total),
+        "unchanged_precision": rate(unchanged_hit, unchanged_total),
+        "field_accuracy": {f: rate(c, n) for f, c in field_correct.items()},
+        "no_json_rows": [i for i, _, _ in failures],
+        "misses": misses,
+    }
+    suffix = "_raw" if args.raw else ""
+    out = EVAL_DIR / f"results_{args.test_set}{suffix}.json"
+    out.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"\nSaved to {out}")
 
     # changed_recall is the one that separates a model that learned the task
     # from one that learned to echo its input.

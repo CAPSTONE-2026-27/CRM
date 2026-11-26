@@ -10,7 +10,7 @@ Library versions: transformers==5.14.1, trl==1.8.0, peft==0.19.1,
                    bitsandbytes==0.49.2, torch==2.13.0+cu126
 
 Run:
-    python scripts/train.py
+    python adapters/lead_scoring/train.py
 """
 
 import os
@@ -30,16 +30,16 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
+    EarlyStoppingCallback,
 )
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
 )
 from trl import SFTTrainer, SFTConfig
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from prompt_format import SYSTEM_PROMPT, build_llama3_prompt  # noqa: E402
+from prompt_format import CHAT_TEMPLATE, build_messages  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -47,7 +47,7 @@ from prompt_format import SYSTEM_PROMPT, build_llama3_prompt  # noqa: E402
 # --------------------------------------------------------------------------
 ADAPTER_DIR = Path(__file__).resolve().parent
 AI_ROOT = ADAPTER_DIR.parent.parent
-MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
+MODEL_PATH = Path(os.getenv("CRM_BASE_MODEL", AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"))
 DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
 OUTPUT_DIR = ADAPTER_DIR / "weights"
 LOG_DIR = ADAPTER_DIR / "logs"
@@ -90,32 +90,14 @@ def set_seed(seed: int = SEED) -> None:
 # --------------------------------------------------------------------------
 # 4. CHAT TEMPLATE FORMATTING
 # --------------------------------------------------------------------------
-# build_llama3_prompt and SYSTEM_PROMPT now live in prompt_format.py, imported
-# above, so train.py and inference.py can never drift onto different prompts.
+# CHAT_TEMPLATE in prompt_format.py renders exactly build_llama3_prompt()'s
+# bytes, so training and serving can never drift onto different prompts.
 
 
-def formatting_func(example: dict) -> str:
-    """
-    SFTTrainer formatting_func: combines instruction + input + output into
-    the Llama 3.1 chat template for a single example. The installed trl
-    version calls this per-row and expects a single string back (not a
-    batched list), so this must not use zip()/loop-over-columns logic.
-
-    Missing / malformed fields are handled defensively: rows that cannot be
-    turned into a valid (user_content, output) pair return an empty string.
-    In practice this should never trigger here since `clean_dataset` already
-    filters out invalid rows before the dataset reaches the trainer.
-    """
-    instruction = (example.get("instruction") or "").strip()
-    inp = (example.get("input") or "").strip()
-    output = (example.get("output") or "").strip()
-
-    if not instruction or not output:
-        return ""
-
-    user = f"{instruction}\n\n{inp}" if inp else instruction
-
-    return build_llama3_prompt(SYSTEM_PROMPT, user, output)
+def to_messages(example: dict) -> dict:
+    """The row in conversational form, so SFTTrainer renders it through
+    CHAT_TEMPLATE and assistant_only_loss can mask everything but the reply."""
+    return {"messages": build_messages(example["input"], example["output"])}
 
 
 def clean_dataset(dataset):
@@ -157,6 +139,8 @@ def load_tokenizer():
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
     tokenizer.padding_side = "right"
+    # In-memory only; the shared base-model directory is never written.
+    tokenizer.chat_template = CHAT_TEMPLATE
 
     return tokenizer
 
@@ -205,14 +189,16 @@ def apply_memory_optimizations(model):
 
     model.config.use_cache = False  # incompatible with gradient checkpointing
 
-    # prepare_model_for_kbit_training casts norm layers to fp32 for
-    # stability, enables input gradients for checkpointing to work through
-    # a frozen/quantized base model, and freezes base weights.
-    model = prepare_model_for_kbit_training(
-        model,
-        use_gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-    )
+    # Not prepare_model_for_kbit_training: besides freezing the base it upcasts
+    # every unquantised weight to fp32, which on Llama 3.1 is the 128k-vocab
+    # embedding table and lm_head -- measured +2GB of weights and +3GB peak at
+    # this data's sequence lengths, for layers LoRA never trains. Llama's
+    # RMSNorm already computes in fp32 internally, so the upcast bought no
+    # stability either; loss curves matched. Freezing the base and letting
+    # gradients flow into the checkpointed blocks is all LoRA needs.
+    for param in model.parameters():
+        param.requires_grad_(False)
+    model.enable_input_require_grads()
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     return model
@@ -281,8 +267,18 @@ def load_and_prepare_dataset():
 
     logger.info("Clean dataset size: %d rows", len(dataset))
 
-    split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
-    train_dataset, eval_dataset = split["train"], split["test"]
+    if "split" in dataset.column_names:
+        # generate_dataset.py assigns the split, and eval rows use requirement
+        # phrasings the train rows never contain. A random split here would put
+        # both kinds on both sides and measure memorisation again.
+        train_dataset = dataset.filter(lambda r: r["split"] == "train")
+        eval_dataset = dataset.filter(lambda r: r["split"] == "eval")
+    else:
+        split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
+        train_dataset, eval_dataset = split["train"], split["test"]
+
+    train_dataset = train_dataset.map(to_messages, remove_columns=train_dataset.column_names)
+    eval_dataset = eval_dataset.map(to_messages, remove_columns=eval_dataset.column_names)
 
     logger.info(
         "Train/eval split: %d train rows, %d eval rows (%.0f%% held out)",
@@ -295,7 +291,7 @@ def load_and_prepare_dataset():
 # --------------------------------------------------------------------------
 # 8. TRAINING ARGUMENTS (SFTConfig)
 # --------------------------------------------------------------------------
-def build_training_config() -> SFTConfig:
+def build_training_config(assistant_only: bool = True) -> SFTConfig:
     bf16_ok = torch.cuda.is_bf16_supported()
     logger.info("bf16 supported by GPU: %s", bf16_ok)
 
@@ -309,16 +305,14 @@ def build_training_config() -> SFTConfig:
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=8,
         learning_rate=1e-4,
-        # A 3-epoch run was tried here and measured to be wrong: aggregate
-        # eval_loss looked converged by epoch ~2, but eval_loss is dominated
-        # by the long, easy-to-predict boilerplate reasoning text (longer
-        # after grounding each bullet in the lead's actual numbers). The
-        # decision-critical tokens -- Qualification, Priority, exact score --
-        # are a small fraction of that text and measurably needed more
-        # passes: held-out Qualification accuracy dropped from 96% (8
-        # epochs, shorter reasoning) to 90% (3 epochs, grounded reasoning),
-        # and exact Lead Score match dropped from 72% to 44%. Back to 8.
-        num_train_epochs=8,
+        # 4, down from 8. The 8-epoch run ended at train_loss 0.022 against
+        # eval_loss 0.155 -- a 7x gap, memorisation. It needed 8 because loss
+        # covered the whole sequence and the decision tokens were a sliver of
+        # it; with assistant_only_loss the gradient goes to the reply alone.
+        # The arithmetic those extra epochs were chasing is now recomputed by
+        # reconcile_output() anyway. Early stopping (patience 2) and
+        # load_best_model_at_end pick the checkpoint.
+        num_train_epochs=4,
         optim="paged_adamw_8bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
@@ -345,8 +339,9 @@ def build_training_config() -> SFTConfig:
         seed=SEED,
         dataset_num_proc=1,       # Windows: avoid multiprocessing dataloader issues
         dataloader_num_workers=0, # Windows: avoid multiprocessing dataloader issues
-        remove_unused_columns=False,  # required so formatting_func can see raw columns
+        remove_unused_columns=True,   # only `messages` reaches the trainer
         logging_dir=str(LOG_DIR),
+        **({"assistant_only_loss": True} if assistant_only else {}),
     )
     return config
 
@@ -384,7 +379,12 @@ def main():
         model = apply_lora(model)
 
         # --- Training config ---
-        sft_config = build_training_config()
+        try:
+            sft_config = build_training_config(assistant_only=True)
+        except (TypeError, ValueError):
+            logger.warning("This trl build rejected assistant_only_loss; training on "
+                           "prompt+completion, as the first adapter did.")
+            sft_config = build_training_config(assistant_only=False)
 
         # --- Trainer ---
         logger.info("Initializing SFTTrainer.")
@@ -394,7 +394,10 @@ def main():
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             processing_class=tokenizer,
-            formatting_func=formatting_func,
+            # Two evaluations in a row without improvement, not one: the
+            # deal_state run once stopped on a single noisy rise and a resume
+            # then gained another 32% on eval_loss.
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
         )
 
         # --- Train ---
@@ -406,7 +409,7 @@ def main():
         # Left as True it is a trap — with no checkpoint in OUTPUT_DIR the run
         # aborts before the first step, and with a *stale* one it silently
         # resumes someone else's trajectory. Resuming is now opt-in:
-        #     python scripts/train.py --resume
+        #     python adapters/lead_scoring/train.py --resume
         resume = "--resume" in sys.argv
         if resume and not any(OUTPUT_DIR.glob("checkpoint-*")):
             raise FileNotFoundError(

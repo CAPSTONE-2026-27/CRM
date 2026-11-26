@@ -1,0 +1,77 @@
+{
+  "adapter": "deal_state_llama3_lora",
+  "contract_version": "1.0.0",
+  "status": "production",
+  "training": {
+    "completed": true,
+    "epochs_run": 5.0,
+    "total_steps": 450,
+    "saved_checkpoint": "epoch 3.333 (step 300), selected by load_best_model_at_end",
+    "note": "The epoch-5 weights scored 0.01431 and were discarded in favour of epoch 3.333 at 0.01420."
+  },
+  "eval_loss": 0.014199105091392994,
+  "eval_mean_token_accuracy": 0.9958013623952866,
+  "eval_curve": {
+    "1.667": 0.02102,
+    "1.944": 0.02108,
+    "2.222": 0.01743,
+    "2.500": 0.01682,
+    "2.778": 0.01719,
+    "3.056": 0.0162,
+    "3.333": 0.0142,
+    "3.889": 0.01477,
+    "4.167": 0.01434,
+    "4.444": 0.01444,
+    "4.722": 0.01434,
+    "5.000": 0.01431
+  },
+  "curve_note": "Training was stopped once at epoch 1.94 on a single-eval rise that turned out to be noise; resuming improved eval_loss by a further 32%. Two consecutive rises, not one, is the rule that would have avoided that.",
+  "held_out_metrics": {
+    "n": 30,
+    "json_valid": 1.0,
+    "scoreable_zero_repairs": 1.0,
+    "changed_recall": 0.866,
+    "unchanged_precision": 0.986,
+    "exact_state_all_17": 0.333,
+    "field_accuracy_mean": 0.949,
+    "categorical_fields_accuracy": 1.0,
+    "note": "Original 2026-08 run, adapter's raw numerics. Superseded by held_out_metrics_2026_09_17."
+  },
+  "end_to_end_vs_xgboost": {
+    "n": 30,
+    "mean_absolute_error_deal_points": 0.29,
+    "median_absolute_error": 0.14,
+    "worst_case": 1.43,
+    "bias": 0.07,
+    "within_3_points": 1.0,
+    "same_band": 1.0,
+    "note": "Errors in lead_score and engagement_score barely move the deal score, because the regressor leans on the categoricals and those are 100% accurate."
+  },
+  "known_weakness": {
+    "lead_score": "40% field accuracy, unchanged across 5 epochs. It is a weighted sum the model must land exactly; an 8B model does not do reliable multi-term arithmetic. Both lead_score and engagement_score are pure functions of fields the model gets right, so they should be recomputed after generation in serve.py rather than trained harder. That would also lift exact_state from 33% to roughly 85%.",
+    "engagement_score": "80% field accuracy, same cause, simpler formula.",
+    "status": "Resolved at serve time: server/main.py and eval/evaluate.py recompute lead_score and engagement_score via apply_derived_fields(); use evaluate.py --raw to see the adapter's own arithmetic."
+  },
+  "base_model": "Llama-3.1-8B-Instruct (ai/base-model/Llama-3.1-8B-Instruct; trained from the old ../Llama3_CRM/models copy of the same weights)",
+  "dataset_rows": 800,
+  "train_eval_split": "720 train / 80 eval, seed 42",
+  "chat_template": "project-owned, carries {% generation %} markers so assistant_only_loss masks the prompt",
+  "loss": "completion-only (assistant_only_loss=true)",
+  "verified_against_bundle": "deal_score_v1.0.0_20260802_062230Z",
+  "held_out_metrics_2026_09_17": {
+    "n": 80,
+    "scored_as": "served: coerce_state() then apply_derived_fields() recomputes lead_score/engagement_score",
+    "json_valid": 1.0,
+    "scoreable_zero_repairs": 1.0,
+    "exact_state_all_17": 1.0,
+    "changed_recall": 1.0,
+    "unchanged_precision": 1.0,
+    "field_accuracy_mean": 1.0,
+    "end_to_end_vs_xgboost": {
+      "n": 30,
+      "mean_absolute_error_deal_points": 0.0,
+      "same_band": 1.0
+    },
+    "caveat": "72% of held-out meeting-note sentences appear verbatim in the training split (template generator), so this measures fit to the generator, not accuracy on real CRM notes. Validate on hand-labelled real meetings before trusting it."
+  }
+}

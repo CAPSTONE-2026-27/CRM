@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.techcrm.crm.ai.AiChatClient;
 import com.techcrm.crm.ai.AiChatClient.ChatMessage;
 import com.techcrm.crm.ai.AiJson;
+import com.techcrm.crm.ai.AiTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -56,7 +57,7 @@ public class DealAnalysisClient {
     public AnalysisResult analyze(MeetingOutput meeting, String dealName, Integer leadScore) {
         long start = System.currentTimeMillis();
 
-        String reply = chatClient.complete(List.of(
+        String reply = chatClient.complete(AiTask.GENERAL, List.of(
                 ChatMessage.system(systemPrompt()),
                 ChatMessage.user(describe(meeting, dealName, leadScore))));
 

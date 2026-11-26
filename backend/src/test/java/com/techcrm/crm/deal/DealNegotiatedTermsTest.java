@@ -50,6 +50,7 @@ class DealNegotiatedTermsTest {
     @Mock AccountRepository accountRepository;
     @Mock DealScoringClient dealScoringClient;
     @Mock CustomerOnboardingService onboardingService;
+    @Mock com.techcrm.crm.user.UserRepository userRepository;
     @Mock ContactRepository contactRepository;
     @Mock org.springframework.context.ApplicationEventPublisher events;
 
@@ -74,12 +75,12 @@ class DealNegotiatedTermsTest {
     @BeforeEach
     void setUp() {
         service = new DealService(dealRepository, accountRepository, dealScoringClient, onboardingService,
-                contactRepository, events);
+                userRepository, contactRepository, events);
         when(dealRepository.save(any(Deal.class))).thenAnswer(i -> i.getArgument(0));
     }
 
     private void dealIs(String stage) {
-        when(dealRepository.findByIdAndOrganizationId(DEAL_ID, ORG_ID))
+        when(dealRepository.findByIdAndOrganizationIdAndOwnerId(DEAL_ID, ORG_ID, 1L))
                 .thenReturn(Optional.of(dealAt(stage)));
     }
 
@@ -117,7 +118,7 @@ class DealNegotiatedTermsTest {
         Deal deal = dealAt(DealStages.NEGOTIATION);
         deal.setPaymentTerms("Existing terms");
         deal.setDeliveryTimeline("Existing schedule");
-        when(dealRepository.findByIdAndOrganizationId(DEAL_ID, ORG_ID)).thenReturn(Optional.of(deal));
+        when(dealRepository.findByIdAndOrganizationIdAndOwnerId(DEAL_ID, ORG_ID, 1L)).thenReturn(Optional.of(deal));
 
         var response = service.recordNegotiatedTerms(caller(), DEAL_ID,
                 new NegotiatedTermsRequest(new BigDecimal("500000.00"), null, null));
@@ -130,7 +131,7 @@ class DealNegotiatedTermsTest {
     void aBlankTermIsTreatedAsAbsentRatherThanAsAnInstructionToClear() {
         Deal deal = dealAt(DealStages.NEGOTIATION);
         deal.setPaymentTerms("Existing terms");
-        when(dealRepository.findByIdAndOrganizationId(DEAL_ID, ORG_ID)).thenReturn(Optional.of(deal));
+        when(dealRepository.findByIdAndOrganizationIdAndOwnerId(DEAL_ID, ORG_ID, 1L)).thenReturn(Optional.of(deal));
 
         var response = service.recordNegotiatedTerms(caller(), DEAL_ID,
                 new NegotiatedTermsRequest(null, "   ", null));
@@ -169,7 +170,7 @@ class DealNegotiatedTermsTest {
 
     @Test
     void aDealInAnotherOrganizationIsNotFound() {
-        when(dealRepository.findByIdAndOrganizationId(anyLong(), anyLong())).thenReturn(Optional.empty());
+        when(dealRepository.findByIdAndOrganizationIdAndOwnerId(anyLong(), anyLong(), anyLong())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.recordNegotiatedTerms(caller(), DEAL_ID,
                 new NegotiatedTermsRequest(new BigDecimal("1000000.00"), null, null)))

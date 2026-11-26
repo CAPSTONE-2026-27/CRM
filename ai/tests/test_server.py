@@ -1,5 +1,5 @@
 """
-Wire-format tests for scripts/main.py.
+Wire-format tests for server/main.py.
 
 The CRM's AiChatClient parses two specific shapes: `choices[0].message.content`
 for a blocking call and `data: {...}` lines carrying `choices[0].delta.content`
@@ -68,10 +68,10 @@ def client(monkeypatch):
     """A server whose weights are 'loaded' but whose generation is stubbed."""
     calls = {}
 
-    def fake_generate(prompt, *, adapter, max_new_tokens, temperature):
+    def fake_generate(prompt, *, adapter, max_new_tokens, temperature, repetition_penalty=None):
         calls.update(
             prompt=prompt, adapter=adapter, max_new_tokens=max_new_tokens,
-            temperature=temperature,
+            temperature=temperature, repetition_penalty=repetition_penalty,
         )
         return FINE_TUNE_OUTPUT if adapter == main.LEAD_SCORING_ADAPTER else "The base model's answer."
 
@@ -89,9 +89,10 @@ def client(monkeypatch):
     return test_client
 
 
-def _chat(client, system, user, **extra):
+def _chat(client, system, user, headers=None, **extra):
     return client.post(
         "/v1/chat/completions",
+        headers=headers,
         json={
             "model": "crm-llama-3.1-8b-lora",
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -162,7 +163,7 @@ class TestRouting:
         assert client.calls["adapter"] is None
 
     def test_meeting_extraction_uses_its_own_prompt_not_the_lead_scorer(self, client, monkeypatch):
-        # The adapter was trained against meeting_prompt_format.SYSTEM_PROMPT.
+        # The adapter was trained against lead_meeting prompt_format.SYSTEM_PROMPT.
         # Rendering the request's own system text instead would infer on a
         # different prompt than training used.
         monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
@@ -178,6 +179,18 @@ class TestRouting:
         _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
         assert client.calls["temperature"] == 0.0
 
+    def test_meeting_extraction_decodes_as_evaluated(self, client, monkeypatch):
+        # lead_meeting eval/evaluate.py measures the adapter at repetition_penalty 1.02.
+        # Serving it at the generic 1.05 would ship a decoder nobody measured,
+        # one that penalises the repeated labels this reply legitimately contains.
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "You are a CRM Lead Qualification Analyst.", "notes")
+        assert client.calls["repetition_penalty"] == main.MEETING_REPETITION_PENALTY == 1.02
+
+    def test_other_routes_keep_the_default_repetition_penalty(self, client):
+        _chat(client, LEAD_SYSTEM_PROMPT, "Company: Acme")
+        assert client.calls["repetition_penalty"] is None
+
     def test_lead_scoring_and_extraction_do_not_collide(self, client, monkeypatch):
         # Both markers are matched against the same system text. If either
         # prompt were ever reworded to contain the other's marker, one task
@@ -188,6 +201,37 @@ class TestRouting:
         analyst = "You are a CRM Lead Qualification Analyst."
         assert main.is_meeting_extraction(analyst)
         assert not main.is_lead_scoring(analyst)
+
+    def test_task_header_routes_lead_scoring_despite_a_reworded_prompt(self, client):
+        # The point of the header: rewording the Java prompt must not silently
+        # drop lead scoring onto the base model.
+        _chat(client, "Score this lead please.", LEAD_USER_MESSAGE,
+              headers={main.TASK_HEADER: main.TASK_LEAD_SCORING})
+        assert client.calls["adapter"] == main.LEAD_SCORING_ADAPTER
+        assert "You are an AI CRM Lead Management Assistant" in client.calls["prompt"]
+
+    def test_task_header_routes_meeting_extraction(self, client, monkeypatch):
+        monkeypatch.setattr(main, "MEETING_ADAPTER_READY", True)
+        _chat(client, "Read these notes.", "notes",
+              headers={main.TASK_HEADER: main.TASK_MEETING_EXTRACTION})
+        assert client.calls["adapter"] == main.MEETING_ADAPTER
+
+    def test_task_header_wins_over_the_prompt_marker(self, client):
+        # An explicit "general" keeps a prompt that happens to contain a marker
+        # off the adapter.
+        _chat(client, LEAD_SYSTEM_PROMPT, LEAD_USER_MESSAGE,
+              headers={main.TASK_HEADER: main.TASK_GENERAL})
+        assert client.calls["adapter"] is None
+
+    def test_task_header_is_case_insensitive(self, client):
+        _chat(client, "anything", LEAD_USER_MESSAGE, headers={main.TASK_HEADER: " Lead-Scoring "})
+        assert client.calls["adapter"] == main.LEAD_SCORING_ADAPTER
+
+    def test_unknown_task_header_falls_back_to_the_prompt_marker(self, client):
+        response = _chat(client, LEAD_SYSTEM_PROMPT, LEAD_USER_MESSAGE,
+                         headers={main.TASK_HEADER: "lead-scorng"})
+        assert response.status_code == 200
+        assert client.calls["adapter"] == main.LEAD_SCORING_ADAPTER
 
     def test_json_tasks_decode_greedily(self, client):
         _chat(client, "Respond with ONLY strict JSON, no prose.", "extract this")

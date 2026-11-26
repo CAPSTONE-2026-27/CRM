@@ -1,13 +1,13 @@
 """
-train_meeting.py
-================
+train.py
+========
 QLoRA fine-tune for lead qualification-meeting extraction:
 meeting notes (free text) -> five business signals (JSON).
 
 Trains a SECOND adapter. The capture-time lead scorer in
-outputs/lead_management_llama3_lora is not touched, retrained or replaced --
+adapters/lead_scoring/weights is not touched, retrained or replaced --
 it works, and it stays exactly as it is. Both adapters attach to the same base
-weights and are toggled per request by scripts/main.py, so serving two
+weights and are toggled per request by server/main.py, so serving two
 fine-tuned behaviours costs one model in VRAM.
 
 The model never produces a score. It reads the meeting and names five values;
@@ -17,9 +17,9 @@ what makes a score recomputable -- and challengeable -- from stored signals
 months later, and lets the weights be retuned without retraining anything.
 
 Run:
-    python scripts/generate_meeting_dataset.py --rows 500   # first
-    python scripts/train_meeting.py
-    python scripts/train_meeting.py --resume                # after a crash
+    python adapters/lead_meeting/data/generate_dataset.py --rows 500   # first
+    python adapters/lead_meeting/train.py
+    python adapters/lead_meeting/train.py --resume                # after a crash
 """
 
 from __future__ import annotations
@@ -37,8 +37,10 @@ import numpy as np
 import torch
 import transformers
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model
+from transformers import (
+    AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, EarlyStoppingCallback,
+)
 from trl import SFTConfig, SFTTrainer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -46,8 +48,10 @@ import prompt_format as fmt  # noqa: E402
 
 ADAPTER_DIR = Path(__file__).resolve().parent
 AI_ROOT = ADAPTER_DIR.parent.parent
-MODEL_PATH = AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"
-DATA_PATH = ADAPTER_DIR / "data" / "meeting_train.jsonl"
+MODEL_PATH = Path(os.getenv("CRM_BASE_MODEL", AI_ROOT / "base-model" / "Llama-3.1-8B-Instruct"))
+DATA_PATH = ADAPTER_DIR / "data" / "train.jsonl"
+# Optional: 25-90 word bullet/fragment notes from generate_dataset.py --short.
+SHORT_PATH = ADAPTER_DIR / "data" / "short.jsonl"
 OUTPUT_DIR = ADAPTER_DIR / "weights"
 LOG_DIR = ADAPTER_DIR / "logs"
 
@@ -60,7 +64,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_DIR / "train_meeting.log", encoding="utf-8"),
+        logging.FileHandler(LOG_DIR / "train.log", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("meeting_extract_train")
@@ -94,7 +98,7 @@ def set_seed(seed: int = SEED) -> None:
 #      injects one; a date that shifts between training and serving is silent
 #      prompt drift that makes a model perform worse than its eval loss says.
 #
-# scripts/main.py must install this same template when serving this adapter.
+# server/main.py must install this same template when serving this adapter.
 CHAT_TEMPLATE = (
     "{{- bos_token }}"
     "{%- for message in messages %}"
@@ -145,26 +149,39 @@ def _is_valid(row: dict) -> bool:
 
 
 def load_and_prepare_dataset():
+    """(train, eval) -- eval/evaluate.py calls this too, so both see one split."""
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"No training data at {DATA_PATH}. Run:\n"
-            "    python scripts/generate_meeting_dataset.py --rows 500"
+            "    python adapters/lead_meeting/data/generate_dataset.py --rows 500"
         )
 
-    dataset = load_dataset("json", data_files=str(DATA_PATH), split="train")
-    logger.info("Raw dataset: %d rows", len(dataset))
+    from datasets import concatenate_datasets
 
-    before = len(dataset)
-    dataset = dataset.filter(_is_valid)
-    if len(dataset) != before:
-        logger.warning("Dropped %d rows with an unusable target", before - len(dataset))
-    logger.info("Clean dataset: %d rows", len(dataset))
+    # Each file is split on its own, then the parts are joined. Splitting the
+    # union instead would reshuffle train.jsonl's held-out slice whenever
+    # short.jsonl changed, and eval/sentiment_review.json -- hand readings of
+    # exactly those 50 notes -- would end up scoring training rows.
+    trains, evals = [], []
+    for path in (DATA_PATH, SHORT_PATH):
+        if not path.exists():
+            continue
+        dataset = load_dataset("json", data_files=str(path), split="train")
+        before = len(dataset)
+        dataset = dataset.filter(_is_valid)
+        if len(dataset) != before:
+            logger.warning("%s: dropped %d rows with an unusable target",
+                           path.name, before - len(dataset))
+        # Shuffled before splitting: rows are generated in stratified band order,
+        # so the tail would be a systematically different distribution.
+        split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
+        logger.info("%s: %d train / %d eval", path.name, len(split["train"]), len(split["test"]))
+        trains.append(split["train"])
+        evals.append(split["test"])
 
-    # Shuffled before splitting: rows are generated in stratified band order, so
-    # the tail would be a systematically different distribution from the rest.
-    split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
-    logger.info("Split: %d train / %d eval", len(split["train"]), len(split["test"]))
-    return split["train"], split["test"]
+    train, held_out = concatenate_datasets(trains), concatenate_datasets(evals)
+    logger.info("Split: %d train / %d eval", len(train), len(held_out))
+    return train, held_out
 
 
 # --------------------------------------------------------------------------
@@ -205,9 +222,12 @@ def load_model():
 
 def apply_memory_optimizations(model):
     model.config.use_cache = False  # incompatible with gradient checkpointing
-    model = prepare_model_for_kbit_training(
-        model, use_gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False})
+    # Not prepare_model_for_kbit_training: it also upcasts the embedding table
+    # and lm_head to fp32 (+2GB weights, +3GB peak measured) for layers LoRA
+    # never trains. See adapters/lead_scoring/train.py for the measurement.
+    for param in model.parameters():
+        param.requires_grad_(False)
+    model.enable_input_require_grads()
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     return model
 
@@ -255,7 +275,8 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         fp16=not bf16_ok,
         # A 250-word note plus the system prompt is comfortably under 1024;
         # 1536 leaves headroom without padding cost, since packing is off and
-        # batch size is 1. Verify with scripts/check_meeting_lengths.py.
+        # batch size is 1. adapters/deal_state/data/check_lengths.py shows how to
+        # verify this; the meeting adapter has no equivalent script.
         max_length=1536,
         packing=False,
         gradient_checkpointing=True,
@@ -311,6 +332,9 @@ def main() -> None:
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             processing_class=tokenizer,
+            # Two evaluations without improvement, not one -- a single noisy rise
+            # once stopped the deal_state run 32% short of its best eval_loss.
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
             # No formatting_func: the dataset is conversational, so SFTTrainer
             # applies the chat template itself. That is what makes
             # assistant_only_loss possible and keeps training on the exact

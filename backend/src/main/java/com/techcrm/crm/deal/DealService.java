@@ -7,6 +7,7 @@ import com.techcrm.crm.contact.ContactRepository;
 import com.techcrm.crm.deal.DealDtos.DealRequest;
 import com.techcrm.crm.deal.DealDtos.DealResponse;
 import com.techcrm.crm.onboarding.CustomerOnboardingService;
+import com.techcrm.crm.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class DealService {
     private final AccountRepository accountRepository;
     private final DealScoringClient dealScoringClient;
     private final CustomerOnboardingService onboardingService;
+    private final UserRepository userRepository;
     private final ContactRepository contactRepository;
     private final ApplicationEventPublisher events;
 
@@ -30,19 +32,23 @@ public class DealService {
                        AccountRepository accountRepository,
                        DealScoringClient dealScoringClient,
                        CustomerOnboardingService onboardingService,
+                       UserRepository userRepository,
                        ContactRepository contactRepository,
                        ApplicationEventPublisher events) {
         this.dealRepository = dealRepository;
         this.accountRepository = accountRepository;
         this.dealScoringClient = dealScoringClient;
         this.onboardingService = onboardingService;
+        this.userRepository = userRepository;
         this.contactRepository = contactRepository;
         this.events = events;
     }
 
+    /** The caller's pipeline: the whole org for ADMIN/MANAGER, only their own
+     *  deals for a sales rep (see {@link DealAccess}). */
     @Transactional(readOnly = true)
     public List<DealResponse> list(AuthenticatedUser caller) {
-        return dealRepository.findByOrganizationIdOrderByCreatedAtDesc(caller.organizationId())
+        return DealAccess.visibleDeals(dealRepository, caller)
                 .stream().map(DealResponse::from).toList();
     }
 
@@ -55,6 +61,9 @@ public class DealService {
     public DealResponse create(AuthenticatedUser caller, DealRequest request) {
         Deal deal = new Deal();
         deal.setOrganizationId(caller.organizationId());
+        // A deal nobody owns is invisible to every rep, so a new deal defaults to
+        // its creator rather than to no one.
+        deal.setOwnerId(caller.userId());
         apply(caller, deal, request);
         applyDealScore(deal);
 
@@ -225,7 +234,7 @@ public class DealService {
     }
 
     private Deal require(AuthenticatedUser caller, Long id) {
-        return dealRepository.findByIdAndOrganizationId(id, caller.organizationId())
+        return DealAccess.findVisible(dealRepository, caller, id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deal not found"));
     }
 
@@ -235,6 +244,31 @@ public class DealService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown deal stage: " + stage);
         }
         return value;
+    }
+
+    /**
+     * Ownership decides whose pipeline a deal appears in, so it is set here
+     * rather than copied blindly from the request.
+     *
+     * A sales rep cannot hand a deal to someone else — it would vanish from their
+     * own board with no way back. ADMIN/MANAGER may reassign, but only to a user
+     * in their organization. A request without an owner leaves the current one
+     * in place: the deal form does not send the field, and treating its absence
+     * as "unassign" would silently drop the deal from its rep's pipeline on every
+     * edit.
+     */
+    private void applyOwner(AuthenticatedUser caller, Deal deal, Long requestedOwnerId) {
+        if (DealAccess.isScopedToOwnDeals(caller)) {
+            deal.setOwnerId(caller.userId());
+            return;
+        }
+        if (requestedOwnerId == null) {
+            return;
+        }
+        userRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(requestedOwnerId, caller.organizationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "ownerId does not belong to this organization"));
+        deal.setOwnerId(requestedOwnerId);
     }
 
     private void apply(AuthenticatedUser caller, Deal deal, DealRequest request) {
@@ -253,7 +287,7 @@ public class DealService {
         deal.setExpectedCloseDate(request.expectedCloseDate());
         if (request.stage() != null) deal.setStage(normaliseStage(request.stage()));
         deal.setProbability(request.probability());
-        deal.setOwnerId(request.ownerId());
+        applyOwner(caller, deal, request.ownerId());
         deal.setForecastCategory(request.forecastCategory());
         deal.setWeightedForecastValue(request.weightedForecastValue());
         deal.setBestCaseValue(request.bestCaseValue());

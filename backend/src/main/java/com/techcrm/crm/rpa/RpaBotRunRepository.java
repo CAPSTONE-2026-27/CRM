@@ -9,4 +9,6 @@ public interface RpaBotRunRepository extends JpaRepository<RpaBotRun, Long> {
     List<RpaBotRun> findTop100ByOrganizationIdOrderByStartedAtDesc(Long organizationId);
 
     List<RpaBotRun> findTop100ByOrganizationIdAndBotIdOrderByStartedAtDesc(Long organizationId, Long botId);
+
+    List<RpaBotRun> findTop5ByOrganizationIdOrderByStartedAtDesc(Long organizationId);
 }

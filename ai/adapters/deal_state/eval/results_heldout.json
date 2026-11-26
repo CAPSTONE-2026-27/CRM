@@ -1,0 +1,290 @@
+{
+  "set": "heldout",
+  "adapter": "D:\\CRM\\ai\\adapters\\deal_state\\weights",
+  "scored_as": "served (derived fields recomputed)",
+  "n": 77,
+  "json_valid": 1.0,
+  "scoreable_zero_repairs": 1.0,
+  "exact_state_all_17": 0.779,
+  "changed_recall": 0.923,
+  "unchanged_precision": 0.991,
+  "field_accuracy": {
+    "total_meetings": 1.0,
+    "lead_score": 0.805,
+    "customer_sentiment": 0.987,
+    "buying_intent": 0.935,
+    "relationship_strength": 0.987,
+    "budget_status": 1.0,
+    "decision_maker_involvement": 0.987,
+    "customer_urgency": 0.948,
+    "main_objections": 0.974,
+    "product_interest_level": 0.961,
+    "meeting_outcome": 1.0,
+    "customer_requirements": 1.0,
+    "risk_factors": 0.948,
+    "competitor_mention": 0.987,
+    "engagement_score": 0.935,
+    "implementation_readiness": 0.987,
+    "upsell_opportunity": 1.0
+  },
+  "no_json_rows": [],
+  "misses": [
+    {
+      "id": 3,
+      "wrong": {
+        "lead_score": {
+          "expected": 77,
+          "actual": 67
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "wrong": {
+        "lead_score": {
+          "expected": 93,
+          "actual": 88
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Stakeholder Turnover"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "wrong": {
+        "lead_score": {
+          "expected": 68,
+          "actual": 63
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Stakeholder Turnover"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "wrong": {
+        "lead_score": {
+          "expected": 29,
+          "actual": 33
+        },
+        "product_interest_level": {
+          "expected": "Medium",
+          "actual": "High"
+        },
+        "engagement_score": {
+          "expected": 72,
+          "actual": 78
+        }
+      }
+    },
+    {
+      "id": 26,
+      "wrong": {
+        "lead_score": {
+          "expected": 42,
+          "actual": 53
+        },
+        "decision_maker_involvement": {
+          "expected": "Indirect",
+          "actual": "Yes"
+        },
+        "engagement_score": {
+          "expected": 60,
+          "actual": 70
+        }
+      }
+    },
+    {
+      "id": 28,
+      "wrong": {
+        "lead_score": {
+          "expected": 49,
+          "actual": 45
+        },
+        "customer_urgency": {
+          "expected": "Critical",
+          "actual": "High"
+        },
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Stakeholder Turnover"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "wrong": {
+        "lead_score": {
+          "expected": 16,
+          "actual": 6
+        },
+        "buying_intent": {
+          "expected": "Medium",
+          "actual": "Low"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "wrong": {
+        "lead_score": {
+          "expected": 15,
+          "actual": 19
+        },
+        "main_objections": {
+          "expected": "Poor Past Experience / Support; Missing Features; Long Implementation Time; No Urgent Business Need",
+          "actual": "Poor Past Experience / Support; Missing Features; Long Implementation Time"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "wrong": {
+        "lead_score": {
+          "expected": 39,
+          "actual": 29
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "wrong": {
+        "lead_score": {
+          "expected": 25,
+          "actual": 29
+        },
+        "product_interest_level": {
+          "expected": "Medium",
+          "actual": "High"
+        },
+        "engagement_score": {
+          "expected": 72,
+          "actual": 78
+        }
+      }
+    },
+    {
+      "id": 38,
+      "wrong": {
+        "risk_factors": {
+          "expected": "No Risk Identified",
+          "actual": "Competitor Pressure"
+        },
+        "competitor_mention": {
+          "expected": "Yes",
+          "actual": "No"
+        }
+      }
+    },
+    {
+      "id": 40,
+      "wrong": {
+        "lead_score": {
+          "expected": 20,
+          "actual": 19
+        },
+        "customer_urgency": {
+          "expected": "Medium",
+          "actual": "Low"
+        },
+        "main_objections": {
+          "expected": "Price Too High; No Urgent Business Need",
+          "actual": "Price Too High"
+        }
+      }
+    },
+    {
+      "id": 42,
+      "wrong": {
+        "lead_score": {
+          "expected": 19,
+          "actual": 15
+        },
+        "product_interest_level": {
+          "expected": "Medium",
+          "actual": "Low"
+        },
+        "engagement_score": {
+          "expected": 47,
+          "actual": 40
+        }
+      }
+    },
+    {
+      "id": 51,
+      "wrong": {
+        "lead_score": {
+          "expected": 32,
+          "actual": 37
+        },
+        "customer_sentiment": {
+          "expected": "Neutral",
+          "actual": "Positive"
+        },
+        "relationship_strength": {
+          "expected": 5.0,
+          "actual": 6.0
+        },
+        "engagement_score": {
+          "expected": 69,
+          "actual": 82
+        }
+      }
+    },
+    {
+      "id": 67,
+      "wrong": {
+        "implementation_readiness": {
+          "expected": "Ready",
+          "actual": "Partially Ready"
+        }
+      }
+    },
+    {
+      "id": 68,
+      "wrong": {
+        "lead_score": {
+          "expected": 75,
+          "actual": 65
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    },
+    {
+      "id": 71,
+      "wrong": {
+        "lead_score": {
+          "expected": 64,
+          "actual": 54
+        },
+        "buying_intent": {
+          "expected": "High",
+          "actual": "Medium"
+        }
+      }
+    }
+  ]
+}

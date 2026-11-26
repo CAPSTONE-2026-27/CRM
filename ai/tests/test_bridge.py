@@ -1,5 +1,5 @@
 """
-Tests for the lead-scoring bridge in scripts/main.py.
+Tests for the lead-scoring bridge in server/main.py.
 
 These cover the part of the migration that can silently rot: the mapping from
 the CRM's field names onto the trained input shape, and the conversion of the
@@ -248,26 +248,28 @@ class TestScoreBridge:
         }
 
     def test_all_five_factors_make_rescaling_an_identity(self):
-        # 10 + 20 + 15 + 20 + 20 = 85 out of the full 100. This is the point of
-        # migration V17: with every factor recorded the score needs no rescaling
-        # and is directly comparable to the training data again.
+        # 10 + 20 + 17 + 20 + 20 = 87 out of the full 100 (the deal value of
+        # ₹1.54 Cr sits above the middle of its range, so it earns 17 rather than
+        # the old tier's flat 15). This is the point of migration V17: with every
+        # factor recorded the score needs no rescaling and is directly comparable
+        # to the training data again.
         result = self._score()
-        assert result["score"] == 85
+        assert result["score"] == 87
         assert result["label"] == "Hot"
 
     def test_score_is_recomputed_from_the_input_not_the_model(self):
         # With all five bullets present, reconcile_output() replaces every point
         # value with the one the input actually earns (prompt_format's tier
-        # tables). The model's own arithmetic is overridden entirely — so a reply
+        # curves). The model's own arithmetic is overridden entirely — so a reply
         # claiming 20 points for a 474-person company still scores it 10.
         inflated = re.sub(r"contributing \d+ points", "contributing 20 points", MODEL_OUTPUT)
-        assert self._score(inflated)["score"] == 85  # not 100
+        assert self._score(inflated)["score"] == 87  # not 100
 
     @pytest.mark.parametrize(
         "employees,quantity,value,timeline,requirement,expected,label",
         [
-            # Every factor at its top tier -> a genuine 100/100.
-            (8000, 900, "30000000", "Immediately",
+            # Every factor past its top anchor -> a genuine 100/100.
+            (12000, 1500, "50000000", "Immediately",
              "Budget already approved and ready to move forward.", 100, "Hot"),
             # Every factor at the 10-point tier.
             (500, 60, "3000000", "Within 2 Months",

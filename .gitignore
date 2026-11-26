@@ -41,6 +41,34 @@ hf_cache/
 # Deal scorer audit log — appended on every /score call, local runtime output.
 xgboost/outputs/prediction_log.jsonl
 
+# Local Ollama install (binaries, ~3GB) — models are pulled, not committed.
+Ollama/
+
+# Marketing adapter dataset generation: resume cursor and progress log.
+ai/adapters/marketing/data/content.state.json
+ai/adapters/marketing/data/*.log
+
+# Output of servers restarted by ai/tools/train_offline.py.
+ai/logs/
+
+# Marketing retraining (ai/tools/retrain.py). feedback/benchmark rows are built
+# from real CRM leads and campaigns, so they must never be committed.
+ai/adapters/marketing/candidate/
+ai/adapters/marketing/weights.prev-*/
+ai/adapters/marketing/data/feedback.jsonl
+ai/adapters/marketing/data/benchmark.jsonl
+ai/adapters/marketing/data/benchmark_seed.jsonl
+
+# Trained LoRA adapter weights: large binaries rebuilt by training, and over
+# GitHub's 100 MB file limit. The small JSON configs and metrics beside them
+# stay in Git as provenance.
+ai/adapters/*/weights_v*/**/*.safetensors
+ai/adapters/*/weights_v*/**/*.pt
+ai/adapters/*/weights_v*/**/tokenizer.json
+ai/adapters/*/weights_v*/checkpoint-*/
+
+# Server run logs written while the app is running.
+*.run.log
 backend/var/
 
 # Capstone report, resume and presentation decks — coursework deliverables

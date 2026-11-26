@@ -1,6 +1,6 @@
 """
-meeting_prompt_format.py
-========================
+prompt_format.py
+================
 Single source of truth for the lead qualification-meeting extraction task:
 vocabulary, prompt, output parsing, and the rule table the backend scores with.
 
@@ -19,8 +19,8 @@ say which of the two was wrong. Keeping the arithmetic outside the model means
 any score can be recomputed -- and challenged -- from the stored signals months
 later, and the weights can be retuned without retraining anything.
 
-Separate from prompt_format.py, which serves the capture-time lead scorer. That
-task and this one share a base model and nothing else: different input, different
+Separate from adapters/lead_scoring/prompt_format.py, which serves the
+capture-time lead scorer. That task and this one share a base model and nothing else: different input, different
 output, different adapter. Importing across them would couple two things that
 must be free to change independently.
 """
@@ -86,10 +86,6 @@ WEIGHTS = {
     "product_interest_level": {"High": 15, "Medium": 10, "Low": 5},
 }
 
-MAX_POINTS = {"customer_sentiment": 20, "buying_intent": 30,
-              "decision_maker_involvement": 20, "customer_urgency": 15,
-              "product_interest_level": 15}
-
 PRIORITY_BANDS = [(85, "High Priority"), (70, "Medium Priority"),
                   (50, "Low Priority"), (0, "Very Low Priority")]
 
@@ -121,6 +117,12 @@ def _vocabulary_block() -> str:
     )
 
 
+# The customer_sentiment line was added for the 2026-10 retrain. The
+# 2026-09-17 review (eval/sentiment_review.json) traced most sentiment errors to
+# notes that never state a reaction, and data/label_fixes.json relabels the
+# training set by this same rule. An adapter trained before this line was added
+# sees a prompt it was not trained on -- retrain after changing it. Mirrored in
+# LeadMeetingExtractionClient.SYSTEM_PROMPT.
 SYSTEM_PROMPT = (
     "You are a CRM Lead Qualification Analyst.\n\n"
     "You will be given a sales executive's written notes from a qualification "
@@ -145,7 +147,17 @@ SYSTEM_PROMPT = (
     "contract or implementation plan; Medium when they asked for a demo or "
     "further evaluation; Low when they were gathering information only.\n"
     "- customer_urgency is High when a date, deadline or compelling event was "
-    "named; Medium when a rough timeframe was given; Low when none was.\n\n"
+    "named; Medium when a rough timeframe was given; Low when none was.\n"
+    "- product_interest_level counts how much of the product they want: High when "
+    "most of the platform or three or more areas; Medium when the core or two "
+    "areas, such as lead management and email automation; Low when one narrow "
+    "feature and they dismissed the rest.\n"
+    "- customer_sentiment is how the customer reacted to us and our product: "
+    "Positive when they were warm, enthusiastic, impressed or complimentary; "
+    "Negative when they were sceptical of us, pushed back, or questioned whether "
+    "to continue; Neutral when businesslike or reserved, or when the notes "
+    "describe no reaction. Frustration with their current system is not "
+    "negative sentiment.\n\n"
     "Respond with ONLY the JSON object below. No prose, no markdown fences, no "
     "explanation, no score.\n\n"
     "{\n"
@@ -177,9 +189,9 @@ def build_messages(meeting_notes: str, target: dict = None) -> list:
 
 
 def build_llama3_prompt(system: str, user: str, assistant: str = "") -> str:
-    """Render one turn in the exact format train_meeting.py trained against.
+    """Render one turn in the exact format train.py trained against.
 
-    Must stay byte-identical to what train_meeting.CHAT_TEMPLATE produces for
+    Must stay byte-identical to what train.CHAT_TEMPLATE produces for
     the same messages, which is standard Llama 3.1 Instruct WITHOUT the
     tokenizer's stock "Cutting Knowledge Date / Today Date" preamble. Rendering
     through the stock template at inference would feed the adapter a prompt it

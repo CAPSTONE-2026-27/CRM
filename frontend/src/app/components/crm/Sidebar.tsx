@@ -52,10 +52,10 @@ export const PERMISSION_CATALOG: { key: string; label: string }[] = [
   { key: "leads", label: "Lead management" },
   { key: "pipeline", label: "Sales pipeline" },
   { key: "accounts", label: "Accounts & contacts" },
-  { key: "cases", label: "Cases & tickets" },
-  { key: "workflow", label: "Workflow engine" },
   { key: "rpa", label: "RPA bots" },
   { key: "marketing", label: "Marketing automation" },
+  // Marketing Head: approve AI-scored leads and generated content, launch campaigns.
+  { key: "marketing_approve", label: "Marketing approvals (Marketing Head)" },
   { key: "analytics", label: "Analytics & reporting" },
   { key: "security", label: "Security & audit" },
   { key: "copilot", label: "Deal coach" },
@@ -66,8 +66,8 @@ export const PERMISSION_CATALOG: { key: string; label: string }[] = [
 export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   ADMIN: PERMISSION_CATALOG.map((p) => p.key),
   MANAGER: PERMISSION_CATALOG.map((p) => p.key),
-  SALES_REP: ["leads", "pipeline", "accounts", "copilot"],
-  SUPPORT_AGENT: ["cases", "copilot"],
+  SALES_REP: ["leads", "pipeline", "accounts", "analytics", "copilot"],
+  SUPPORT_AGENT: ["analytics", "copilot"],
   MARKETING: ["marketing", "analytics", "copilot"],
 };
 

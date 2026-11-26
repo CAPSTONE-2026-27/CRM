@@ -17,7 +17,7 @@ between Spring and the model regardless of what the model does in isolation.
 Requires: :8080 backend, :8001 lead scoring LLM.
 
 Run:
-    python scripts/full_stack_test.py
+    python tools/full_stack_test.py
 """
 
 from __future__ import annotations

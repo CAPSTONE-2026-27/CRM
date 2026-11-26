@@ -26,7 +26,8 @@ import { DealWorkspace } from "../components/crm/DealWorkspace";
 import { DealDetailModal } from "../components/crm/DealDetailModal";
 import { LeadFlowPanel } from "../components/crm/LeadFlowPanel";
 import { WorkflowBuilder } from "../components/crm/WorkflowBuilder";
-import { Filter, Search, Send, Brain, Upload, Download, Trash2, Pencil, SquarePen, X } from "lucide-react";
+import { AnalyticsDashboard } from "../modules/analytics";
+import { Filter, Search, Send, Brain, Zap, Upload, Download, Trash2, Pencil, SquarePen, X } from "lucide-react";
 import { WizardId, MISSING_FIELD_LABELS } from "./Wizards";
 import {
   useDashboardSummary,
@@ -35,17 +36,22 @@ import {
   useDeals,
   usePipelineLeads,
   useUpdateDealStage,
+  useCoachStatus,
+  useCoachChat,
+  useCoachConversations,
+  useActiveCoachConversation,
+  useSendCoachMessage,
+  useDeleteCoachConversation,
+  awaitingSavedAnswer,
   useUpdateLeadStage,
   useConvertLeadViaBot,
   useAccounts,
   useContacts,
-  useCases,
   useCampaigns,
   useRpaBotRuns,
   useSapAutomations,
   useWorkflows,
   useActivateWorkflow,
-  useReportingSummary,
   useSecuritySummary,
   useAuditLog,
   useUsers,
@@ -58,7 +64,7 @@ import {
   useUpdateUser,
   type LeadImportResult,
 } from "../lib/queries";
-import { streamCopilotChat, downloadFile, type CopilotMessage } from "../lib/apiClient";
+import { downloadFile } from "../lib/apiClient";
 import {
   CONTACT_STATUS_LABELS,
   DEAL_STAGE_LABELS,
@@ -281,10 +287,9 @@ export function Dashboard() {
 
   return (
     <Stack>
-      <MetricGrid columns={4}>
+      <MetricGrid columns={3}>
         <MetricCard label="Total leads" value={isLoading ? "—" : String(data?.metrics.totalLeads ?? 0)} />
         <MetricCard label="Pipeline value" value={isLoading ? "—" : formatCurrency(data?.metrics.pipelineValue)} />
-        <MetricCard label="Open cases" value={isLoading ? "—" : String(data?.metrics.openCases ?? 0)} />
         <MetricCard
           label="RPA bots active"
           value={isLoading ? "—" : `${data?.metrics.rpaBotsActive ?? 0}/${data?.metrics.rpaBotsTotal ?? 0}`}
@@ -324,7 +329,7 @@ export function Dashboard() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <Card title="Deal coach insights">
-          <EmptyState message="Ask the deal coach for insights about leads, deals, and cases" />
+          <EmptyState message="Ask the deal coach for insights about leads and deals" />
         </Card>
         <Card title="RPA bot activity">
           {isLoading && <LoadingState />}
@@ -1138,6 +1143,10 @@ const isLeadColumnStage = (stage: string | undefined): stage is LeadPipelineStag
   LEAD_PIPELINE_STAGES.includes(stage as LeadPipelineStage);
 
 export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
+  const { user } = useAuth();
+  // The server scopes /deals by owner for these roles (DealAccess), so the
+  // board and table below are already this rep's own pipeline.
+  const ownDealsOnly = user?.role === "SALES_REP" || user?.role === "SUPPORT_AGENT";
   const qc = useQueryClient();
   const { data: deals, isLoading } = useDeals();
   const { data: pipelineLeads, isLoading: leadsLoading } = usePipelineLeads();
@@ -1332,7 +1341,7 @@ export function Pipeline({ onNavigate }: { onNavigate: Nav }) {
 
       {/* The board is for moving deals; this is for working them. Opening a row
           gives the meeting output form, the AI analysis and the manager review. */}
-      <Card title={`Opportunities (${rows.length})`}>
+      <Card title={`${ownDealsOnly ? "My opportunities" : "Opportunities"} (${rows.length})`}>
         <Table
           headers={["Opportunity", "Stage", "Value", "Deal score", "Win probability", "Risk", "Next action", ""]}
           cols="1.8fr 1fr 1fr 0.9fr 0.9fr 0.7fr 1.6fr 1fr"
@@ -1463,88 +1472,6 @@ export function Accounts({ onNavigate }: { onNavigate: Nav }) {
   );
 }
 
-/* ============ S05 Cases & Tickets ============ */
-const casePriorityVariant: Record<string, BadgeVariant> = { LOW: "blue", MEDIUM: "amber", HIGH: "red", CRITICAL: "red" };
-const caseStatusVariant: Record<string, BadgeVariant> = {
-  OPEN: "blue",
-  IN_PROGRESS: "amber",
-  ESCALATED: "red",
-  RESOLVED: "green",
-  CLOSED: "purple",
-};
-
-function slaLabel(deadline: string | null | undefined): { label: string; color: string } {
-  if (!deadline) return { label: "—", color: colors.textSecondary };
-  const diffMs = new Date(deadline).getTime() - Date.now();
-  if (diffMs <= 0) return { label: "Breached", color: colors.danger };
-  const hours = Math.round(diffMs / 3_600_000);
-  return { label: `${hours}h left`, color: hours <= 4 ? colors.danger : colors.success };
-}
-
-export function Cases() {
-  const { data: cases, isLoading } = useCases();
-  const rows = cases ?? [];
-  return (
-    <Stack>
-      <Card title="Case list">
-        <Table headers={["Case ID", "Subject", "Source", "Priority", "SLA", "Status"]} cols="0.7fr 2fr 1fr 1fr 1fr 1fr">
-          {rows.map((r) => {
-            const sla = slaLabel(r.slaDeadline);
-            return (
-              <TableRow key={r.id}>
-                <Cell><span style={{ fontWeight: 500 }}>#{r.caseNumber}</span></Cell>
-                <Cell>{r.subject}</Cell>
-                <Cell muted>{r.source ?? "—"}</Cell>
-                <Cell><Badge label={r.priority} variant={casePriorityVariant[r.priority] ?? "blue"} /></Cell>
-                <Cell><span style={{ color: sla.color, fontWeight: 500 }}>{sla.label}</span></Cell>
-                <Cell><Badge label={r.status.replace(/_/g, " ")} variant={caseStatusVariant[r.status] ?? "blue"} /></Cell>
-              </TableRow>
-            );
-          })}
-          {isLoading && <LoadingState />}
-          {!isLoading && rows.length === 0 && <EmptyState message="No cases yet" />}
-        </Table>
-      </Card>
-    </Stack>
-  );
-}
-
-/* ============ S06 Workflow Engine Canvas ============ */
-export function Workflow({ onNavigate }: { onNavigate: Nav }) {
-  const { data: workflows, isLoading } = useWorkflows();
-  const activate = useActivateWorkflow();
-  const rows = workflows ?? [];
-
-  return (
-    <Stack>
-      <ActionBar left={[]} right={[{ label: "New workflow", icon: SquarePen, variant: "primary", onClick: () => onNavigate("F05") }]} />
-      <Card title={`Saved workflows (${rows.length})`}>
-        {isLoading && <LoadingState />}
-        {!isLoading &&
-          rows.map((w) => (
-            <div
-              key={w.id}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: `0.5px solid ${colors.border}` }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: colors.textPrimary }}>{w.name}</div>
-                <div style={{ fontSize: 11, color: colors.textSecondary }}>{w.triggerEvent ?? "No trigger set"}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Badge label={w.isActive ? "Active" : "Draft"} variant={w.isActive ? "green" : "purple"} />
-                {!w.isActive && <Button label="Activate" onClick={() => activate.mutate(w.id)} />}
-              </div>
-            </div>
-          ))}
-        {!isLoading && rows.length === 0 && <EmptyState message="No workflows saved yet — build one from “New workflow”" />}
-      </Card>
-      <Card title="Workflow builder">
-        <WorkflowBuilder />
-      </Card>
-    </Stack>
-  );
-}
-
 /* ============ S07 RPA Bot Control Room ============ */
 
 export function RPA() {
@@ -1597,48 +1524,76 @@ export function RPA() {
 }
 
 /* ============ S08 Deal Coach ============ */
+/** "14:05" today, "Yesterday", or "12 Sep" — for the Past chats list. */
+function formatChatTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const days = Math.floor((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days === 0) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString([], { day: "numeric", month: "short", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+}
+
+// Starter questions, split by role: a rep works their own pipeline, a manager
+// the team's. Each is answerable from the coach's CRM snapshot.
+const COACH_PROMPTS_REP = [
+  "Which of my deals need attention this week?",
+  "Summarise my pipeline and forecast",
+  "Which of my leads should I call first?",
+  "How should I handle a price objection?",
+];
+const COACH_PROMPTS_MANAGER = [
+  "Which deals across the team are at risk?",
+  "Summarise the team pipeline by stage",
+  "Which deals are past their expected close date?",
+  "Which reps have unscored or stalled deals?",
+];
+
 export function Copilot() {
-  const [messages, setMessages] = useState<CopilotMessage[]>([]);
+  const { user } = useAuth();
+  const { data: coachStatus, isLoading: statusLoading } = useCoachStatus();
+  const isManager = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const suggestions = isManager ? COACH_PROMPTS_MANAGER : COACH_PROMPTS_REP;
+  // The conversation lives in the query cache and on the server, not in this
+  // component — navigating away no longer loses it, and an answer that was
+  // still streaming keeps arriving while the user is on another screen.
+  const [activeId, setActiveId] = useActiveCoachConversation(user?.id);
+  const { data: conversations, isLoading: conversationsLoading } = useCoachConversations(user?.id);
+  const { data: chat, isLoading: historyLoading, isError: historyFailed } = useCoachChat(user?.id, activeId);
+  const sendMessage = useSendCoachMessage(user?.id);
+  const deleteConversation = useDeleteCoachConversation(user?.id);
+  const messages = chat?.messages ?? [];
+  const streaming = chat?.streaming ?? false;
+  const last = messages[messages.length - 1];
+  // Reloaded mid-answer: the question is saved, the reply is still being
+  // written server-side. useCoachChat polls until it lands; past the window
+  // the answer is presumed failed and the input unlocks.
+  const awaitingReply = awaitingSavedAnswer(chat);
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streaming]);
+  }, [messages.length, last?.content, streaming]);
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    const next: CopilotMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
+  const send = async (preset?: string) => {
+    const text = (preset ?? input).trim();
+    if (!text || streaming || awaitingReply) return;
     setInput("");
     setUnavailable(false);
-    setStreaming(true);
-    setMessages((m) => [...m, { role: "assistant", content: "" }]);
+    const { failed } = await sendMessage(activeId, text);
+    setUnavailable(failed);
+  };
 
-    await streamCopilotChat(next, {
-      onDelta: (delta) =>
-        setMessages((m) => {
-          const copy = [...m];
-          copy[copy.length - 1] = { role: "assistant", content: copy[copy.length - 1].content + delta };
-          return copy;
-        }),
-      onError: (message) => {
-        setUnavailable(true);
-        setMessages((m) => {
-          const copy = [...m];
-          copy[copy.length - 1] = { role: "assistant", content: message };
-          return copy;
-        });
-      },
-      onDone: () => setStreaming(false),
-    }).catch(() => {
-      setUnavailable(true);
-      setStreaming(false);
-    });
-    setStreaming(false);
+  const openConversation = (id: string | null) => {
+    setUnavailable(false);
+    setActiveId(id);
+  };
+
+  const removeConversation = (id: string, title: string) => {
+    if (!window.confirm(`Delete the chat "${title}"? This can't be undone.`)) return;
+    deleteConversation.mutate(id, { onError: () => toast.error("Couldn't delete the chat") });
   };
 
   return (
@@ -1647,8 +1602,16 @@ export function Copilot() {
         <div style={{ padding: 16, borderBottom: `0.5px solid ${colors.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <Brain size={16} color={colors.aiPurple} />
           <span style={{ fontSize: 13, fontWeight: 600 }}>Deal coach chat</span>
-          <Badge label="Tool-use enabled" variant="blue" />
+          <Badge label={isManager ? "Grounded in team data" : "Grounded in your data"} variant="blue" />
           {unavailable && <Badge label="Model unreachable" variant="red" />}
+          <button
+            onClick={() => openConversation(null)}
+            disabled={activeId === null}
+            title="Start a new conversation — this one stays in Past chats"
+            style={{ marginLeft: "auto", border: `0.5px solid ${colors.border}`, background: "#FFFFFF", borderRadius: 6, padding: "4px 10px", fontSize: 11, color: colors.textSecondary, cursor: activeId === null ? "default" : "pointer", opacity: activeId === null ? 0.5 : 1 }}
+          >
+            New chat
+          </button>
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, minHeight: 360, maxHeight: 480, overflowY: "auto" }}>
           {messages.map((m, i) => (
@@ -1669,9 +1632,33 @@ export function Copilot() {
               {m.content || (streaming && i === messages.length - 1 ? "…" : "")}
             </div>
           ))}
-          {messages.length === 0 && (
-            <div style={{ margin: "auto", textAlign: "center", fontSize: 12, color: colors.textTertiary }}>
-              Ask the deal coach a question to get started
+          {awaitingReply && (
+            <div style={{ alignSelf: "flex-start", fontSize: 11, color: colors.textTertiary }}>
+              The coach is still answering this…
+            </div>
+          )}
+          {historyLoading && (
+            <div style={{ margin: "auto", fontSize: 12, color: colors.textTertiary }}>Loading your conversation…</div>
+          )}
+          {historyFailed && (
+            <div style={{ margin: "auto", fontSize: 12, color: colors.textTertiary }}>
+              Couldn't load your earlier conversation. New messages still work.
+            </div>
+          )}
+          {!historyLoading && !historyFailed && messages.length === 0 && (
+            <div style={{ margin: "auto", textAlign: "center", fontSize: 12, color: colors.textTertiary, display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+              <div>Ask about {isManager ? "your team's" : "your"} deals, leads or sales strategy</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", maxWidth: 440 }}>
+                {suggestions.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => send(q)}
+                    style={{ border: `0.5px solid ${colors.border}`, background: "#FFFFFF", borderRadius: 14, padding: "5px 10px", fontSize: 11, color: colors.textSecondary, cursor: "pointer" }}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           <div ref={bottomRef} />
@@ -1681,12 +1668,13 @@ export function Copilot() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask AI about leads, deals, cases..."
+            maxLength={2000}
+            placeholder="Ask about your deals, leads or next steps..."
             style={{ flex: 1, border: `0.5px solid ${colors.border}`, borderRadius: 6, padding: "8px 10px", fontSize: 12, outline: "none" }}
           />
           <button
-            onClick={send}
-            disabled={streaming}
+            onClick={() => send()}
+            disabled={streaming || awaitingReply}
             style={{ background: colors.primary, border: "none", borderRadius: 6, width: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: streaming ? "default" : "pointer", opacity: streaming ? 0.6 : 1 }}
           >
             <Send size={15} color="#FFFFFF" />
@@ -1694,23 +1682,80 @@ export function Copilot() {
         </div>
       </Card>
       <Stack>
-        <Card title="AI capabilities">
+        <Card title="Past chats">
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
+            {conversationsLoading && <div style={{ fontSize: 12, color: colors.textTertiary }}>Loading…</div>}
+            {!conversationsLoading && (conversations ?? []).length === 0 && (
+              <div style={{ fontSize: 12, color: colors.textTertiary }}>Your chats will appear here.</div>
+            )}
+            {(conversations ?? []).map((c) => {
+              const id = String(c.id);
+              const active = id === activeId;
+              return (
+                <div
+                  key={id}
+                  onClick={() => openConversation(id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 8px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    background: active ? colors.aiLight : "transparent",
+                    border: `0.5px solid ${active ? colors.aiPurple : "transparent"}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: colors.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.title}
+                    </div>
+                    <div style={{ fontSize: 10, color: colors.textTertiary }}>{formatChatTime(c.updatedAt)}</div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeConversation(id, c.title);
+                    }}
+                    title="Delete this chat"
+                    aria-label={`Delete chat ${c.title}`}
+                    style={{ border: "none", background: "transparent", padding: 2, cursor: "pointer", display: "flex" }}
+                  >
+                    <Trash2 size={13} color={colors.textTertiary} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+        <Card title="What the coach can do">
           <Stack gap={8}>
             {[
-              "Lead scoring & intent classification (self-hosted LLM)",
-              "Deal closure prediction & revenue forecast",
-              "Auto email drafting & proposal generation",
-              "Search leads, pipeline, and cases via tool calls",
+              "Prioritise deals by close date, risk and deal score",
+              "Summarise pipeline value and the weighted forecast",
+              "Suggest next steps and objection handling for a specific deal",
+              "Point out which leads to contact first",
             ].map((t) => (
               <AIInsightBox key={t} text={t} />
             ))}
+            <div style={{ fontSize: 11, color: colors.textTertiary, lineHeight: 1.5 }}>
+              Read-only: the coach never changes records. It sees {coachStatus?.scope ?? "only the records you can see"}.
+            </div>
           </Stack>
         </Card>
         <Card title="AI model status">
           <BotStatusRow
-            name="Self-hosted model"
-            sub={unavailable ? "Unreachable — check AI_BASE_URL" : "Connected via OpenAI-compatible endpoint"}
-            status={unavailable ? "error" : "running"}
+            name={coachStatus ? `${coachStatus.model} (${coachStatus.provider})` : "Deal coach model"}
+            sub={
+              statusLoading
+                ? "Checking…"
+                : unavailable
+                  ? "Unreachable — start Ollama and the CRM AI server"
+                  : coachStatus?.available
+                    ? "Running locally"
+                    : `Not available — run: ollama pull ${coachStatus?.model ?? "qwen3:4b-instruct"}. Using the fallback model.`
+            }
+            status={unavailable ? "error" : coachStatus?.available ? "running" : "scheduled"}
           />
         </Card>
       </Stack>
@@ -1778,49 +1823,10 @@ export function Marketing({ onNavigate }: { onNavigate: Nav }) {
 }
 
 /* ============ S09 Analytics ============ */
+// The full module lives in modules/analytics: role-aware tabs over
+// /api/analytics/*, all aggregated server-side.
 export function Analytics() {
-  const { data, isLoading } = useReportingSummary();
-  const trend = data?.revenueTrend ?? [];
-  const values = trend.map((t) => Number(t.revenue));
-  const labels = trend.map((t) => new Date(t.month).toLocaleDateString(undefined, { month: "short" }));
-  const max = values.length ? Math.max(...values) : 0;
-
-  return (
-    <Stack>
-      <MetricGrid columns={4}>
-        <MetricCard label="Revenue (MTD)" value={isLoading ? "—" : formatCurrency(data?.revenueMtd)} />
-        <MetricCard label="Win rate" value={isLoading ? "—" : `${data?.winRatePct ?? 0}%`} />
-        <MetricCard label="Avg deal size" value={isLoading ? "—" : formatCurrency(data?.avgDealSize)} />
-        <MetricCard label="Churn risk" value={isLoading ? "—" : String(data?.churnRiskCount ?? 0)} subtext={isLoading ? undefined : "Accounts flagged"} />
-      </MetricGrid>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Card title="Revenue trend (monthly, closed-won)">
-          {isLoading && <LoadingState />}
-          {!isLoading && values.length === 0 && <EmptyState message="No closed-won deals yet" />}
-          {!isLoading && values.length > 0 && (
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, height: 200, padding: "8px 4px 0" }}>
-              {values.map((v, i) => (
-                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
-                  <div
-                    style={{
-                      width: "100%",
-                      height: `${max ? (v / max) * 100 : 0}%`,
-                      background: i === values.length - 1 ? colors.primary : "#B5D4F4",
-                      borderRadius: "4px 4px 0 0",
-                    }}
-                  />
-                  <span style={{ fontSize: 10, color: colors.textSecondary, whiteSpace: "nowrap" }}>{labels[i]}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-        <Card title="AI predictions">
-          <EmptyState message="Ask the deal coach for forecasts and churn predictions" />
-        </Card>
-      </div>
-    </Stack>
-  );
+  return <AnalyticsDashboard />;
 }
 
 /* ============ S10 Security & Audit ============ */

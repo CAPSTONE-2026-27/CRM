@@ -5,15 +5,15 @@ QLoRA supervised fine-tuning of Llama 3.1 8B Instruct for CRM Deal Intelligence:
 (previous deal state + meeting notes) -> updated deal state.
 
 Hardware target : NVIDIA RTX A4000 (16GB VRAM), Windows 11, CUDA 12.6
-Base weights    : shared with ../Llama3_CRM — this project trains only an adapter
+Base weights    : ai/base-model, shared with the other two adapters — this trains only an adapter
 
 Run:
-    python scripts/generate_dataset.py --rows 800 --validate   # first
-    python scripts/train.py
-    python scripts/train.py --resume                           # after a crash
+    python adapters/deal_state/data/generate_dataset.py --rows 800 --validate   # first
+    python adapters/deal_state/train.py
+    python adapters/deal_state/train.py --resume                           # after a crash
 
-Differences from ../Llama3_CRM/scripts/train.py, and why
--------------------------------------------------------
+Differences from adapters/lead_scoring/train.py, and why
+--------------------------------------------------------
 That script trains a different task on the same base model, and most of its
 configuration transfers unchanged (4-bit NF4, r=16 LoRA, paged AdamW, gradient
 checkpointing) — those were tuned against this exact GPU and are not worth
@@ -49,8 +49,10 @@ import numpy as np
 import torch
 import transformers
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model
+from transformers import (
+    AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, EarlyStoppingCallback,
+)
 from trl import SFTConfig, SFTTrainer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -106,7 +108,7 @@ def formatting_func(example: dict) -> str:
 
     NOT used for training — the trainer consumes the `messages` column directly
     so the tokenizer's chat template applies and assistant_only_loss can mask
-    the prompt. This exists for scripts/check_lengths.py, which needs a single
+    the prompt. This exists for adapters/deal_state/data/check_lengths.py, which needs a single
     string to tokenise, and it deliberately goes through the same chat template
     rather than a hand-built prompt so the lengths it reports are the real ones.
     """
@@ -140,7 +142,7 @@ def load_and_prepare_dataset():
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"No training data at {DATA_PATH}. Run:\n"
-            "    python scripts/generate_dataset.py --rows 800 --validate"
+            "    python adapters/deal_state/data/generate_dataset.py --rows 800 --validate"
         )
 
     dataset = load_dataset("json", data_files=str(DATA_PATH), split="train")
@@ -152,15 +154,23 @@ def load_and_prepare_dataset():
         logger.warning("Dropped %d rows with an unusable target", before - len(dataset))
     logger.info("Clean dataset: %d rows", len(dataset))
 
-    # Shuffled before splitting so the held-out slice is not simply the tail.
-    # It matters more here than usual: rows are generated in journey order, so
-    # the last N rows would be the late meetings of the final few journeys — a
-    # systematically different distribution from the training set.
+    train, held_out = split_dataset(dataset)
+    logger.info("Split: %d train / %d eval", len(train), len(held_out))
+    return train, held_out
+
+
+def split_dataset(dataset):
+    """(train, eval). Shared with eval/evaluate.py so both see one split.
+
+    generate_dataset.py assigns `split` by journey, and eval journeys use
+    phrasings no train row contains. A random row split -- the fallback, for
+    data without the column -- put meetings of one deal on both sides and 72% of
+    held-out sentences verbatim in training, so it measured template recall.
+    """
+    if "split" in dataset.column_names:
+        return (dataset.filter(lambda r: r["split"] == "train"),
+                dataset.filter(lambda r: r["split"] == "eval"))
     split = dataset.train_test_split(test_size=EVAL_FRACTION, seed=SEED, shuffle=True)
-    logger.info(
-        "Split: %d train / %d eval (%.0f%% held out)",
-        len(split["train"]), len(split["test"]), EVAL_FRACTION * 100,
-    )
     return split["train"], split["test"]
 
 
@@ -181,7 +191,7 @@ def load_tokenizer():
     tokenizer.padding_side = "right"
 
     # This project's template, carrying the {% generation %} markers
-    # assistant_only_loss needs. serve.py installs the identical one, so
+    # assistant_only_loss needs. server/main.py renders the identical string, so
     # training and inference render the same string. In-memory only — the shared
     # base-model directory is never written to.
     fmt.apply_chat_template(tokenizer)
@@ -215,11 +225,12 @@ def load_model():
 
 def apply_memory_optimizations(model):
     model.config.use_cache = False  # incompatible with gradient checkpointing
-    model = prepare_model_for_kbit_training(
-        model,
-        use_gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-    )
+    # Not prepare_model_for_kbit_training: it also upcasts the embedding table
+    # and lm_head to fp32 (+2GB weights, +3GB peak measured) for layers LoRA
+    # never trains. See adapters/lead_scoring/train.py for the measurement.
+    for param in model.parameters():
+        param.requires_grad_(False)
+    model.enable_input_require_grads()
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     return model
 
@@ -266,10 +277,11 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=8,
         learning_rate=1e-4,
-        # 5 rather than the lead scorer's 8: every token of this target is
-        # decision-critical structured JSON, so loss is concentrated on what
-        # matters instead of being diluted by prose reasoning.
-        num_train_epochs=5,
+        # 3.5, down from 5. The 5-epoch run's best checkpoint was at epoch 3.33
+        # (eval_loss 0.01420); the remaining epochs never beat it and ended with
+        # train_loss 0.0018 -- an 8x gap to eval, memorisation. Early stopping
+        # (patience 2) can end it sooner still.
+        num_train_epochs=3.5,
         optim="paged_adamw_8bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
@@ -285,7 +297,7 @@ def build_training_config(assistant_only: bool) -> SFTConfig:
         bf16=bf16_ok,
         fp16=not bf16_ok,
         # Measured max over the generated set is 1144 tokens (p99 1110), so this
-        # never truncates. Verify with scripts/check_lengths.py after changing
+        # never truncates. Verify with adapters/deal_state/data/check_lengths.py after changing
         # the state schema or the note templates.
         max_length=2048,
         packing=False,        # separate examples keep the loss signal per-record
@@ -355,10 +367,14 @@ def main() -> None:
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             processing_class=tokenizer,
+            # Two evaluations without improvement, not one. The first run was
+            # stopped at epoch 1.94 on a single rise that turned out to be noise;
+            # resuming improved eval_loss by another 32% (PROVENANCE.json).
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
             # No formatting_func: the dataset is conversational, so SFTTrainer
             # applies the tokenizer's chat template itself. That is what makes
             # assistant_only_loss possible, and it keeps training on the exact
-            # prompt serve.py builds at inference.
+            # prompt server/main.py builds at inference.
         )
 
         logger.info("Starting training%s...", " (resuming)" if resume else "")

@@ -11,11 +11,11 @@ import {
   Accounts,
   RPA,
   Copilot,
-  Marketing,
   Analytics,
   Security,
 } from "./screens/MainScreens";
 import { Wizard, WizardId, wizardMeta } from "./screens/Wizards";
+import { MarketingAutomation } from "./modules/marketing";
 import { AuthScreen, ForceChangePasswordScreen } from "./screens/Auth";
 import { Profile } from "./screens/Profile";
 import { useAuth } from "./lib/auth";
@@ -96,7 +96,7 @@ export default function App() {
       case "copilot":
         return <Copilot />;
       case "marketing":
-        return <Marketing onNavigate={openWizard} />;
+        return <MarketingAutomation />;
       case "analytics":
         return <Analytics />;
       case "security":
